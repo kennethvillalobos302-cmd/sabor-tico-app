@@ -428,14 +428,29 @@ function renderNav(){
   $('#sidebar').innerHTML =
     `<div class="nav-sep">Trabajo</div>` + work.map(navBtn).join('') +
     (ctrl.length? `<div class="nav-sep">${isAdmin()?'Control total':'Gestión'}</div>`+ctrl.map(navBtn).join('') : '');
-  // bottom nav (5 principales)
-  const bn = items.slice(0,5);
+  // bottom nav: 4 principales + "Más" con todas las opciones
+  const bn = items.slice(0,4);
+  let moreBadge=0; items.slice(4).forEach(n=>moreBadge+=navBadge(n.id));
+  const moreActive = !bn.some(n=>n.id===SES.view);
   $('#bottomNav').innerHTML = bn.map(n=>{
     const b=navBadge(n.id);
     return `<button class="bn-item ${SES.view===n.id?'active':''}" onclick="go('${n.id}')">
       <span class="ico">${svgIcon(n.ico,'icon icon-lg')}</span>${n.label}${b?`<span class="ncount">${b}</span>`:''}</button>`;
-  }).join('');
+  }).join('') +
+    `<button class="bn-item ${moreActive?'active':''}" onclick="openNavSheet()"><span class="ico">${svgIcon('list','icon icon-lg')}</span>Más${moreBadge?`<span class="ncount">${moreBadge}</span>`:''}</button>`;
 }
+function openNavSheet(){
+  const items=navItems();
+  openModal(`<div class="modal-head"><h3>Menú</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body" style="padding:10px 12px">
+      ${items.map(n=>{const b=navBadge(n.id);return `<button class="nav-item ${SES.view===n.id?'active':''}" style="width:100%" onclick="closeModal();go('${n.id}')"><span class="ico">${svgIcon(n.ico)}</span><span>${n.label}</span>${b?`<span class="ncount">${b}</span>`:''}</button>`;}).join('')}
+      <div class="nav-sep">Perfil</div>
+      <button class="nav-item" style="width:100%" onclick="closeModal();toggleTheme()"><span class="ico">${svgIcon('theme')}</span><span>Cambiar tema</span></button>
+      <button class="nav-item" style="width:100%" onclick="closeModal();exportData()"><span class="ico">${svgIcon('save')}</span><span>Respaldar datos</span></button>
+      <button class="nav-item" style="width:100%;color:var(--danger)" onclick="closeModal();logout()"><span class="ico">${svgIcon('logout')}</span><span>Cerrar sesión</span></button>
+    </div>`);
+}
+window.openNavSheet=openNavSheet;
 function navBtn(n){
   const b=navBadge(n.id);
   return `<button class="nav-item ${SES.view===n.id?'active':''}" onclick="go('${n.id}')">
@@ -1013,16 +1028,32 @@ function refreshBoard(projId){
   const cz=$('#canvasZoom'); if(cz){ cz.style.width=(cw*boardZoom)+'px'; cz.style.height=(chh*boardZoom)+'px'; }
   const svg=bc.querySelector('.canvas-links'); if(svg){ svg.setAttribute('width',cw); svg.setAttribute('height',chh); svg.innerHTML=boardLinks(p.cards); }
 }
-function toggleBoardFull(){ boardFull=!boardFull; render(); }
+function toggleBoardFull(){
+  boardFull=!boardFull;
+  try{
+    if(boardFull){ const el=document.documentElement; const r=el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen; if(r) r.call(el); }
+    else if(document.fullscreenElement||document.webkitFullscreenElement){ (document.exitFullscreen||document.webkitExitFullscreen||function(){}).call(document); }
+  }catch(e){}
+  render();
+}
+document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElement && boardFull){ boardFull=false; if(SES.userId&&SES.view==='proyectos') render(); } });
 window.toggleBoardFull=toggleBoardFull;
 function projSide(proj){
-  const msgs=(proj.chat||[]).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc(u.name.split(' ')[0]):''}</div>`:''}${esc(m.text)}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}</div></div>`;}).join('');
+  const msgs=(proj.chat||[]).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
+    const media=m.media?(m.media.type==='video'?`<video src="${m.media.data}" controls></video>`:`<img src="${m.media.data}">`):'';
+    return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc(u.name.split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
   const inCall=proj.call&&proj.call.active;
   return `<div class="proj-side">
     <div class="proj-side-head"><span style="font-weight:700;font-size:13px">Chat del grupo</span><div class="ph-spacer"></div>
       <button class="btn ${inCall?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 11px" onclick="openCall('${proj.id}')">${svgIcon('video','icon icon-sm')} ${inCall?'En llamada · '+proj.call.participants.length:'Llamada'}</button></div>
     <div class="proj-chat" id="projChatMsgs">${msgs||'<div style="margin:auto;color:var(--text-soft);font-size:13px;text-align:center;padding:24px">Escribí acá para coordinar mientras trabajan la pizarra.</div>'}</div>
-    <div class="chat-input"><input id="projMsg" placeholder="Mensaje al grupo…" onkeydown="if(event.key==='Enter')sendProjMsg('${proj.id}')"><button class="chat-send" onclick="sendProjMsg('${proj.id}')">${svgIcon('send')}</button></div>
+    ${projPending?`<div class="chat-pending">${projPending.type==='video'?`<video src="${projPending.data}"></video>`:`<img src="${projPending.data}">`}<span>${projPending.type==='video'?'Video':'Foto'} listo</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="projPending=null;render()">Quitar</button></div>`:''}
+    <div class="chat-input">
+      <input type="file" id="projFile" accept="image/*,video/*" style="display:none" onchange="projAttachPick('${proj.id}')">
+      <button class="chat-attach" title="Adjuntar foto o video" onclick="document.getElementById('projFile').click()">${svgIcon('clip')}</button>
+      <input id="projMsg" placeholder="Mensaje al grupo…" onkeydown="if(event.key==='Enter')sendProjMsg('${proj.id}')">
+      <button class="chat-send" onclick="sendProjMsg('${proj.id}')">${svgIcon('send')}</button>
+    </div>
   </div>`;
 }
 window.openProj=id=>{activeProj=id;render();};
@@ -1166,14 +1197,34 @@ function addCard(projId,type){
 }
 window.addCard=addCard;
 /* chat del grupo (lateral) */
+let projPending=null;
+async function projAttachPick(projId){
+  const inp=$('#projFile'); const f=inp&&inp.files[0]; if(!f) return;
+  if(f.type.startsWith('video')){ if(f.size>6*1024*1024){ toast('El video es muy pesado (máx. 6 MB)','err'); return; } projPending={type:'video',data:await fileToData(f)}; }
+  else if(f.type.startsWith('image')){ const arr=await readImages([f]); projPending={type:'image',data:arr[0]}; }
+  else { toast('Solo fotos o videos','err'); return; }
+  render();
+}
+window.projAttachPick=projAttachPick;
 function sendProjMsg(projId){
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
-  const inp=$('#projMsg'); const v=inp?inp.value.trim():''; if(!v) return;
-  p.chat=p.chat||[]; p.chat.push({id:uid(),byId:SES.userId,text:v,at:now()});
-  notify(p.memberIds.filter(i=>i!==SES.userId), `${me().name.split(' ')[0]} en "${p.name}": ${v.slice(0,40)}`,'clipboard',{view:'proyectos'});
-  save(); render();
+  const inp=$('#projMsg'); const v=inp?inp.value.trim():'';
+  if(!v && !projPending) return;
+  const m={id:uid(),byId:SES.userId,text:v,at:now()}; if(projPending) m.media=projPending;
+  p.chat=p.chat||[]; p.chat.push(m);
+  const prev=v?v.slice(0,40):(projPending?(projPending.type==='video'?'envió un video':'envió una foto'):'');
+  notify(p.memberIds.filter(i=>i!==SES.userId), `${me().name.split(' ')[0]} en "${p.name}": ${prev}`,'clipboard',{view:'proyectos'});
+  projPending=null; save(); render();
 }
 window.sendProjMsg=sendProjMsg;
+async function delProjMsg(projId,msgId){
+  const p=DB.projects.find(x=>x.id===projId); if(!p) return;
+  const m=(p.chat||[]).find(x=>x.id===msgId); if(!m) return;
+  if(!(m.byId===SES.userId||isAdmin())) return;
+  if(!await confirmDialog('Se elimina este mensaje del chat.',{title:'¿Eliminar mensaje?',okText:'Sí, eliminar'})) return;
+  p.chat=p.chat.filter(x=>x.id!==msgId); audit('proyecto','eliminó un mensaje del chat',p.sucursalId); save(); render();
+}
+window.delProjMsg=delProjMsg;
 /* mover el lienzo arrastrando el fondo */
 let _pan=null;
 function canvasPanDown(e){
@@ -1343,7 +1394,8 @@ function viewChat(){
     const msgsHtml = cur.msgs.map(m=>{
       const u=userById(m.byId); const mine=m.byId===SES.userId;
       const media = m.media ? (m.media.type==='video' ? `<video src="${m.media.data}" controls></video>` : `<img src="${m.media.data}">`) : '';
-      return `<div class="msg ${mine?'mine':''}">${(!mine&&cur.type==='group')?`<div class="mname">${u?esc(u.name.split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}</div></div>`;
+      const canDel = mine || isAdmin();
+      return `<div class="msg ${mine?'mine':''}">${(!mine&&cur.type==='group')?`<div class="mname">${u?esc(u.name.split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delMsg('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;
     }).join('');
     paneHtml=`<div class="chat-pane" id="chatPane">
       <div class="chat-head">
@@ -1408,6 +1460,15 @@ function sendMsg(chatId){
   chatPending=null; markSeen(c); save(); render();
 }
 window.sendMsg=sendMsg;
+async function delMsg(chatId,msgId){
+  const c=DB.chats.find(x=>x.id===chatId); if(!c) return;
+  const m=c.msgs.find(x=>x.id===msgId); if(!m) return;
+  if(!(m.byId===SES.userId || isAdmin())) return;
+  if(!await confirmDialog('Se elimina este mensaje para todos.',{title:'¿Eliminar mensaje?',okText:'Sí, eliminar'})) return;
+  c.msgs=c.msgs.filter(x=>x.id!==msgId);
+  audit('chat','eliminó un mensaje',c.sucursalId); save(); render();
+}
+window.delMsg=delMsg;
 
 function newDMModal(){
   const people=DB.users.filter(u=>u.active && u.id!==SES.userId);
@@ -2340,36 +2401,56 @@ $('#sucSelect').addEventListener('change',e=>{ SES.sucFilter=e.target.value; ren
 /* =====================================================================
    LOGIN
    ===================================================================== */
-let pickedUser=null;
+let pickedUser=null, loginSuc=null;
 function renderLogin(){
-  const g=$('#loginUsers');
-  g.innerHTML=DB.users.filter(u=>u.active).map(u=>`<button class="user-pick" data-id="${u.id}" onclick="pickUser('${u.id}')">
-    ${avatarHTML(u)}<div><div class="nm">${esc(u.name.split(' ')[0])}</div><div class="rl">${ROLES[u.role].short}</div></div></button>`).join('');
+  const area=$('#loginArea'); if(!area) return;
+  const sucs=DB.sucursales||[];
+  // Paso 1: elegir sucursal (si hay más de una)
+  if(!loginSuc && sucs.length>1){
+    area.innerHTML=`<div class="login-label">Elegí la sucursal</div>
+      <div class="suc-pick">${sucs.map(s=>`<button class="suc-card" onclick="pickSuc('${s.id}')">${svgIcon('pin')} ${esc(s.name)}</button>`).join('')}</div>
+      <div class="login-hint">Cada quien entra con su nombre y su PIN. Para la demo el PIN es <b>1234</b> (cambialo en Equipo).</div>`;
+    return;
+  }
+  if(!loginSuc && sucs.length===1) loginSuc=sucs[0].id;
+  // Paso 2: elegir persona (de la sucursal + globales) y PIN
+  const ppl=DB.users.filter(u=>u.active && (u.sucursalId===loginSuc || u.sucursalId==='all'))
+    .sort((a,b)=>ROLE_KEYS.indexOf(a.role)-ROLE_KEYS.indexOf(b.role)||a.name.localeCompare(b.name));
+  area.innerHTML=`${sucs.length>1?`<button class="login-back" onclick="loginSuc=null;pickedUser=null;renderLogin()">${svgIcon('back','icon icon-sm')} Cambiar sucursal</button>`:''}
+    <div class="login-label">¿Quién sos?${sucs.length>1?' · '+esc(sucName(loginSuc)):''}</div>
+    <div class="user-grid">${ppl.length?ppl.map(u=>`<button class="user-pick ${pickedUser===u.id?'sel':''}" data-id="${u.id}" onclick="pickUser('${u.id}')">${avatarHTML(u)}<div><div class="nm">${esc(u.name.split(' ')[0])}</div><div class="rl">${ROLES[u.role].short}</div></div></button>`).join(''):'<div style="color:var(--text-soft);font-size:13px;padding:8px">No hay personas en esta sucursal todavía.</div>'}</div>
+    <div class="login-label">Tu PIN</div>
+    <div class="pin-row"><input id="pinInput" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+    <button class="btn btn-primary" id="loginBtn" style="width:100%">Entrar</button>`;
+  const lb=$('#loginBtn'); if(lb) lb.onclick=doLogin;
+  const pi=$('#pinInput'); if(pi) pi.onkeydown=e=>{ if(e.key==='Enter') doLogin(); };
 }
+function pickSuc(id){ loginSuc=id; pickedUser=null; renderLogin(); }
+window.pickSuc=pickSuc;
 function pickUser(id){
   pickedUser=id;
   document.querySelectorAll('.user-pick').forEach(b=>b.classList.toggle('sel',b.dataset.id===id));
-  $('#pinInput').focus();
+  const pi=$('#pinInput'); if(pi) pi.focus();
 }
 window.pickUser=pickUser;
 function doLogin(){
   if(!pickedUser){ toast('Elegí quién sos','err'); return; }
   const u=userById(pickedUser);
+  if(!u){ toast('Elegí quién sos','err'); return; }
   if($('#pinInput').value!==u.pin){ toast('PIN incorrecto','err'); return; }
   SES.userId=u.id; SES.sucFilter='all'; SES.view='inicio';
   sessionStorage.setItem('saborTico_ses',u.id);
   $('#loginScreen').style.display='none';
   $('#app').classList.add('on');
-  toast('Bienvenido, '+u.name.split(' ')[0]+' 👋','ok');
+  toast('Bienvenido, '+u.name.split(' ')[0],'ok');
   render();
 }
-$('#loginBtn').addEventListener('click',doLogin);
-$('#pinInput').addEventListener('keydown',e=>{ if(e.key==='Enter') doLogin(); });
+window.doLogin=doLogin;
 
 function logout(){
   SES.userId=null; sessionStorage.removeItem('saborTico_ses');
   $('#app').classList.remove('on'); $('#loginScreen').style.display='flex';
-  pickedUser=null; $('#pinInput').value=''; renderLogin();
+  pickedUser=null; loginSuc=null; renderLogin();
 }
 window.logout=logout;
 

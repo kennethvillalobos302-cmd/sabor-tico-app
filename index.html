@@ -157,6 +157,12 @@ input,textarea,select{font-family:inherit;font-size:14px}
 .btn-danger{background:var(--danger);color:#fff}
 .btn-danger:hover{filter:brightness(1.05)}
 .login-hint{font-size:11.5px;color:var(--text-soft);text-align:center;margin-top:16px;line-height:1.6}
+.suc-pick{display:flex;flex-direction:column;gap:10px;margin-top:4px}
+.suc-card{display:flex;align-items:center;gap:12px;padding:16px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-soft);font-weight:650;font-size:15px;text-align:left;transition:border-color var(--t-fast),transform var(--t-fast)}
+.suc-card:hover{border-color:var(--accent-line);transform:translateY(-1px)}
+.suc-card .icon{color:var(--accent)}
+.login-back{display:inline-flex;align-items:center;gap:6px;background:none;border:none;color:var(--text-soft);font-size:12.5px;font-weight:600;padding:4px 0;margin-bottom:10px;cursor:pointer}
+.login-back:hover{color:var(--text)}
 
 /* ---------- AVATAR ---------- */
 .av{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;
@@ -336,7 +342,10 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .msg{max-width:74%;padding:9px 13px;border-radius:14px;font-size:13.5px;background:var(--bg-soft);align-self:flex-start;word-wrap:break-word;line-height:1.45;box-shadow:var(--e1)}
 .msg.mine{background:var(--grad-accent);color:#fff;align-self:flex-end}
 .msg .mname{font-size:11px;font-weight:700;opacity:.85;margin-bottom:2px}
-.msg .mtime{font-size:10px;opacity:.6;margin-top:4px;text-align:right}
+.msg .mtime{font-size:10px;opacity:.7;margin-top:4px;text-align:right;display:flex;align-items:center;justify-content:flex-end;gap:2px}
+.msg-del{background:none;border:none;cursor:pointer;opacity:.55;padding:2px;color:inherit;display:inline-flex}
+.msg-del:hover{opacity:1}
+.msg-del .icon{width:13px;height:13px}
 .chat-input{display:flex;gap:9px;padding:13px;border-top:1px solid var(--border-soft);flex-shrink:0;background:var(--bg-elev)}
 .chat-input input{flex:1;padding:12px 15px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-pill);color:var(--text);outline:none;transition:border-color var(--t-fast),box-shadow var(--t-fast)}
 .chat-input input:focus{border-color:var(--accent);box-shadow:var(--ring)}
@@ -568,6 +577,19 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
   .notif-panel,.user-menu{right:10px}
   .tbl-wrap{overflow-x:auto}
 }
+@media(max-width:780px){
+  .main{padding:12px 12px 90px}
+  .view{max-width:100%}
+  .page-title{font-size:18px}
+  .kpi{padding:13px}
+  .kpi .value{font-size:21px}
+  .kpi-row{gap:9px}
+  .sched-card .av{width:38px;height:38px}
+  .proj-tab{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+  .toolbar{gap:7px}
+  .modal{max-height:90vh}
+  .bottom-nav .bn-item{font-size:9.5px}
+}
 @media(min-width:781px){ .mobile-only{display:none!important} }
 </style>
 </head>
@@ -618,12 +640,7 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
   <div class="login-card">
     <div class="login-logo">Sabor Tico<span class="dot">.</span></div>
     <div class="login-tag">Tu restaurante, todo en un solo lugar</div>
-    <div class="login-label">¿Quién sos?</div>
-    <div class="user-grid" id="loginUsers"></div>
-    <div class="login-label">Tu PIN</div>
-    <div class="pin-row"><input id="pinInput" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
-    <button class="btn btn-primary" id="loginBtn">Entrar</button>
-    <div class="login-hint">Elegí tu nombre y poné tu PIN. Para la demo todos los PIN son <b>1234</b>.<br>El admin (Kenneth) ve y controla todo.</div>
+    <div id="loginArea"></div>
   </div>
 </div>
 
