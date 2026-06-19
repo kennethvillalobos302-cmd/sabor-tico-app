@@ -244,6 +244,8 @@ function seedShifts(s1,s2,users){
 /* ---------------- Migración de DBs existentes ---------------- */
 function migrate(){
   let ch=false;
+  // asegurar que las colecciones base existan (datos sincronizados pueden venir incompletos)
+  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
   const s=DB.sucursales||[]; const s1=s[0]?s[0].id:'all'; const s2=s[1]?s[1].id:s1;
   if(DB.inventory===undefined){ DB.inventory=seedInventory(s1,s2); ch=true; }
   if(DB.invMoves===undefined){ DB.invMoves=[]; ch=true; }
@@ -258,12 +260,17 @@ function migrate(){
   if(!DB.invCats.bar) { DB.invCats.bar=DEFAULT_CATS.bar.slice(); ch=true; }
   (DB.projects||[]).forEach(p=>{ if(p.chat===undefined){ p.chat=[]; ch=true; } (p.cards||[]).forEach((c,i)=>{ if(c.x===undefined){ c.x=40+(i%5)*250; c.y=40+Math.floor(i/5)*215; ch=true; } }); });
   if(DB._shiftNotif===undefined){ DB._shiftNotif={}; ch=true; }
+  // reparar registros sincronizados que vengan sin campos esperados
+  (DB.chats||[]).forEach(c=>{ if(!Array.isArray(c.msgs)){ c.msgs=[]; ch=true; } if(!Array.isArray(c.memberIds)){ c.memberIds=[]; ch=true; } });
+  (DB.tasks||[]).forEach(t=>{ if(!Array.isArray(t.toIds)){ t.toIds=[]; ch=true; } if(!Array.isArray(t.log)) t.log=[]; if(!Array.isArray(t.comments)) t.comments=[]; });
+  (DB.projects||[]).forEach(p=>{ if(!Array.isArray(p.cards)){ p.cards=[]; ch=true; } if(!Array.isArray(p.memberIds)){ p.memberIds=[]; ch=true; } });
+  (DB.pedidos||[]).forEach(p=>{ if(!Array.isArray(p.log)) p.log=[]; if(!Array.isArray(p.comments)) p.comments=[]; });
   if(ch) save();
 }
 
 /* ---------------- Sesión / usuario ---------------- */
-const me = () => DB.users.find(u=>u.id===SES.userId);
-const userById = id => DB.users.find(u=>u.id===id);
+const me = () => (DB.users||[]).find(u=>u.id===SES.userId);
+const userById = id => (DB.users||[]).find(u=>u.id===id);
 const isAdmin = () => me() && me().role==='admin';
 const hasRole = (...rs) => me() && rs.includes(me().role);
 // Inventario por área: Cocina (Proveeduría/Chef) y Bar (Bartender/Jefe de Salón)
@@ -407,17 +414,19 @@ function navItems(){
 }
 
 function pendingForMe(){
-  return DB.tasks.filter(t=> t.toIds.includes(SES.userId) && (t.status==='pendiente'||t.status==='proceso'||t.status==='atrasada')).length;
+  return (DB.tasks||[]).filter(t=> (t.toIds||[]).includes(SES.userId) && (t.status==='pendiente'||t.status==='proceso'||t.status==='atrasada')).length;
 }
 function pedidosForMe(){
   if(!me()) return 0;
-  return DB.pedidos.filter(p=> (p.area===me().role||isAdmin()) && (p.status==='pendiente'||p.status==='proceso') && inScope(p.sucursalId)).length;
+  return (DB.pedidos||[]).filter(p=> (p.area===me().role||isAdmin()) && (p.status==='pendiente'||p.status==='proceso') && inScope(p.sucursalId)).length;
 }
 function navBadge(id){
-  if(id==='tareas') return pendingForMe();
-  if(id==='pedidos') return pedidosForMe();
-  if(id==='chat') return unreadChats();
-  if(id==='inventario' && canInvEdit()) return invInScope().filter(lowStock).length;
+  try{
+    if(id==='tareas') return pendingForMe();
+    if(id==='pedidos') return pedidosForMe();
+    if(id==='chat') return unreadChats();
+    if(id==='inventario' && canInvEdit()) return invInScope().filter(lowStock).length;
+  }catch(e){ console.warn('navBadge',id,e); }
   return 0;
 }
 
@@ -487,7 +496,7 @@ function render(){
   const nb=$('#notifBadge');
   if(uc){ nb.textContent=uc; nb.classList.remove('hidden'); } else nb.classList.add('hidden');
 
-  renderNav();
+  try{ renderNav(); }catch(e){ console.error('renderNav', e); $('#sidebar').innerHTML=''; }
 
   const v=$('#view');
   const map={ inicio:viewInicio, tareas:viewTareas, pedidos:viewPedidos, inventario:viewInventario,
@@ -495,9 +504,17 @@ function render(){
     chat:viewChat, reportes:viewReportes, equipo:viewEquipo, auditoria:viewAuditoria };
   // si el puesto no tiene acceso a la vista actual, volver a inicio
   if(!(ROLE_NAV[me().role]||[]).includes(SES.view)) SES.view='inicio';
-  v.innerHTML = de((map[SES.view]||viewInicio)());
-  if(SES.view==='chat') afterChatRender();
-  if(SES.view==='proyectos'){ const pc=$('#projChatMsgs'); if(pc) pc.scrollTop=pc.scrollHeight; applyZoom(); }
+  try{
+    v.innerHTML = de((map[SES.view]||viewInicio)());
+    if(SES.view==='chat') afterChatRender();
+    if(SES.view==='proyectos'){ const pc=$('#projChatMsgs'); if(pc) pc.scrollTop=pc.scrollHeight; applyZoom(); }
+  }catch(e){
+    console.error('view '+SES.view, e);
+    v.innerHTML=`<div class="card" style="max-width:520px;margin:30px auto;text-align:center">
+      <div style="font-weight:700;font-size:16px;margin-bottom:8px">Esta sección tuvo un problema al cargar</div>
+      <div class="page-sub" style="margin-bottom:14px">Probá con otra sección desde el menú. Si sigue, avisá a Gerencia.</div>
+      <button class="btn btn-primary" style="display:inline-block;width:auto;padding:10px 18px" onclick="go('inicio')">Ir a Inicio</button></div>`;
+  }
   save();
 }
 window.render = render;
@@ -1338,17 +1355,16 @@ window.saveMembers=saveMembers;
    VISTA: CHAT
    ===================================================================== */
 function myChats(){
-  return DB.chats.filter(c=> (c.memberIds.includes(SES.userId)||isAdmin()) )
+  return (DB.chats||[]).filter(c=> c && ((c.memberIds||[]).includes(SES.userId)||isAdmin()) )
     .sort((a,b)=>(lastMsgAt(b))-(lastMsgAt(a)));
 }
-function lastMsgAt(c){ return c.msgs.length?c.msgs[c.msgs.length-1].at:c.createdAt||0; }
+function lastMsgAt(c){ const m=c.msgs||[]; return m.length?m[m.length-1].at:(c.createdAt||0); }
 function unreadChats(){
-  // simple: cuenta chats con mensajes de otros que llegaron y no abrí (rastreado por lastSeen)
   let n=0; myChats().forEach(c=>{ if(chatUnread(c)>0) n++; }); return n;
 }
 function chatUnread(c){
   const seen=(DB._seen&&DB._seen[SES.userId]&&DB._seen[SES.userId][c.id])||0;
-  return c.msgs.filter(m=>m.byId!==SES.userId && m.at>seen).length;
+  return (c.msgs||[]).filter(m=>m.byId!==SES.userId && m.at>seen).length;
 }
 function markSeen(c){
   DB._seen=DB._seen||{}; DB._seen[SES.userId]=DB._seen[SES.userId]||{};
