@@ -1437,37 +1437,39 @@ function viewChat(){
   const sel = SES.activeChat || (chats[0]&&chats[0].id);
   SES.activeChat=sel;
   const listHtml = chats.length? chats.map(c=>{
-    const last=c.msgs[c.msgs.length-1];
-    const u=c.type==='group'?null:userById(c.memberIds.find(i=>i!==SES.userId));
+    const msgs=c.msgs||[]; const last=msgs[msgs.length-1];
+    const mem=c.memberIds||[];
+    const u=c.type==='group'?null:userById(mem.find(i=>i!==SES.userId));
     const name=c.type==='group'?c.name:(u?u.name:'Chat');
     const ur=chatUnread(c);
     return `<div class="chat-li ${sel===c.id?'sel':''}" onclick="openChat('${c.id}')">
-      ${c.type==='group'?`<div class="av" style="background:var(--accent)">${c.name[0]||'#'}</div>`:avatarHTML(u)}
+      ${c.type==='group'?`<div class="av" style="background:var(--accent)">${(c.name||'#')[0]}</div>`:avatarHTML(u)}
       <div style="min-width:0"><div class="cn">${esc(name)} ${c.type==='group'?'<span style="font-size:10px;color:var(--text-soft)">grupo</span>':''}</div>
-      <div class="cp">${last?esc((userById(last.byId)?.name.split(' ')[0]||'')+': '+last.text):'Sin mensajes'}</div></div>
+      <div class="cp">${last?esc(((userById(last.byId)?.name||'').split(' ')[0]||'')+': '+(last.text||'')):'Sin mensajes'}</div></div>
       ${ur?`<span class="cbadge">${ur}</span>`:''}</div>`;
   }).join('') : `<div class="empty" style="padding:30px 14px"><div class="em-d">No hay chats. Creá uno.</div></div>`;
 
   const cur = chats.find(c=>c.id===sel);
   let paneHtml;
   if(cur){
-    const adminPeek = !cur.memberIds.includes(SES.userId) && isAdmin();
-    const headName = cur.type==='group'?cur.name:(userById(cur.memberIds.find(i=>i!==SES.userId))?.name||'Chat');
-    const msgsHtml = cur.msgs.map(m=>{
+    const curMem=cur.memberIds||[];
+    const adminPeek = !curMem.includes(SES.userId) && isAdmin();
+    const headName = cur.type==='group'?cur.name:(userById(curMem.find(i=>i!==SES.userId))?.name||'Chat');
+    const visibleMsgs=(cur.msgs||[]).filter(m=> !((m.hiddenFor||[]).includes(SES.userId)));
+    const msgsHtml = visibleMsgs.map(m=>{
       const u=userById(m.byId); const mine=m.byId===SES.userId;
       const media = m.media ? (m.media.type==='video' ? `<video src="${m.media.data}" controls></video>` : `<img src="${m.media.data}">`) : '';
-      const canDel = mine || isAdmin();
-      return `<div class="msg ${mine?'mine':''}">${(!mine&&cur.type==='group')?`<div class="mname">${u?esc(u.name.split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delMsg('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;
+      return `<div class="msg ${mine?'mine':''}">${(!mine&&cur.type==='group')?`<div class="mname">${u?esc(u.name.split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})} <button class="msg-del" title="Eliminar" onclick="delMsgMenu('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button></div></div>`;
     }).join('');
     paneHtml=`<div class="chat-pane" id="chatPane">
       <div class="chat-head">
         <button class="icon-btn mobile-only" style="width:32px;height:32px" onclick="backChatList()">←</button>
-        ${cur.type==='group'?`<div class="av" style="background:var(--accent)">${cur.name[0]}</div>`:avatarHTML(userById(cur.memberIds.find(i=>i!==SES.userId)))}
-        <div><div style="font-weight:700">${esc(headName)}</div><div style="font-size:11px;color:var(--text-soft)">${cur.type==='group'?cur.memberIds.length+' miembros':'Chat directo'}</div></div>
+        ${cur.type==='group'?`<div class="av" style="background:var(--accent)">${(cur.name||'#')[0]}</div>`:avatarHTML(userById(curMem.find(i=>i!==SES.userId)))}
+        <div><div style="font-weight:700">${esc(headName)}</div><div style="font-size:11px;color:var(--text-soft)">${cur.type==='group'?curMem.length+' miembros':'Chat directo'}</div></div>
         ${adminPeek?`<div class="ph-spacer"></div><span class="admin-eye">👁️ viendo como Gerencia</span>`:''}
       </div>
       <div class="chat-msgs" id="chatMsgs">${msgsHtml||'<div style="margin:auto;color:var(--text-soft);font-size:13px">Escribí el primer mensaje 👋</div>'}</div>
-      ${cur.memberIds.includes(SES.userId)?`
+      ${curMem.includes(SES.userId)?`
         ${chatPending?`<div class="chat-pending">${chatPending.type==='video'?`<video src="${chatPending.data}"></video>`:`<img src="${chatPending.data}">`}<span>${chatPending.type==='video'?'Video':'Foto'} listo para enviar</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="chatPending=null;render()">Quitar</button></div>`:''}
         <div class="chat-input">
           <input type="file" id="chatFile" accept="image/*,video/*" style="display:none" onchange="chatAttachPick('${cur.id}')">
@@ -1522,15 +1524,32 @@ function sendMsg(chatId){
   chatPending=null; markSeen(c); save(); render();
 }
 window.sendMsg=sendMsg;
-async function delMsg(chatId,msgId){
+function delMsgMenu(chatId,msgId){
   const c=DB.chats.find(x=>x.id===chatId); if(!c) return;
-  const m=c.msgs.find(x=>x.id===msgId); if(!m) return;
-  if(!(m.byId===SES.userId || isAdmin())) return;
-  if(!await confirmDialog('Se elimina este mensaje para todos.',{title:'¿Eliminar mensaje?',okText:'Sí, eliminar'})) return;
-  c.msgs=c.msgs.filter(x=>x.id!==msgId);
-  audit('chat','eliminó un mensaje',c.sucursalId); save(); render();
+  const m=(c.msgs||[]).find(x=>x.id===msgId); if(!m) return;
+  const forAll = (m.byId===SES.userId || isAdmin());
+  openModal(`<div class="modal-head"><h3>Eliminar mensaje</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  <div class="modal-body">
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-ghost" style="justify-content:flex-start" onclick="delMsg('${chatId}','${msgId}','me')">${svgIcon('trash','icon icon-sm')} Eliminar solo para mí</button>
+      ${forAll?`<button class="btn btn-danger" style="justify-content:flex-start" onclick="delMsg('${chatId}','${msgId}','all')">${svgIcon('trash','icon icon-sm')} Eliminar para todos</button>`:''}
+    </div>
+    <div style="font-size:12px;color:var(--text-soft);margin-top:12px">${forAll?'“Para todos” lo borra del chat de todas las personas, en todos los dispositivos.':'Solo podés borrar “para todos” tus propios mensajes. Este se ocultará únicamente para vos.'}</div>
+  </div>`);
 }
-window.delMsg=delMsg;
+async function delMsg(chatId,msgId,scope){
+  const c=DB.chats.find(x=>x.id===chatId); if(!c) return;
+  const m=(c.msgs||[]).find(x=>x.id===msgId); if(!m) return;
+  if(scope==='all'){
+    if(!(m.byId===SES.userId || isAdmin())) return;
+    c.msgs=(c.msgs||[]).filter(x=>x.id!==msgId);
+    audit('chat','eliminó un mensaje para todos',c.sucursalId);
+  } else {
+    m.hiddenFor=m.hiddenFor||[]; if(!m.hiddenFor.includes(SES.userId)) m.hiddenFor.push(SES.userId);
+  }
+  closeModal(); toast('Mensaje eliminado','ok'); save(); render();
+}
+window.delMsgMenu=delMsgMenu; window.delMsg=delMsg;
 
 function newDMModal(){
   const people=DB.users.filter(u=>u.active && u.id!==SES.userId);
