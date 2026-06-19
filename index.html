@@ -596,6 +596,45 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
   .modal{max-height:90vh}
   .bottom-nav .bn-item{font-size:9.5px}
 }
+/* ===== Mejoras de pop-ups, campos, horas y fechas ===== */
+/* campos más grandes y cómodos */
+.input,.select,.textarea{font-size:15px;padding:12px 13px;border-radius:var(--r-md)}
+.field label{font-size:11.5px;margin-bottom:8px}
+.field{margin-bottom:16px}
+/* selects con flecha propia (más claros) */
+.select{-webkit-appearance:none;appearance:none;background-image:linear-gradient(45deg,transparent 50%,var(--text-soft) 50%),linear-gradient(135deg,var(--text-soft) 50%,transparent 50%);background-position:calc(100% - 18px) 18px,calc(100% - 13px) 18px;background-size:5px 5px,5px 5px;background-repeat:no-repeat;padding-right:34px;cursor:pointer}
+/* modal: animación más viva y centrado cómodo */
+.modal-bg{align-items:center}
+.modal{animation:pop .18s var(--ease-out) both;border-radius:18px}
+.modal-head{padding:16px 20px}
+.modal-head h3{font-size:17px}
+.modal-body{padding:18px 20px}
+.modal-foot{padding:14px 20px;gap:10px}
+.modal-foot .btn{padding:13px;font-size:15px}
+/* selector de hora grande y claro */
+.tp{gap:4px;padding:6px 8px;border-radius:var(--r-md)}
+.tp select{font-size:20px;padding:8px 4px;-webkit-appearance:none;appearance:none;background:none;cursor:pointer}
+.tp-colon{font-size:19px}
+.tp-ampm{margin-left:6px;border-radius:9px}
+.tp-ap{padding:10px 13px;font-size:13px}
+.sh-pickwrap{gap:8px}
+.sh-arrow{font-size:18px;color:var(--text-soft)}
+/* chips y botones con mejor área táctil */
+.chip{padding:9px 14px}
+.ap{padding:8px 12px}
+@media(max-width:780px){
+  /* en celular: pop-ups como hoja desde abajo (mucho más cómodo) */
+  .modal-bg{align-items:flex-end;padding:0}
+  .modal{max-width:100%;width:100%;max-height:92vh;border-radius:20px 20px 0 0;animation:sheetUp .26s var(--ease-out) both}
+  .modal-head{position:sticky;top:0}
+  .modal-foot{position:sticky;bottom:0;padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+  .modal::before{content:"";display:block;width:42px;height:4px;border-radius:3px;background:var(--border);margin:8px auto 0}
+  .input,.select,.textarea{font-size:16px}
+  .tp select{font-size:18px}
+  .row2{grid-template-columns:1fr}
+  .tp-ap{padding:11px 14px}
+}
+@keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 @media(min-width:781px){ .mobile-only{display:none!important} }
 </style>
 </head>
