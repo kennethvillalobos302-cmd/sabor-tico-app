@@ -124,6 +124,7 @@ function seed(){
   const turnos = seedShifts(s1,s2,users);
   const cli = seedClients();
   const resv = seedReservations(cli, s1, admin.id);
+  const souv = seedSouvenirs(s1);
 
   const db = {
     sucursales:[{id:s1,name:'Sabor Tico — Central'},{id:s2,name:'Sabor Tico — Norte'}],
@@ -161,6 +162,8 @@ function seed(){
     audit:[],
     clients:cli,
     reservations:resv,
+    souvenirs:souv,
+    souvSales:[],
   };
   return db;
 
@@ -265,12 +268,22 @@ function seedReservations(cli, suc, adminId){
     R(cli[1],iso(1),'19:30',2,'Aniversario','pendiente'),
   ];
 }
+function seedSouvenirs(suc){
+  const S=(name,stock,minStock,cost,price)=>({id:uid(),name,stock,minStock,cost,price,sucursalId:suc,at:now()});
+  return [
+    S('Taza Sabor Tico',24,6,1800,4500),
+    S('Camiseta logo',15,5,4200,9500),
+    S('Salsa picante de la casa',40,10,1200,3000),
+    S('Llavero artesanal',60,15,500,1500),
+    S('Café en grano 250g',18,6,2800,6000),
+  ];
+}
 
 /* ---------------- Migración de DBs existentes ---------------- */
 function migrate(){
   let ch=false;
   // asegurar que las colecciones base existan (datos sincronizados pueden venir incompletos)
-  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
+  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients','souvenirs','souvSales'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
   const s=DB.sucursales||[]; const s1=s[0]?s[0].id:'all'; const s2=s[1]?s[1].id:s1;
   if(DB.inventory===undefined){ DB.inventory=seedInventory(s1,s2); ch=true; }
   if(DB.invMoves===undefined){ DB.invMoves=[]; ch=true; }
@@ -319,6 +332,9 @@ const canShiftManage = () => hasRole('admin','jefe_salon','rrhh','gerencia_exp')
 const canPersonal = () => hasRole('admin','rrhh');
 const canReservView = () => hasRole('admin','gerencia_exp','gerencia_data','jefe_salon','salonero','bartender','chef');
 const canReservEdit = () => hasRole('admin','gerencia_exp','jefe_salon','salonero');
+const canSouvView = () => hasRole('admin','gerencia_exp','gerencia_data','jefe_salon','salonero');
+const canSouvMoney = () => hasRole('admin','gerencia_exp','gerencia_data'); // ve costo/precio/ganancia y administra
+const canSouvSell = () => hasRole('admin','gerencia_exp','jefe_salon','salonero');
 function sucName(id){ if(id==='all') return 'Todas'; const s=DB.sucursales.find(x=>x.id===id); return s?s.name:'—'; }
 function lowStock(p){ return p.stock<=p.minStock; }
 function invInScope(){ const a=invAreasFor(); return DB.inventory.filter(p=>inScope(p.sucursalId) && a.includes(p.area||'cocina')); }
@@ -418,21 +434,22 @@ const NAV_DEF = {
   chat:     { label:'Mensajes',    ico:'message' },
   reportes: { label:'Reportes',    ico:'trend' },
   reservas: { label:'Reservas',    ico:'reserva' },
+  souvenir: { label:'Souvenirs',   ico:'gift' },
   equipo:   { label:'Equipo',      ico:'users' },
   auditoria:{ label:'Movimientos', ico:'shield' },
 };
 // Menú personalizado por puesto
 const ROLE_NAV = {
-  admin:       ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','personal','proyectos','chat','reportes','equipo','auditoria'],
+  admin:       ['inicio','tareas','pedidos','reservas','souvenir','inventario','recetas','horarios','personal','proyectos','chat','reportes','equipo','auditoria'],
   chef:        ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
   cocinero:    ['inicio','tareas','pedidos','inventario','recetas','horarios','proyectos','chat'],
-  jefe_salon:  ['inicio','tareas','pedidos','reservas','inventario','horarios','proyectos','chat'],
-  salonero:    ['inicio','tareas','pedidos','reservas','horarios','proyectos','chat'],
+  jefe_salon:  ['inicio','tareas','pedidos','reservas','souvenir','inventario','horarios','proyectos','chat'],
+  salonero:    ['inicio','tareas','pedidos','reservas','souvenir','horarios','proyectos','chat'],
   proveeduria: ['inicio','tareas','pedidos','inventario','horarios','proyectos','chat'],
   contabilidad:['inicio','tareas','pedidos','inventario','reportes','proyectos','chat'],
   rrhh:        ['inicio','tareas','pedidos','personal','horarios','proyectos','chat'],
-  gerencia_exp:['inicio','tareas','pedidos','reservas','horarios','personal','proyectos','chat','reportes'],
-  gerencia_data:['inicio','tareas','pedidos','reservas','inventario','proyectos','chat','reportes'],
+  gerencia_exp:['inicio','tareas','pedidos','reservas','souvenir','horarios','personal','proyectos','chat','reportes'],
+  gerencia_data:['inicio','tareas','pedidos','reservas','souvenir','inventario','proyectos','chat','reportes'],
   bartender:   ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
 };
 const ADMIN_GROUP = ['reportes','equipo','auditoria'];
@@ -529,7 +546,7 @@ function render(){
   const v=$('#view');
   const map={ inicio:viewInicio, tareas:viewTareas, pedidos:viewPedidos, inventario:viewInventario,
     recetas:viewRecetas, horarios:viewHorarios, personal:viewPersonal, proyectos:viewProyectos,
-    chat:viewChat, reportes:viewReportes, reservas:viewReservas, equipo:viewEquipo, auditoria:viewAuditoria };
+    chat:viewChat, reportes:viewReportes, reservas:viewReservas, souvenir:viewSouvenir, equipo:viewEquipo, auditoria:viewAuditoria };
   // si el puesto no tiene acceso a la vista actual, volver a inicio
   if(!(ROLE_NAV[me().role]||[]).includes(SES.view)) SES.view='inicio';
   try{
@@ -2042,19 +2059,26 @@ function from12(h,m,ap){ let H=(+h)%12; if(ap==='PM')H+=12; return String(H).pad
 function fmt12(t){ const {h,m,ap}=to12(t); return `${h}:${m} ${ap}`; }
 function timePicker(prefix,value,onchange){
   const {h,m,ap}=to12(value);
-  const hours=[...Array(12)].map((_,i)=>i+1);
-  let mins=['00','15','30','45']; if(!mins.includes(m)) mins=[m,...mins].sort();
   return `<div class="tp">
-    <select class="tp-h" id="${prefix}H" onchange="${onchange}">${hours.map(x=>`<option ${x===h?'selected':''}>${x}</option>`).join('')}</select>
+    <input class="tp-num" id="${prefix}H" type="text" inputmode="numeric" maxlength="2" value="${h}" placeholder="07" autocomplete="off"
+      oninput="tpClean(this);${onchange}" onfocus="this.select()" onblur="tpBlurH(this)">
     <span class="tp-colon">:</span>
-    <select class="tp-m" id="${prefix}M" onchange="${onchange}">${mins.map(x=>`<option ${x===m?'selected':''}>${x}</option>`).join('')}</select>
+    <input class="tp-num" id="${prefix}M" type="text" inputmode="numeric" maxlength="2" value="${m}" placeholder="00" autocomplete="off"
+      oninput="tpClean(this);${onchange}" onfocus="this.select()" onblur="tpBlurM(this)">
     <input type="hidden" id="${prefix}AP" value="${ap}">
     <div class="tp-ampm" id="${prefix}AMPM"><button type="button" class="tp-ap ${ap==='AM'?'on':''}" onclick="setAP('${prefix}','AM');${onchange}">AM</button><button type="button" class="tp-ap ${ap==='PM'?'on':''}" onclick="setAP('${prefix}','PM');${onchange}">PM</button></div>
   </div>`;
 }
+function tpClean(el){ el.value=(el.value||'').replace(/[^0-9]/g,'').slice(0,2); }
+function tpBlurH(el){ let h=parseInt(el.value,10); if(isNaN(h))h=12; if(h<1)h=12; if(h>12)h=12; el.value=String(h); }
+function tpBlurM(el){ let m=parseInt(el.value,10); if(isNaN(m)||m<0)m=0; if(m>59)m=59; el.value=String(m).padStart(2,'0'); }
+window.tpClean=tpClean; window.tpBlurH=tpBlurH; window.tpBlurM=tpBlurM;
 function setAP(prefix,ap){ const inp=$('#'+prefix+'AP'); if(inp)inp.value=ap; const w=$('#'+prefix+'AMPM'); if(w)[...w.children].forEach(b=>b.classList.toggle('on',b.textContent.trim()===ap)); }
 window.setAP=setAP;
-function readTP(prefix){ const h=$('#'+prefix+'H'), m=$('#'+prefix+'M'), ap=$('#'+prefix+'AP'); if(!h)return '00:00'; return from12(h.value,m.value,ap.value); }
+function readTP(prefix){ const he=$('#'+prefix+'H'), me_=$('#'+prefix+'M'), ap=$('#'+prefix+'AP'); if(!he)return '00:00';
+  let h=parseInt(he.value,10); if(isNaN(h)||h<1||h>12)h=12;
+  let m=parseInt(me_.value,10); if(isNaN(m)||m<0)m=0; if(m>59)m=59;
+  return from12(h,String(m).padStart(2,'0'),ap.value); }
 function curTP(prefix,def){ return $('#'+prefix+'H')?readTP(prefix):def; }
 function updateShiftPreview(){
   const el=$('#shPreview'); if(!el||!$('#shStartH')) return;
@@ -2589,6 +2613,209 @@ function setScore(cid,n){ const c=clientById(cid); if(!c) return; c.score=(c.sco
 window.newReservModal=newReservModal; window.reservClientPick=reservClientPick; window.saveReserv=saveReserv; window.reservDetail=reservDetail;
 window.editReservModal=editReservModal; window.setReservStatus=setReservStatus; window.delReserv=delReserv;
 window.newClientModal=newClientModal; window.editClientModal=editClientModal; window.saveClient=saveClient; window.setScore=setScore;
+
+/* =====================================================================
+   SOUVENIRS  (inventario + ventas + ganancia)
+   - Kenneth/Gerencia: ven costo, precio y ganancia; administran productos.
+   - Jefe de salón / saloneros: solo venden y ven cuántos quedan (sin dinero).
+===================================================================== */
+let souvTab='productos';
+const MGR_ROLES=['admin','gerencia_exp','gerencia_data'];
+function souvScoped(){ return (DB.souvenirs||[]).filter(p=>inScope(p.sucursalId)); }
+function souvById(id){ return (DB.souvenirs||[]).find(p=>p.id===id); }
+const souvProfit = p => (+p.price||0)-(+p.cost||0);
+const souvLow = p => (+p.stock||0) <= (+p.minStock||0);
+function souvSalesScoped(){ return (DB.souvSales||[]).filter(v=>inScope(v.sucursalId)); }
+
+function viewSouvenir(){
+  if(!canSouvView()) return emptyState('gift','Sin acceso','Esta sección no está disponible para tu puesto.');
+  return canSouvMoney() ? souvManagerView() : souvSellerView();
+}
+
+/* ---- Vista vendedores (jefe de salón / saloneros): SIN dinero ---- */
+function souvSellerView(){
+  const list=souvScoped().slice().sort((a,b)=>a.name.localeCompare(b.name));
+  let html=`<div class="page-head"><div><div class="page-title">Souvenirs</div><div class="page-sub">Tocá un producto para vender · solo se muestra cuántos quedan</div></div></div>`;
+  if(!list.length) return html+emptyState('gift','Sin productos','Todavía no hay souvenirs cargados.');
+  html+=`<div class="souv-grid">`+list.map(p=>{
+    const out=(+p.stock||0)<=0;
+    return `<div class="souv-card ${out?'out':''}">
+      <div class="souv-ic">${svgIcon('gift','icon')}</div>
+      <div class="souv-name">${esc(p.name)}</div>
+      <div class="souv-stock ${souvLow(p)&&!out?'low':''} ${out?'zero':''}">${out?'Agotado':'Quedan '+(+p.stock||0)}</div>
+      <button class="btn btn-primary souv-sell-btn" ${out?'disabled':''} onclick="souvSellModal('${p.id}')">${svgIcon('plus','icon icon-sm')} Vender</button>
+    </div>`;
+  }).join('')+`</div>`;
+  return html;
+}
+
+/* ---- Vista Kenneth / Gerencia: inventario, precios, ganancia, ventas ---- */
+function souvManagerView(){
+  const guide=sectionGuide('souvenir','¿Cómo funcionan los Souvenirs?',`
+    Acá llevás el <b>inventario y los precios</b> de los souvenirs.
+    <ul style="margin:8px 0 0 18px">
+      <li>Vos ponés el <b>costo</b> y el <b>precio de venta</b>; el sistema calcula tu <b>ganancia</b>.</li>
+      <li>Cuando un salonero vende, se <b>descuenta del inventario</b> y te llega el aviso de la venta.</li>
+      <li>Los saloneros y el jefe de salón <b>no ven dinero</b>, solo cuántos quedan.</li>
+    </ul>`);
+  let html=`<div class="page-head"><div><div class="page-title">Souvenirs</div><div class="page-sub">Inventario, precios y ventas</div></div>
+    <div class="ph-spacer"></div><button class="btn btn-primary" style="flex:0 0 auto" onclick="souvNewModal()">${svgIcon('plus','icon icon-sm')} Nuevo producto</button></div>`;
+  html+=guide;
+  html+=`<div class="hor-modes"><button class="chip ${souvTab==='productos'?'on':''}" onclick="souvTab='productos';render()">Productos</button><button class="chip ${souvTab==='ventas'?'on':''}" onclick="souvTab='ventas';render()">Ventas</button></div>`;
+  html+= souvTab==='ventas' ? souvVentasView() : souvProductosView();
+  return html;
+}
+
+function souvProductosView(){
+  const list=souvScoped().slice().sort((a,b)=>a.name.localeCompare(b.name));
+  const stockTot=list.reduce((s,p)=>s+(+p.stock||0),0);
+  const valCost=list.reduce((s,p)=>s+(+p.stock||0)*(+p.cost||0),0);
+  const gananciaPot=list.reduce((s,p)=>s+(+p.stock||0)*souvProfit(p),0);
+  const lowN=list.filter(souvLow).length;
+  let html=`<div class="kpi-row">
+    <div class="kpi"><div class="label">Productos</div><div class="value">${list.length}</div><div class="sub">en catálogo</div></div>
+    <div class="kpi"><div class="label">Unidades</div><div class="value">${stockTot}</div><div class="sub">en inventario</div></div>
+    <div class="kpi"><div class="label">Invertido</div><div class="value">${money(valCost)}</div><div class="sub">costo del stock</div></div>
+    <div class="kpi ${lowN?'warn':''}"><div class="label">Ganancia potencial</div><div class="value">${money(gananciaPot)}</div><div class="sub">${lowN?lowN+' por reabastecer':'si se vende todo'}</div></div>
+  </div>`;
+  if(!list.length) return html+emptyState('gift','Sin productos','Agregá tu primer souvenir con su costo y precio.','Nuevo producto','souvNewModal()');
+  html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>
+    <th>Producto</th><th>Quedan</th><th>Mínimo</th><th>Costo</th><th>Precio</th><th>Ganancia c/u</th><th></th></tr></thead><tbody>`;
+  html+=list.map(p=>`<tr>
+    <td style="font-weight:600">${esc(p.name)}${souvLow(p)?` <span class="pill atrasada" style="margin-left:4px">Bajo</span>`:''}</td>
+    <td><b>${+p.stock||0}</b></td>
+    <td>${+p.minStock||0}</td>
+    <td>${money(p.cost)}</td>
+    <td>${money(p.price)}</td>
+    <td style="color:var(--ok,#3a9d6e);font-weight:700">${money(souvProfit(p))}</td>
+    <td style="text-align:right;white-space:nowrap">
+      <button class="btn btn-ghost" style="padding:6px 9px" onclick="souvSellModal('${p.id}')">Vender</button>
+      <button class="btn btn-ghost" style="padding:6px 9px" onclick="souvStockModal('${p.id}')">Stock</button>
+      <button class="btn btn-ghost" style="padding:6px 9px" onclick="souvEditModal('${p.id}')">${svgIcon('edit','icon icon-sm')}</button>
+    </td></tr>`).join('');
+  html+=`</tbody></table></div></div>`;
+  return html;
+}
+
+function souvVentasView(){
+  const list=souvSalesScoped().slice().sort((a,b)=>b.at-a.at);
+  const ingresos=list.reduce((s,v)=>s+(+v.price||0)*(+v.qty||0),0);
+  const costos=list.reduce((s,v)=>s+(+v.cost||0)*(+v.qty||0),0);
+  const ganancia=ingresos-costos;
+  const unidades=list.reduce((s,v)=>s+(+v.qty||0),0);
+  let html=`<div class="kpi-row">
+    <div class="kpi"><div class="label">Ventas</div><div class="value">${list.length}</div><div class="sub">${unidades} unidades</div></div>
+    <div class="kpi"><div class="label">Ingresos</div><div class="value">${money(ingresos)}</div><div class="sub">total vendido</div></div>
+    <div class="kpi"><div class="label">Costo</div><div class="value">${money(costos)}</div><div class="sub">de lo vendido</div></div>
+    <div class="kpi ok"><div class="label">Ganancia</div><div class="value">${money(ganancia)}</div><div class="sub">utilidad neta</div></div>
+  </div>`;
+  if(!list.length) return html+emptyState('gift','Sin ventas todavía','Cuando se venda un souvenir, la venta y tu ganancia aparecen acá.');
+  html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>
+    <th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Total</th><th>Ganancia</th><th>Vendió</th></tr></thead><tbody>`;
+  html+=list.map(v=>{const u=userById(v.byId); const tot=(+v.price||0)*(+v.qty||0); const gan=((+v.price||0)-(+v.cost||0))*(+v.qty||0);
+    return `<tr>
+      <td>${fmtDateTime(v.at)}</td>
+      <td style="font-weight:600">${esc(v.name)}</td>
+      <td>${+v.qty||0}</td>
+      <td>${money(v.price)}</td>
+      <td><b>${money(tot)}</b></td>
+      <td style="color:var(--ok,#3a9d6e);font-weight:700">${money(gan)}</td>
+      <td>${esc(u?u.name:'—')}</td>
+    </tr>`;}).join('');
+  html+=`</tbody></table></div></div>`;
+  return html;
+}
+
+/* ---- Vender ---- */
+function souvSellModal(id){
+  const p=souvById(id); if(!p) return;
+  if((+p.stock||0)<=0){ toast('No quedan unidades de este producto','err'); return; }
+  const money_=canSouvMoney();
+  openModal(`<div class="modal-head"><h3>Vender · ${esc(p.name)}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="souv-sell-stock">Quedan <b>${+p.stock||0}</b> en inventario</div>
+      <div class="field"><label>¿Cuántos vendés?</label><input class="input" id="svQty" type="number" min="1" max="${+p.stock||0}" value="1" autofocus></div>
+      ${money_?`<div class="souv-sell-info">Precio ${money(p.price)} c/u · ganás <b style="color:var(--ok,#3a9d6e)">${money(souvProfit(p))}</b> por unidad</div>`:''}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="souvSell('${p.id}')">Confirmar venta</button></div>`);
+}
+function souvSell(id){
+  const p=souvById(id); if(!p) return;
+  let qty=parseInt($('#svQty').value,10); if(isNaN(qty)||qty<1)qty=1;
+  if(qty>(+p.stock||0)){ toast('No hay suficientes unidades','err'); return; }
+  p.stock=(+p.stock||0)-qty;
+  const sale={id:uid(),productId:p.id,name:p.name,qty,price:+p.price||0,cost:+p.cost||0,byId:SES.userId,sucursalId:p.sucursalId,at:now()};
+  DB.souvSales.push(sale);
+  audit('souvenir',`vendió ${qty}× ${p.name}`,p.sucursalId);
+  // aviso a Kenneth / gerencia con dinero y ganancia
+  const ingreso=sale.price*qty, ganancia=(sale.price-sale.cost)*qty;
+  const seller=me()?me().name:'';
+  notify(DB.users.filter(u=>MGR_ROLES.includes(u.role)).map(u=>u.id),
+    `Venta souvenir: ${qty}× ${p.name} · ${money(ingreso)} (ganancia ${money(ganancia)})${seller?' · '+seller:''}`, 'gift', {view:'souvenir'});
+  // aviso de inventario bajo
+  if(souvLow(p)){
+    notify(DB.users.filter(u=>MGR_ROLES.includes(u.role)).map(u=>u.id),
+      `Inventario bajo de souvenir: ${p.name} · quedan ${p.stock}`, 'gift', {view:'souvenir'});
+  }
+  closeModal();
+  toast(canSouvMoney()?`Venta registrada · ganancia ${money(ganancia)}`:`Vendiste ${qty} · quedan ${p.stock}`,'ok');
+  save(); render();
+}
+
+/* ---- Alta / edición de producto (solo gerencia) ---- */
+function souvNewModal(){ if(!canSouvMoney())return; openModal(souvForm('Nuevo souvenir',null)); }
+function souvEditModal(id){ if(!canSouvMoney())return; openModal(souvForm('Editar souvenir',souvById(id))); }
+function souvForm(title,p){
+  return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  <div class="modal-body">
+    <div class="field"><label>Nombre del producto</label><input class="input" id="svName" value="${p?esc(p.name):''}" placeholder="Taza, camiseta, salsa…" autofocus></div>
+    <div class="row2">
+      <div class="field"><label>Cantidad en inventario</label><input class="input" id="svStock" type="number" min="0" value="${p?(+p.stock||0):0}"></div>
+      <div class="field"><label>Avisarme cuando queden</label><input class="input" id="svMin" type="number" min="0" value="${p?(+p.minStock||0):5}"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Costo por unidad (₡)</label><input class="input" id="svCost" type="number" min="0" step="any" value="${p?(+p.cost||0):0}"></div>
+      <div class="field"><label>Precio de venta (₡)</label><input class="input" id="svPrice" type="number" min="0" step="any" value="${p?(+p.price||0):0}"></div>
+    </div>
+    <div class="souv-sell-info" id="svGanPrev">Ganancia por unidad: <b style="color:var(--ok,#3a9d6e)">${money(p?souvProfit(p):0)}</b></div>
+    <div class="field"><label>Sucursal</label><select class="select" id="svSuc">${sucOptionsFor()}</select></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveSouv('${p?p.id:''}')">Guardar</button></div>`;
+}
+function saveSouv(id){
+  const name=$('#svName').value.trim(); if(!name){ toast('Poné el nombre del producto','err'); return; }
+  const data={ name, stock:Math.max(0,+$('#svStock').value||0), minStock:Math.max(0,+$('#svMin').value||0),
+    cost:Math.max(0,+$('#svCost').value||0), price:Math.max(0,+$('#svPrice').value||0), sucursalId:$('#svSuc').value };
+  if(id){ const p=souvById(id); Object.assign(p,data); audit('souvenir',`editó souvenir ${name}`,data.sucursalId); }
+  else { DB.souvenirs.push({id:uid(),...data,at:now()}); audit('souvenir',`agregó souvenir ${name}`,data.sucursalId); }
+  closeModal(); toast('Producto guardado','ok'); save(); render();
+}
+function souvStockModal(id){
+  if(!canSouvMoney())return; const p=souvById(id); if(!p) return;
+  openModal(`<div class="modal-head"><h3>Reabastecer · ${esc(p.name)}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="souv-sell-stock">Inventario actual: <b>${+p.stock||0}</b></div>
+      <div class="field"><label>Agregar unidades</label><input class="input" id="svAdd" type="number" value="0" autofocus></div>
+      <div style="font-size:12px;color:var(--text-soft)">Poné un número negativo para corregir hacia abajo.</div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="souvAddStock('${p.id}')">Guardar</button></div>`);
+}
+function souvAddStock(id){
+  const p=souvById(id); if(!p) return;
+  const add=parseInt($('#svAdd').value,10)||0;
+  p.stock=Math.max(0,(+p.stock||0)+add);
+  audit('souvenir',`ajustó inventario de ${p.name} (${add>=0?'+':''}${add}) → ${p.stock}`,p.sucursalId);
+  closeModal(); toast('Inventario actualizado','ok'); save(); render();
+}
+async function delSouv(id){
+  if(!canSouvMoney())return; const p=souvById(id); if(!p) return;
+  if(!await confirmDialog('Se elimina este souvenir del catálogo (las ventas ya registradas se conservan).',{title:'¿Eliminar producto?',okText:'Sí, eliminar'})) return;
+  DB.souvenirs=DB.souvenirs.filter(x=>x.id!==id); audit('souvenir',`eliminó souvenir ${p.name}`,p.sucursalId);
+  closeModal(); toast('Producto eliminado','ok'); save(); render();
+}
+window.viewSouvenir=viewSouvenir; window.souvSellModal=souvSellModal; window.souvSell=souvSell;
+window.souvNewModal=souvNewModal; window.souvEditModal=souvEditModal; window.saveSouv=saveSouv;
+window.souvStockModal=souvStockModal; window.souvAddStock=souvAddStock; window.delSouv=delSouv;
 
 /* =====================================================================
    COMPONENTES COMUNES

@@ -390,6 +390,9 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 /* selector de hora AM/PM */
 .tp{display:inline-flex;align-items:center;gap:3px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);padding:5px 7px}
 .tp select{background:transparent;border:none;color:var(--text);font-weight:800;font-size:19px;outline:none;cursor:pointer;padding:7px 2px;-webkit-appearance:none;appearance:none;text-align:center}
+.tp-num{width:2.3ch;background:transparent;border:none;color:var(--text);font-weight:800;font-size:22px;outline:none;text-align:center;padding:7px 2px;caret-color:var(--accent)}
+.tp-num::placeholder{color:var(--text-soft);opacity:.45}
+.tp:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px rgba(184,58,82,.18)}
 .tp .tp-colon{font-weight:800;color:var(--text-soft);font-size:18px}
 .tp-ampm{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-left:5px}
 .tp-ap{padding:9px 11px;font-size:12px;font-weight:700;color:var(--text-soft);background:transparent;border:none;cursor:pointer;transition:background var(--t-fast),color var(--t-fast)}
@@ -532,6 +535,23 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .rv-table th,.rv-table td{white-space:nowrap}
 .rv-table tbody tr:hover td{background:var(--bg-soft)}
 
+/* ---------- SOUVENIRS ---------- */
+.kpi.ok .value{color:var(--ok,#3a9d6e)}
+.souv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin-top:4px}
+.souv-card{background:var(--bg-card,var(--bg-soft));border:1px solid var(--border);border-radius:var(--r-lg,16px);padding:18px 16px 16px;display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;transition:transform var(--t-fast),border-color var(--t-fast),box-shadow var(--t-fast)}
+.souv-card:hover{transform:translateY(-2px);border-color:var(--accent);box-shadow:var(--shadow-md,0 6px 20px rgba(0,0,0,.12))}
+.souv-card.out{opacity:.55}
+.souv-ic{width:46px;height:46px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:var(--grad-accent,var(--accent));color:#fff}
+.souv-ic .icon{width:24px;height:24px}
+.souv-name{font-weight:700;font-size:15px;line-height:1.2}
+.souv-stock{font-size:13px;font-weight:600;color:var(--text-soft)}
+.souv-stock.low{color:var(--warn)}
+.souv-stock.zero{color:var(--text-dim)}
+.souv-sell-btn{width:100%;margin-top:4px}
+.souv-sell-stock{font-size:15px;margin-bottom:12px;color:var(--text)}
+.souv-sell-info{font-size:13px;color:var(--text-soft);margin-top:10px;padding:10px 12px;background:var(--bg-soft);border-radius:var(--r-md,12px)}
+@media(max-width:640px){ .souv-grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:11px} }
+
 /* ---------- TOAST ---------- */
 .toast-wrap{position:fixed;top:18px;right:18px;z-index:90;display:flex;flex-direction:column;gap:9px}
 .toast{background:var(--bg-card);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:var(--r-md);padding:13px 17px;box-shadow:var(--e3);font-size:13px;font-weight:550;transform:translateX(120%);opacity:0;transition:transform var(--t-med) var(--ease-out),opacity var(--t-fast);max-width:330px}
@@ -614,6 +634,7 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 /* selector de hora grande y claro */
 .tp{gap:4px;padding:6px 8px;border-radius:var(--r-md)}
 .tp select{font-size:20px;padding:8px 4px;-webkit-appearance:none;appearance:none;background:none;cursor:pointer}
+.tp-num{font-size:24px;padding:9px 4px;width:2.4ch}
 .tp-colon{font-size:19px}
 .tp-ampm{margin-left:6px;border-radius:9px}
 .tp-ap{padding:10px 13px;font-size:13px}
@@ -631,6 +652,7 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
   .modal::before{content:"";display:block;width:42px;height:4px;border-radius:3px;background:var(--border);margin:8px auto 0}
   .input,.select,.textarea{font-size:16px}
   .tp select{font-size:18px}
+  .tp-num{font-size:22px}
   .row2{grid-template-columns:1fr}
   .tp-ap{padding:11px 14px}
 }
@@ -678,6 +700,7 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 <g id="i-reserva"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18"/><path d="M12 8h5M12 12h5M12 16h3"/></g>
 <g id="i-star"><path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8 6.8 19.5l1-5.8L3.6 9.6l5.8-.8z"/></g>
 <g id="i-phone"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/></g>
+<g id="i-gift"><path d="M20 12v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8"/><rect x="2.5" y="7.5" width="19" height="4.5" rx="1"/><path d="M12 7.5V21"/><path d="M12 7.5C9.5 7.5 7.5 4 9.5 4s2.5 3.5 2.5 3.5zM12 7.5c2.5 0 4.5-3.5 2.5-3.5S12 7.5 12 7.5z"/></g>
 <g id="i-theme"><circle cx="12" cy="12" r="5"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></g>
 <g id="i-save"><path d="M5 3h12l4 4v14H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></g>
 <g id="i-logout"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></g>
