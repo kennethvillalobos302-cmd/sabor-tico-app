@@ -122,6 +122,8 @@ function seed(){
   const inv = seedInventory(s1,s2);
   const recetas = seedRecipes(inv, chef.id);
   const turnos = seedShifts(s1,s2,users);
+  const cli = seedClients();
+  const resv = seedReservations(cli, s1, admin.id);
 
   const db = {
     sucursales:[{id:s1,name:'Sabor Tico — Central'},{id:s2,name:'Sabor Tico — Norte'}],
@@ -157,6 +159,8 @@ function seed(){
     ],
     notifs:[],
     audit:[],
+    clients:cli,
+    reservations:resv,
   };
   return db;
 
@@ -240,12 +244,33 @@ function seedShifts(s1,s2,users){
     S(byRole('salonero').id,s1,iso(1),'12:00','21:00','',[]),
   ];
 }
+function seedClients(){
+  const C=(name,type,phone,visits,score)=>({id:uid(),name,type,phone,visits,score,notes:'',at:now()});
+  return [
+    C('María Fernández','cliente','8888-1212',4,5),
+    C('Carlos Jiménez','cliente','8777-3434',1,4),
+    C('Agencia Tours CR','agencia','2222-5050',7,5),
+    C('Familia Soto','cliente','8654-9090',0,0),
+  ];
+}
+function seedReservations(cli, suc, adminId){
+  const t=new Date(); const iso=d=>{const x=new Date(t);x.setDate(t.getDate()+d);return x.toISOString().slice(0,10);};
+  const reg=new Date(t.getTime()-3600e3*20);
+  const R=(c,date,time,people,occ,status)=>({id:uid(),clientId:c.id,clientName:c.name,type:c.type,phone:c.phone,people,occasion:occ,
+    resDate:date,resTime:time,regDate:reg.toISOString().slice(0,10),regTime:reg.toTimeString().slice(0,5),
+    status,counted:status==='llego',byId:adminId,sucursalId:suc,at:now()});
+  return [
+    R(cli[0],iso(0),'13:00',4,'Cumpleaños','confirmada'),
+    R(cli[2],iso(0),'20:00',12,'Tour grupal','pendiente'),
+    R(cli[1],iso(1),'19:30',2,'Aniversario','pendiente'),
+  ];
+}
 
 /* ---------------- Migración de DBs existentes ---------------- */
 function migrate(){
   let ch=false;
   // asegurar que las colecciones base existan (datos sincronizados pueden venir incompletos)
-  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
+  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
   const s=DB.sucursales||[]; const s1=s[0]?s[0].id:'all'; const s2=s[1]?s[1].id:s1;
   if(DB.inventory===undefined){ DB.inventory=seedInventory(s1,s2); ch=true; }
   if(DB.invMoves===undefined){ DB.invMoves=[]; ch=true; }
@@ -292,6 +317,8 @@ const canRecipeEdit = () => hasRole('admin','chef');
 const canRecipeView = () => hasRole('admin','chef','cocinero','bartender');
 const canShiftManage = () => hasRole('admin','jefe_salon','rrhh','gerencia_exp');
 const canPersonal = () => hasRole('admin','rrhh');
+const canReservView = () => hasRole('admin','gerencia_exp','gerencia_data','jefe_salon','salonero','bartender','chef');
+const canReservEdit = () => hasRole('admin','gerencia_exp','jefe_salon','salonero');
 function sucName(id){ if(id==='all') return 'Todas'; const s=DB.sucursales.find(x=>x.id===id); return s?s.name:'—'; }
 function lowStock(p){ return p.stock<=p.minStock; }
 function invInScope(){ const a=invAreasFor(); return DB.inventory.filter(p=>inScope(p.sucursalId) && a.includes(p.area||'cocina')); }
@@ -390,22 +417,23 @@ const NAV_DEF = {
   proyectos:{ label:'Proyectos',   ico:'clipboard' },
   chat:     { label:'Mensajes',    ico:'message' },
   reportes: { label:'Reportes',    ico:'trend' },
+  reservas: { label:'Reservas',    ico:'reserva' },
   equipo:   { label:'Equipo',      ico:'users' },
   auditoria:{ label:'Movimientos', ico:'shield' },
 };
 // Menú personalizado por puesto
 const ROLE_NAV = {
-  admin:       ['inicio','tareas','pedidos','inventario','recetas','horarios','personal','proyectos','chat','reportes','equipo','auditoria'],
-  chef:        ['inicio','tareas','pedidos','inventario','recetas','horarios','proyectos','chat'],
+  admin:       ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','personal','proyectos','chat','reportes','equipo','auditoria'],
+  chef:        ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
   cocinero:    ['inicio','tareas','pedidos','inventario','recetas','horarios','proyectos','chat'],
-  jefe_salon:  ['inicio','tareas','pedidos','inventario','horarios','proyectos','chat'],
-  salonero:    ['inicio','tareas','pedidos','horarios','proyectos','chat'],
+  jefe_salon:  ['inicio','tareas','pedidos','reservas','inventario','horarios','proyectos','chat'],
+  salonero:    ['inicio','tareas','pedidos','reservas','horarios','proyectos','chat'],
   proveeduria: ['inicio','tareas','pedidos','inventario','horarios','proyectos','chat'],
   contabilidad:['inicio','tareas','pedidos','inventario','reportes','proyectos','chat'],
   rrhh:        ['inicio','tareas','pedidos','personal','horarios','proyectos','chat'],
-  gerencia_exp:['inicio','tareas','pedidos','horarios','personal','proyectos','chat','reportes'],
-  gerencia_data:['inicio','tareas','pedidos','inventario','proyectos','chat','reportes'],
-  bartender:   ['inicio','tareas','pedidos','inventario','recetas','horarios','proyectos','chat'],
+  gerencia_exp:['inicio','tareas','pedidos','reservas','horarios','personal','proyectos','chat','reportes'],
+  gerencia_data:['inicio','tareas','pedidos','reservas','inventario','proyectos','chat','reportes'],
+  bartender:   ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
 };
 const ADMIN_GROUP = ['reportes','equipo','auditoria'];
 function navItems(){
@@ -501,7 +529,7 @@ function render(){
   const v=$('#view');
   const map={ inicio:viewInicio, tareas:viewTareas, pedidos:viewPedidos, inventario:viewInventario,
     recetas:viewRecetas, horarios:viewHorarios, personal:viewPersonal, proyectos:viewProyectos,
-    chat:viewChat, reportes:viewReportes, equipo:viewEquipo, auditoria:viewAuditoria };
+    chat:viewChat, reportes:viewReportes, reservas:viewReservas, equipo:viewEquipo, auditoria:viewAuditoria };
   // si el puesto no tiene acceso a la vista actual, volver a inicio
   if(!(ROLE_NAV[me().role]||[]).includes(SES.view)) SES.view='inicio';
   try{
@@ -546,6 +574,7 @@ function viewInicio(){
     <div class="page-sub">${ROLES[u.role].label}${isAdmin()?' · viendo '+sucName(SES.sucFilter):' · '+sucName(u.sucursalId)}</div></div></div>`;
 
   html += todayShiftCard();
+  html += reservTodayCard();
 
   html += `<div class="kpi-row">
     <div class="kpi ${pend?'':'good'}"><div class="label">Mis tareas</div><div class="value">${pend}</div><div class="sub">pendientes o en proceso</div></div>
@@ -2334,6 +2363,232 @@ function viewReportes(){
   }
   return html;
 }
+
+/* =====================================================================
+   VISTA: RESERVACIONES (clientes / agencias + tabla por día)
+   ===================================================================== */
+const RESERV_EST={pendiente:{l:'Pendiente',c:'pendiente'},confirmada:{l:'Confirmada',c:'proceso'},llego:{l:'Llegó',c:'hecha'},noshow:{l:'No llegó',c:'atrasada'},cancelada:{l:'Cancelada',c:'rechazada'}};
+let resvTab='lista', resvFilter='proximas', resvEstado='todos', resvSearch='';
+function reservScoped(){ return (DB.reservations||[]).filter(r=>inScope(r.sucursalId)); }
+function clientById(id){ return (DB.clients||[]).find(c=>c.id===id); }
+function starsHTML(score,cid){
+  let s=''; for(let i=1;i<=5;i++){ s+=`<button class="star ${i<=(score||0)?'on':''}" ${cid?`onclick="setScore('${cid}',${i})"`:'disabled'} title="${i} de 5">${svgIcon('star','icon icon-sm')}</button>`; }
+  return `<span class="stars">${s}</span>`;
+}
+function reservTodayCard(){
+  if(!canReservView()) return '';
+  const today=new Date().toISOString().slice(0,10);
+  const rs=reservScoped().filter(r=>r.resDate===today && r.status!=='cancelada').sort((a,b)=>(a.resTime||'').localeCompare(b.resTime||''));
+  const pers=rs.reduce((s,r)=>s+(+r.people||0),0);
+  if(!rs.length) return `<div class="card sched-card free"><span class="av" style="background:var(--bg-soft)">${svgIcon('reserva')}</span><div style="flex:1"><div style="font-weight:700">Sin reservas para hoy</div><div class="page-sub" style="margin:0">Cuando registres una, aparece acá.</div></div><button class="btn btn-ghost" style="flex:0 0 auto" onclick="go('reservas')">Ver</button></div>`;
+  return `<div class="card sched-card"><span class="av" style="background:var(--grad-accent)">${svgIcon('reserva')}</span>
+    <div style="flex:1"><div style="font-weight:700">${rs.length} reserva(s) hoy · ${pers} personas</div>
+    <div class="page-sub" style="margin:2px 0 0">Próxima: ${esc(rs[0].clientName||'')} a las ${fmt12(rs[0].resTime)} (${rs[0].people}p)</div></div>
+    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="go('reservas')">Ver todas</button></div>`;
+}
+function viewReservas(){
+  const editor=canReservEdit();
+  const guide=sectionGuide('reservas','¿Cómo funcionan las Reservaciones?',`
+    Acá se anotan las <b>reservas</b> y se lleva el registro de <b>clientes y agencias</b>.
+    <ul style="margin:8px 0 0 18px">
+      <li>Cada reserva guarda fecha, hora, personas, ocasión, contacto y estado.</li>
+      <li>Por cada cliente sabés <b>cuántas veces vino</b> y su <b>puntaje</b>.</li>
+      <li>La tabla junta todas las reservas de todos los días para acceso rápido.</li>
+    </ul>`);
+  let html=`<div class="page-head"><div><div class="page-title">Reservaciones</div><div class="page-sub">Reservas, clientes y agencias</div></div>
+    <div class="ph-spacer"></div>${editor?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="newReservModal()">${svgIcon('plus','icon icon-sm')} Nueva reservación</button>`:''}</div>`;
+  html+=guide;
+  html+=`<div class="hor-modes"><button class="chip ${resvTab==='lista'?'on':''}" onclick="resvTab='lista';render()">Reservaciones</button><button class="chip ${resvTab==='clientes'?'on':''}" onclick="resvTab='clientes';render()">Clientes y agencias</button></div>`;
+  html+= resvTab==='clientes' ? reservClientes(editor) : reservLista(editor);
+  return html;
+}
+function reservLista(editor){
+  const today=new Date().toISOString().slice(0,10);
+  let list=reservScoped();
+  if(resvFilter==='hoy') list=list.filter(r=>r.resDate===today);
+  else if(resvFilter==='proximas') list=list.filter(r=>r.resDate>=today);
+  else if(resvFilter==='pasadas') list=list.filter(r=>r.resDate<today);
+  if(resvEstado!=='todos') list=list.filter(r=>r.status===resvEstado);
+  if(resvSearch){ const q=resvSearch.toLowerCase(); list=list.filter(r=>(r.clientName||'').toLowerCase().includes(q)||(r.phone||'').includes(resvSearch)); }
+  list.sort((a,b)=> (a.resDate+a.resTime).localeCompare(b.resDate+b.resTime));
+  const hoyN=reservScoped().filter(r=>r.resDate===today && r.status!=='cancelada').length;
+  const proxN=reservScoped().filter(r=>r.resDate>today && (r.status==='pendiente'||r.status==='confirmada')).length;
+  const persHoy=reservScoped().filter(r=>r.resDate===today && r.status!=='cancelada').reduce((s,r)=>s+(+r.people||0),0);
+  let html=`<div class="kpi-row">
+    <div class="kpi"><div class="label">Hoy</div><div class="value">${hoyN}</div><div class="sub">reservas de hoy</div></div>
+    <div class="kpi"><div class="label">Personas hoy</div><div class="value">${persHoy}</div><div class="sub">total esperado</div></div>
+    <div class="kpi ${proxN?'warn':''}"><div class="label">Próximas</div><div class="value">${proxN}</div><div class="sub">por venir</div></div>
+    <div class="kpi"><div class="label">Clientes</div><div class="value">${(DB.clients||[]).length}</div><div class="sub">en la base</div></div>
+  </div>`;
+  html+=`<div class="toolbar">
+    <input class="input search" placeholder="Buscar cliente o teléfono…" value="${esc(resvSearch)}" oninput="resvSearch=this.value;clearTimeout(window._rs);window._rs=setTimeout(render,250)">
+    ${[['hoy','Hoy'],['proximas','Próximas'],['pasadas','Pasadas'],['todas','Todas']].map(([k,l])=>`<button class="chip ${resvFilter===k?'on':''}" onclick="resvFilter='${k}';render()">${l}</button>`).join('')}
+    <select class="select" style="max-width:170px" onchange="resvEstado=this.value;render()"><option value="todos" ${resvEstado==='todos'?'selected':''}>Todos los estados</option>${Object.entries(RESERV_EST).map(([k,v])=>`<option value="${k}" ${resvEstado===k?'selected':''}>${v.l}</option>`).join('')}</select>
+  </div>`;
+  if(!list.length) return html+emptyState('','Sin reservaciones','Cuando registres una reserva aparece acá, ordenada por fecha y hora.', editor?'Nueva reservación':'', editor?'newReservModal()':'');
+  html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl rv-table"><thead><tr>
+    <th>Fecha</th><th>Hora</th><th>Cliente</th><th>Personas</th><th>Ocasión</th><th>Teléfono</th><th>Fecha registro</th><th>Hora registro</th><th>Estado</th><th></th></tr></thead><tbody>`;
+  html+=list.map(r=>{const c=clientById(r.clientId); const est=RESERV_EST[r.status]||RESERV_EST.pendiente; const isToday=r.resDate===today;
+    return `<tr onclick="reservDetail('${r.id}')" style="cursor:pointer">
+      <td>${isToday?'<b style="color:var(--accent)">Hoy</b>':fmtResDate(r.resDate)}</td>
+      <td>${fmt12(r.resTime)}</td>
+      <td><div style="font-weight:600">${esc(r.clientName||'—')}</div><div style="font-size:11px;color:var(--text-soft)">${r.type==='agencia'?'Agencia':'Cliente'}${c?' · vino '+(c.visits||0)+'x':''}</div></td>
+      <td>${r.people||'—'}</td>
+      <td>${esc(r.occasion||'—')}</td>
+      <td>${esc(r.phone||'—')}</td>
+      <td>${fmtResDate(r.regDate)}</td>
+      <td>${fmt12(r.regTime)}</td>
+      <td><span class="pill ${est.c}">${est.l}</span></td>
+      <td style="text-align:right">${svgIcon('chevron','icon icon-sm')}</td>
+    </tr>`;}).join('');
+  html+=`</tbody></table></div></div>`;
+  return html;
+}
+function fmtResDate(d){ if(!d) return '—'; const x=new Date(d+'T00:00'); return x.toLocaleDateString('es-CR',{weekday:'short',day:'2-digit',month:'short'}); }
+function reservClientes(editor){
+  const cls=[...(DB.clients||[])].sort((a,b)=>(b.visits||0)-(a.visits||0)||a.name.localeCompare(b.name));
+  let html=`<div class="toolbar"><div class="ph-spacer"></div>${canReservEdit()?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="newClientModal()">${svgIcon('plus','icon icon-sm')} Nuevo cliente / agencia</button>`:''}</div>`;
+  if(!cls.length) return html+emptyState('','Sin clientes','Los clientes y agencias se agregan al crear reservas, o desde acá.', canReservEdit()?'Nuevo cliente / agencia':'', canReservEdit()?'newClientModal()':'');
+  html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nombre</th><th>Tipo</th><th>Teléfono</th><th>Veces que vino</th><th>Puntaje</th>${canReservEdit()?'<th></th>':''}</tr></thead><tbody>`;
+  html+=cls.map(c=>`<tr>
+    <td style="font-weight:600">${esc(c.name)}</td>
+    <td><span class="role-badge" style="background:var(--bg-soft);color:var(--text-soft)">${c.type==='agencia'?'Agencia':'Cliente'}</span></td>
+    <td>${esc(c.phone||'—')}</td>
+    <td><b>${c.visits||0}</b></td>
+    <td>${starsHTML(c.score, canReservEdit()?c.id:null)}</td>
+    ${canReservEdit()?`<td style="text-align:right"><button class="btn btn-ghost" style="padding:6px 10px" onclick="editClientModal('${c.id}')">Editar</button></td>`:''}
+  </tr>`).join('');
+  html+=`</tbody></table></div></div>`;
+  return html;
+}
+function newReservModal(){ openModal(reservForm('Nueva reservación',null)); }
+function reservForm(title,r){
+  const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
+  const date=r?r.resDate:d.toISOString().slice(0,10);
+  const cls=DB.clients||[];
+  return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  <div class="modal-body">
+    <div class="field"><label>Cliente o agencia</label>
+      <select class="select" id="rvClient" onchange="reservClientPick()">
+        <option value="">— Nuevo cliente o agencia —</option>
+        ${cls.map(c=>`<option value="${c.id}" ${r&&r.clientId===c.id?'selected':''}>${esc(c.name)} (${c.type==='agencia'?'Agencia':'Cliente'})</option>`).join('')}
+      </select>
+    </div>
+    <div id="rvNewClient" class="${r&&r.clientId?'hidden':''}">
+      <div class="row2">
+        <div class="field"><label>Tipo</label><select class="select" id="rvcType"><option value="cliente">Cliente</option><option value="agencia">Agencia</option></select></div>
+        <div class="field"><label>Nombre</label><input class="input" id="rvcName" placeholder="Nombre del cliente o agencia"></div>
+      </div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Fecha de la reserva</label><input class="input" id="rvDate" type="date" value="${date}"></div>
+      <div class="field"><label>Hora</label>${timePicker('rvTime', r?r.resTime:'19:00', '')}</div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Personas</label><input class="input" id="rvPeople" type="number" min="1" value="${r?r.people:2}"></div>
+      <div class="field"><label>Teléfono de contacto</label><input class="input" id="rvPhone" value="${r?esc(r.phone||''):''}" placeholder="8888-8888"></div>
+    </div>
+    <div class="field"><label>Ocasión / nota especial</label><input class="input" id="rvOcc" value="${r?esc(r.occasion||''):''}" placeholder="Cumpleaños, aniversario, alergia, silla de bebé…"></div>
+    <div class="row2">
+      <div class="field"><label>Estado</label><select class="select" id="rvStatus">${Object.entries(RESERV_EST).map(([k,v])=>`<option value="${k}" ${r&&r.status===k?'selected':(!r&&k==='pendiente'?'selected':'')}>${v.l}</option>`).join('')}</select></div>
+      <div class="field"><label>Sucursal</label><select class="select" id="rvSuc">${sucOptionsFor()}</select></div>
+    </div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveReserv('${r?r.id:''}')">${r?'Guardar':'Registrar reserva'}</button></div>`;
+}
+function reservClientPick(){
+  const sel=$('#rvClient'); const box=$('#rvNewClient');
+  if(!sel.value){ if(box) box.classList.remove('hidden'); return; }
+  if(box) box.classList.add('hidden');
+  const c=clientById(sel.value); if(c && $('#rvPhone')) $('#rvPhone').value=c.phone||'';
+}
+function saveReserv(id){
+  let clientId=$('#rvClient').value, clientName='', type='cliente';
+  if(!clientId){
+    const name=$('#rvcName').value.trim(); if(!name){ toast('Poné el nombre del cliente o agencia','err'); return; }
+    type=$('#rvcType').value;
+    const c={id:uid(),name,type,phone:$('#rvPhone').value.trim(),visits:0,score:0,notes:'',at:now()};
+    DB.clients.push(c); clientId=c.id; clientName=name;
+  } else { const c=clientById(clientId); clientName=c?c.name:''; type=c?c.type:'cliente'; }
+  const now2=new Date();
+  const data={ clientId, clientName, type, people:+$('#rvPeople').value||1, occasion:$('#rvOcc').value.trim(),
+    phone:$('#rvPhone').value.trim(), resDate:$('#rvDate').value, resTime:readTP('rvTime'), status:$('#rvStatus').value, sucursalId:$('#rvSuc').value };
+  if(!data.resDate){ toast('Elegí la fecha de la reserva','err'); return; }
+  if(id){ const r=DB.reservations.find(x=>x.id===id); const wasLlego=r.status==='llego'; Object.assign(r,data);
+    if(data.status==='llego'&&!r.counted){ const c=clientById(r.clientId); if(c){c.visits=(c.visits||0)+1;} r.counted=true; }
+    if(data.status!=='llego'&&r.counted){ const c=clientById(r.clientId); if(c){c.visits=Math.max(0,(c.visits||0)-1);} r.counted=false; }
+    audit('reserva',`editó reserva de ${clientName} (${data.resDate})`,data.sucursalId);
+  } else {
+    const r={id:uid(),...data,regDate:now2.toISOString().slice(0,10),regTime:now2.toTimeString().slice(0,5),counted:data.status==='llego',byId:SES.userId,at:now()};
+    if(r.counted){ const c=clientById(r.clientId); if(c)c.visits=(c.visits||0)+1; }
+    DB.reservations.push(r);
+    audit('reserva',`registró reserva de ${clientName} para ${data.resDate} ${fmt12(data.resTime)}`,data.sucursalId);
+    notify(DB.users.filter(u=>['admin','gerencia_exp','jefe_salon','salonero'].includes(u.role)).map(u=>u.id), `Nueva reserva: ${clientName} · ${fmtResDate(data.resDate)} ${fmt12(data.resTime)} · ${data.people}p`, 'reserva', {view:'reservas'});
+  }
+  closeModal(); toast('Reserva guardada','ok'); render();
+}
+function reservDetail(id){
+  const r=DB.reservations.find(x=>x.id===id); if(!r) return;
+  const c=clientById(r.clientId); const est=RESERV_EST[r.status]||RESERV_EST.pendiente; const editor=canReservEdit();
+  openModal(`<div class="modal-head"><h3>Reserva · ${esc(r.clientName||'')}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <span class="pill ${est.c}">${est.l}</span>
+      <div class="detail-meta">
+        <div class="dm"><div class="dl">Fecha</div><div class="dv">${fmtResDate(r.resDate)}</div></div>
+        <div class="dm"><div class="dl">Hora</div><div class="dv">${fmt12(r.resTime)}</div></div>
+        <div class="dm"><div class="dl">Personas</div><div class="dv">${r.people}</div></div>
+        <div class="dm"><div class="dl">Tipo</div><div class="dv">${r.type==='agencia'?'Agencia':'Cliente'}</div></div>
+        <div class="dm"><div class="dl">Teléfono</div><div class="dv">${esc(r.phone||'—')}</div></div>
+        <div class="dm"><div class="dl">Veces que vino</div><div class="dv">${c?(c.visits||0):'—'}</div></div>
+        <div class="dm"><div class="dl">Ocasión</div><div class="dv">${esc(r.occasion||'—')}</div></div>
+        <div class="dm"><div class="dl">Registrada</div><div class="dv">${fmtResDate(r.regDate)} ${fmt12(r.regTime)}</div></div>
+      </div>
+      ${editor?`<div class="dl" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);font-weight:700;margin:6px 0 8px">Cambiar estado</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${Object.entries(RESERV_EST).map(([k,v])=>`<button class="chip ${r.status===k?'on':''}" onclick="setReservStatus('${r.id}','${k}')">${v.l}</button>`).join('')}</div>
+      <div style="display:flex;gap:8px"><button class="btn btn-ghost" style="flex:0 0 auto" onclick="editReservModal('${r.id}')">${svgIcon('edit','icon icon-sm')} Editar</button><button class="btn btn-ghost" style="flex:0 0 auto" onclick="delReserv('${r.id}')">${svgIcon('trash','icon icon-sm')} Eliminar</button></div>`:''}
+    </div>`,true);
+}
+function editReservModal(id){ const r=DB.reservations.find(x=>x.id===id); openModal(reservForm('Editar reserva',r)); }
+function setReservStatus(id,status){
+  const r=DB.reservations.find(x=>x.id===id); if(!r) return;
+  if(status==='llego'&&!r.counted){ const c=clientById(r.clientId); if(c)c.visits=(c.visits||0)+1; r.counted=true; }
+  if(status!=='llego'&&r.counted){ const c=clientById(r.clientId); if(c)c.visits=Math.max(0,(c.visits||0)-1); r.counted=false; }
+  r.status=status; audit('reserva',`cambió estado de reserva (${r.clientName}) a ${RESERV_EST[status].l}`,r.sucursalId);
+  save(); reservDetail(id); render();
+}
+async function delReserv(id){
+  const r=DB.reservations.find(x=>x.id===id); if(!r) return;
+  if(!await confirmDialog('Se elimina esta reservación.',{title:'¿Eliminar reserva?',okText:'Sí, eliminar'})) return;
+  if(r.counted){ const c=clientById(r.clientId); if(c)c.visits=Math.max(0,(c.visits||0)-1); }
+  DB.reservations=DB.reservations.filter(x=>x.id!==id); audit('reserva','eliminó una reserva',r.sucursalId);
+  closeModal(); toast('Reserva eliminada','ok'); render();
+}
+function newClientModal(){ openModal(clientForm('Nuevo cliente / agencia',null)); }
+function editClientModal(id){ openModal(clientForm('Editar cliente',clientById(id))); }
+function clientForm(title,c){
+  return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  <div class="modal-body">
+    <div class="row2">
+      <div class="field"><label>Tipo</label><select class="select" id="clType"><option value="cliente" ${c&&c.type==='cliente'?'selected':''}>Cliente</option><option value="agencia" ${c&&c.type==='agencia'?'selected':''}>Agencia</option></select></div>
+      <div class="field"><label>Teléfono</label><input class="input" id="clPhone" value="${c?esc(c.phone||''):''}" placeholder="8888-8888"></div>
+    </div>
+    <div class="field"><label>Nombre</label><input class="input" id="clName" value="${c?esc(c.name):''}" placeholder="Nombre del cliente o agencia"></div>
+    <div class="field"><label>Notas</label><textarea class="textarea" id="clNotes" placeholder="Preferencias, alergias, etc.">${c?esc(c.notes||''):''}</textarea></div>
+    ${c?`<div class="field"><label>Veces que vino</label><input class="input" id="clVisits" type="number" min="0" value="${c.visits||0}"></div>`:''}
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveClient('${c?c.id:''}')">Guardar</button></div>`;
+}
+function saveClient(id){
+  const name=$('#clName').value.trim(); if(!name){ toast('Poné el nombre','err'); return; }
+  const data={name,type:$('#clType').value,phone:$('#clPhone').value.trim(),notes:$('#clNotes').value.trim()};
+  if(id){ const c=clientById(id); Object.assign(c,data); if($('#clVisits')) c.visits=+$('#clVisits').value||0; audit('reserva',`editó cliente ${name}`); }
+  else { DB.clients.push({id:uid(),...data,visits:0,score:0,at:now()}); audit('reserva',`agregó cliente ${name}`); }
+  closeModal(); toast('Cliente guardado','ok'); render();
+}
+function setScore(cid,n){ const c=clientById(cid); if(!c) return; c.score=(c.score===n?n-1:n); audit('reserva',`puntuó a ${c.name} (${c.score})`); save(); render(); }
+window.newReservModal=newReservModal; window.reservClientPick=reservClientPick; window.saveReserv=saveReserv; window.reservDetail=reservDetail;
+window.editReservModal=editReservModal; window.setReservStatus=setReservStatus; window.delReserv=delReserv;
+window.newClientModal=newClientModal; window.editClientModal=editClientModal; window.saveClient=saveClient; window.setScore=setScore;
 
 /* =====================================================================
    COMPONENTES COMUNES

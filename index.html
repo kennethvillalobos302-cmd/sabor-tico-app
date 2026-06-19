@@ -525,6 +525,12 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .tbl tr{transition:background var(--t-fast)}
 .tbl tbody tr:hover td{background:var(--bg-soft)}
 .role-badge{font-size:11px;font-weight:700;padding:4px 9px;border-radius:var(--r-sm);background:var(--accent-soft);color:var(--accent)}
+.stars{display:inline-flex;gap:1px}
+.star{background:none;border:none;cursor:pointer;color:var(--text-dim);padding:1px;display:inline-flex}
+.star.on{color:var(--warn)}
+.star[disabled]{cursor:default}
+.rv-table th,.rv-table td{white-space:nowrap}
+.rv-table tbody tr:hover td{background:var(--bg-soft)}
 
 /* ---------- TOAST ---------- */
 .toast-wrap{position:fixed;top:18px;right:18px;z-index:90;display:flex;flex-direction:column;gap:9px}
@@ -630,6 +636,9 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 <g id="i-truck"><path d="M3 6h11v9H3z"/><path d="M14 9h4l3 3v3h-7z"/><circle cx="7" cy="18" r="1.6"/><circle cx="17" cy="18" r="1.6"/></g>
 <g id="i-coffee"><path d="M4 8h13v5a4 4 0 01-4 4H8a4 4 0 01-4-4z"/><path d="M17 9h2a2 2 0 010 4h-2"/><path d="M7 3v2M11 3v2"/></g>
 <g id="i-tag"><path d="M3 11V4h7l10 10-7 7L3 11z"/><circle cx="7.5" cy="7.5" r="1.2"/></g>
+<g id="i-reserva"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18"/><path d="M12 8h5M12 12h5M12 16h3"/></g>
+<g id="i-star"><path d="M12 3.5l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.8 6.8 19.5l1-5.8L3.6 9.6l5.8-.8z"/></g>
+<g id="i-phone"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/></g>
 <g id="i-theme"><circle cx="12" cy="12" r="5"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></g>
 <g id="i-save"><path d="M5 3h12l4 4v14H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></g>
 <g id="i-logout"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></g>
