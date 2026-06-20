@@ -3026,11 +3026,11 @@ function viewReportes(){
    VISTA: RESERVACIONES (clientes / agencias + tabla por día)
    ===================================================================== */
 const RESERV_EST={pendiente:{l:'Pendiente',c:'pendiente'},confirmada:{l:'Confirmada',c:'proceso'},llego:{l:'Llegó',c:'hecha'},noshow:{l:'No llegó',c:'atrasada'},cancelada:{l:'Cancelada',c:'rechazada'}};
-let resvTab='lista', resvFilter='proximas', resvEstado='todos', resvSearch='';
+let resvTab='lista', resvFilter='proximas', resvEstado='todos', resvSearch='', clientSearch='';
 function reservScoped(){ return (DB.reservations||[]).filter(r=>r&&inScope(r.sucursalId)); }
 function clientById(id){ return (DB.clients||[]).find(c=>c.id===id); }
 function starsHTML(score,cid){
-  let s=''; for(let i=1;i<=5;i++){ s+=`<button class="star ${i<=(score||0)?'on':''}" ${cid?`onclick="setScore('${cid}',${i})"`:'disabled'} title="${i} de 5">${svgIcon('star','icon icon-sm')}</button>`; }
+  let s=''; for(let i=1;i<=5;i++){ s+=`<button class="star ${i<=(score||0)?'on':''}" ${cid?`onclick="event.stopPropagation();setScore('${cid}',${i})"`:'disabled'} title="${i} de 5">${svgIcon('star','icon icon-sm')}</button>`; }
   return `<span class="stars">${s}</span>`;
 }
 function reservTodayCard(){
@@ -3102,21 +3102,68 @@ function reservLista(editor){
 }
 function fmtResDate(d){ if(!d) return '—'; const x=new Date(d+'T00:00'); return x.toLocaleDateString('es-CR',{weekday:'short',day:'2-digit',month:'short'}); }
 function reservClientes(editor){
-  const cls=[...(DB.clients||[])].sort((a,b)=>(b.visits||0)-(a.visits||0)||a.name.localeCompare(b.name));
-  let html=`<div class="toolbar"><div class="ph-spacer"></div>${canReservEdit()?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="newClientModal()">${svgIcon('plus','icon icon-sm')} Nuevo cliente / agencia</button>`:''}</div>`;
-  if(!cls.length) return html+emptyState('','Sin clientes','Los clientes y agencias se agregan al crear reservas, o desde acá.', canReservEdit()?'Nuevo cliente / agencia':'', canReservEdit()?'newClientModal()':'');
-  html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Nombre</th><th>Tipo</th><th>Teléfono</th><th>Veces que vino</th><th>Puntaje</th>${canReservEdit()?'<th></th>':''}</tr></thead><tbody>`;
-  html+=cls.map(c=>`<tr>
+  let cls=[...(DB.clients||[])];
+  if(clientSearch){ const q=clientSearch.toLowerCase(); cls=cls.filter(c=>(c.name||'').toLowerCase().includes(q)||(c.phone||'').includes(clientSearch)); }
+  cls.sort((a,b)=>(b.visits||0)-(a.visits||0)||a.name.localeCompare(b.name));
+  const all=DB.clients||[];
+  const totC=all.filter(c=>c.type!=='agencia').length, totA=all.filter(c=>c.type==='agencia').length, totV=all.reduce((s,c)=>s+(c.visits||0),0);
+  const top=[...all].sort((a,b)=>(b.visits||0)-(a.visits||0))[0];
+  let html=`<div class="kpi-row">
+    <div class="kpi"><div class="label">Clientes</div><div class="value">${totC}</div><div class="sub">personas</div></div>
+    <div class="kpi"><div class="label">Agencias</div><div class="value">${totA}</div><div class="sub">registradas</div></div>
+    <div class="kpi"><div class="label">Visitas</div><div class="value">${totV}</div><div class="sub">acumuladas</div></div>
+    <div class="kpi"><div class="label">Top cliente</div><div class="value" style="font-size:16px">${top&&(top.visits||0)>0?esc(top.name.split(' ')[0]):'—'}</div><div class="sub">${top&&(top.visits||0)>0?top.visits+' visitas':'sin datos'}</div></div>
+  </div>`;
+  html+=`<div class="toolbar"><input class="input search" placeholder="Buscar cliente o teléfono…" value="${esc(clientSearch)}" oninput="clientSearch=this.value;clearTimeout(window._cs);window._cs=setTimeout(render,250)"><div class="ph-spacer"></div>${editor?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="newClientModal()">${svgIcon('plus','icon icon-sm')} Nuevo cliente / agencia</button>`:''}</div>`;
+  if(!cls.length) return html+emptyState('','Sin clientes', clientSearch?'No hay clientes que coincidan.':'Los clientes y agencias se agregan al crear reservas, o desde acá.', editor?'Nuevo cliente / agencia':'', editor?'newClientModal()':'');
+  html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>#</th><th>Nombre</th><th>Tipo</th><th>Teléfono</th><th>Veces que vino</th><th>Puntaje</th><th></th></tr></thead><tbody>`;
+  html+=cls.map((c,i)=>`<tr onclick="clientDetail('${c.id}')" style="cursor:pointer">
+    <td><span class="cl-rank ${i<3&&(c.visits||0)>0?'top':''}">${i+1}</span></td>
     <td style="font-weight:600">${esc(c.name)}</td>
     <td><span class="role-badge" style="background:var(--bg-soft);color:var(--text-soft)">${c.type==='agencia'?'Agencia':'Cliente'}</span></td>
     <td>${esc(c.phone||'—')}</td>
     <td><b>${c.visits||0}</b></td>
-    <td>${starsHTML(c.score, canReservEdit()?c.id:null)}</td>
-    ${canReservEdit()?`<td style="text-align:right"><button class="btn btn-ghost" style="padding:6px 10px" onclick="editClientModal('${c.id}')">Editar</button></td>`:''}
+    <td>${starsHTML(c.score, editor?c.id:null)}</td>
+    <td style="text-align:right">${svgIcon('chevron','icon icon-sm')}</td>
   </tr>`).join('');
   html+=`</tbody></table></div></div>`;
   return html;
 }
+function clientDetail(id){
+  const c=clientById(id); if(!c) return;
+  const editor=canReservEdit();
+  const resvs=(DB.reservations||[]).filter(r=>r.clientId===id).sort((a,b)=>((b.resDate||'')+(b.resTime||'')).localeCompare((a.resDate||'')+(a.resTime||'')));
+  const hist = resvs.length? resvs.map(r=>{const est=RESERV_EST[r.status]||RESERV_EST.pendiente;
+      return `<div class="cl-hrow" onclick="reservDetail('${r.id}')"><div class="cl-hrow-main"><div class="cl-hd">${fmtResDate(r.resDate)} · ${fmt12(r.resTime)}</div><div class="cl-hs">${r.people} personas${r.occasion?' · '+esc(r.occasion):''}</div></div><span class="pill ${est.c}">${est.l}</span></div>`;
+    }).join('') : '<div class="td-empty">Todavía no tiene reservas registradas.</div>';
+  openModal(`<div class="modal-head"><h3>${svgIcon('user','icon')} ${esc(c.name)}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="cl-head">
+        <div class="av cl-av" style="background:var(--grad-accent)">${initials(c.name)}</div>
+        <div><div class="cl-name">${esc(c.name)}</div><div class="cl-type">${c.type==='agencia'?'Agencia':'Cliente'}${c.phone?' · '+esc(c.phone):''}</div></div>
+      </div>
+      <div class="cl-stats">
+        <div class="cl-stat"><div class="cl-stat-v">${c.visits||0}</div><div class="cl-stat-l">veces que vino</div></div>
+        <div class="cl-stat"><div class="cl-stat-v">${resvs.length}</div><div class="cl-stat-l">reservas</div></div>
+        <div class="cl-stat"><div class="cl-stat-stars">${starsHTML(c.score, editor?c.id:null)}</div><div class="cl-stat-l">puntaje</div></div>
+      </div>
+      ${c.notes?`<div class="td-desc">${esc(c.notes)}</div>`:''}
+      <div class="td-sec">Historial de reservas</div>
+      <div class="cl-hist">${hist}</div>
+      ${editor?`<div class="td-actions"><button class="btn btn-ghost" onclick="editClientModal('${c.id}')">${svgIcon('edit','icon icon-sm')} Editar</button><button class="btn btn-danger" onclick="delClient('${c.id}')">${svgIcon('trash','icon icon-sm')} Eliminar</button></div>`:''}
+    </div>`,true);
+}
+window.clientDetail=clientDetail;
+async function delClient(id){
+  if(!canReservEdit()) return;
+  const c=clientById(id); if(!c) return;
+  const n=(DB.reservations||[]).filter(r=>r.clientId===id).length;
+  if(!await confirmDialog(`Se elimina ${c.name}.${n?` Sus ${n} reserva(s) registradas se conservan, pero quedan sin cliente vinculado.`:''}`,{title:`¿Eliminar ${c.type==='agencia'?'agencia':'cliente'}?`,okText:'Sí, eliminar'})) return;
+  DB.clients=DB.clients.filter(x=>x.id!==id);
+  audit('reserva',`eliminó ${c.type==='agencia'?'agencia':'cliente'} ${c.name}`);
+  closeModal(); toast('Eliminado','ok'); save(); render();
+}
+window.delClient=delClient;
 const RV_COL={pendiente:'var(--text-soft)',confirmada:'var(--info)',llego:'var(--success)',noshow:'var(--warn)',cancelada:'var(--danger)'};
 const RV_OCC=['Cumpleaños','Aniversario','Negocios','Familiar','Alergia','Silla de bebé'];
 function rvTypeSeg(sel){
