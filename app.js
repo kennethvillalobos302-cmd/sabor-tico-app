@@ -2189,22 +2189,63 @@ const HOR_DEPTS=[
   {label:'Gerencia',roles:['admin','gerencia_exp','gerencia_data']},
   {label:'Administración',roles:['proveeduria','contarh']},
 ];
-let horMode='general', horDay='';
+let horMode='mia', horDay='';
 function viewHorarios(){
   const manage=canShiftManage();
   const todayISO=new Date().toISOString().slice(0,10);
   if(!horDay) horDay=todayISO;
+  if(!manage && horMode==='lista') horMode='mia';
   const today=new Date(); today.setHours(0,0,0,0);
   const days=[...Array(7)].map((_,d)=>{const x=new Date(today);x.setDate(today.getDate()+d);return x;});
   const guide=sectionGuide('horarios','¿Cómo funcionan los Horarios?',`
-    Acá se arman los <b>turnos de la semana</b>. ${manage?'Asignás un turno eligiendo a la persona, la hora y, si hace falta, los quiebres (descansos).':'Ves tu turno de cada día con sus quiebres.'}
-    <ul style="margin:8px 0 0 18px"><li>La <b>Vista general</b> muestra de qué hora a qué hora trabaja cada quien por área, para saber dónde poner a la gente durante el turno.</li><li>Cada persona recibe un aviso <b>el día anterior</b> y en <b>Inicio</b> ve si hoy trabaja o está libre.</li></ul>`);
-  let html=`<div class="page-head"><div><div class="page-title">Horarios</div><div class="page-sub">Turnos de los próximos 7 días</div></div>
+    Acá ves los <b>turnos de la semana</b>. ${manage?'Asignás un turno eligiendo a la persona, la hora y, si hace falta, los quiebres (descansos).':'Ves tu turno de cada día con sus quiebres.'}
+    <ul style="margin:8px 0 0 18px"><li><b>Mi semana</b> te muestra tus 7 días de un vistazo: cuándo entrás, cuándo salís y tus descansos.</li><li>La <b>Vista general</b> muestra en una línea de tiempo de qué hora a qué hora trabaja cada quien por área.</li><li>Cada persona recibe un aviso <b>el día anterior</b> y en <b>Inicio</b> ve si hoy trabaja o está libre.</li></ul>`);
+  let html=`<div class="page-head"><div><div class="page-title">Horarios</div><div class="page-sub">Próximos 7 días</div></div>
     <div class="ph-spacer"></div>${manage?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="shiftNewModal()">${svgIcon('plus','icon icon-sm')} Asignar turno</button>`:''}</div>`;
   html+=guide;
-  html+=`<div class="hor-modes"><button class="chip ${horMode==='general'?'on':''}" onclick="horMode='general';render()">Vista general</button><button class="chip ${horMode==='lista'?'on':''}" onclick="horMode='lista';render()">Lista por día</button></div>`;
-  html+= horMode==='general' ? horTimeline(days) : horList(days,manage);
+  const modes=manage
+    ? [['mia','Mi semana'],['general','Vista general'],['lista','Lista por día']]
+    : [['mia','Mi semana'],['general','Ver equipo']];
+  html+=`<div class="hor-modes">${modes.map(([k,l])=>`<button class="chip ${horMode===k?'on':''}" onclick="horMode='${k}';render()">${l}</button>`).join('')}</div>`;
+  html+= horMode==='mia' ? horMine(days) : horMode==='general' ? horTimeline(days) : horList(days,manage);
   return html;
+}
+function horMine(days){
+  const todayISO=new Date().toISOString().slice(0,10);
+  const myAll=DB.shifts.filter(s=>s.userId===SES.userId);
+  let totNet=0, workDays=0;
+  const rows=days.map((d,di)=>{
+    const iso=d.toISOString().slice(0,10);
+    const sh=myAll.filter(s=>s.date===iso).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
+    const isToday=iso===todayISO;
+    const wd=d.toLocaleDateString('es-CR',{weekday:'short'}).replace('.','');
+    const dayName=(di===0?'Hoy':di===1?'Mañana':d.toLocaleDateString('es-CR',{weekday:'long'}));
+    const isOff=sh.length&&sh.every(s=>s.off);
+    let body;
+    if(!sh.length){
+      body=`<div class="mw-empty">Sin turno asignado</div>`;
+    } else if(isOff){
+      body=`<div class="mw-shift"><span class="mw-pill off">Día libre</span></div>`;
+    } else {
+      if(sh.some(s=>!s.off)) workDays++;
+      body=sh.filter(s=>!s.off).map(s=>{
+        const {net}=shiftSummary(s.start,s.end,s.breaks); totNet+=net;
+        const brk=(s.breaks||[]).map(b=>`<span class="mw-brk">${svgIcon('clock','icon icon-sm')} Descanso ${fmt12(b.start)}–${fmt12(b.end)}</span>`).join('');
+        return `<div class="mw-shift">
+          <div class="mw-time">${fmt12(s.start)} <span class="mw-dash">–</span> ${fmt12(s.end)}</div>
+          <div class="mw-meta"><span>${svgIcon('pin','icon icon-sm')} ${esc(sucName(s.sucursalId))}</span><span>${fmtDur(net)} efectivas</span>${s.note?`<span>${esc(s.note)}</span>`:''}</div>
+          ${brk?`<div class="mw-brks">${brk}</div>`:''}</div>`;
+      }).join('');
+    }
+    return `<div class="mw-day${isToday?' today':''}${isOff?' isoff':''}">
+      <div class="mw-date${isToday?' on':''}"><span class="mw-wd">${wd}</span><span class="mw-dn">${d.getDate()}</span></div>
+      <div class="mw-body"><div class="mw-dayname">${dayName}</div>${body}</div></div>`;
+  }).join('');
+  const sum=`<div class="mw-sum">
+    <div class="mw-sum-cell"><div class="mw-sum-big">${workDays}</div><div class="mw-sum-lbl">${workDays===1?'día de trabajo':'días de trabajo'}</div></div>
+    <div class="mw-sum-div"></div>
+    <div class="mw-sum-cell"><div class="mw-sum-big">${fmtDur(totNet)}</div><div class="mw-sum-lbl">en total esta semana</div></div></div>`;
+  return sum+`<div class="myweek">${rows}</div>`;
 }
 function horList(days,manage){
   const all=DB.shifts.filter(s=>inScope(s.sucursalId));
@@ -2236,15 +2277,25 @@ function tlBar(s,win){
   return `<div class="tl-bar" style="left:${left}%;width:${width}%" title="${fmt12(s.start)} – ${fmt12(s.end)}">${brks}<span class="tl-lbl">${fmt12(s.start)}–${fmt12(s.end)}</span></div>`;
 }
 function horTimeline(days){
-  let html=`<div class="toolbar" style="overflow-x:auto">${days.map((d,di)=>{const iso=d.toISOString().slice(0,10);const lbl=(di===0?'Hoy':di===1?'Mañana':d.toLocaleDateString('es-CR',{weekday:'short'}))+' '+d.getDate();return `<button class="chip ${horDay===iso?'on':''}" onclick="horDay='${iso}';render()">${lbl}</button>`;}).join('')}</div>`;
+  const todayISO=new Date().toISOString().slice(0,10);
+  let html=`<div class="toolbar" style="overflow-x:auto">${days.map((d,di)=>{const iso=d.toISOString().slice(0,10);const n=DB.shifts.filter(s=>inScope(s.sucursalId)&&s.date===iso&&!s.off).length;const lbl=(di===0?'Hoy':di===1?'Mañana':d.toLocaleDateString('es-CR',{weekday:'short'}).replace('.',''))+' '+d.getDate();return `<button class="chip ${horDay===iso?'on':''}" onclick="horDay='${iso}';render()">${lbl}${n?`<span class="chip-dot">${n}</span>`:''}</button>`;}).join('')}</div>`;
   const dayShifts=DB.shifts.filter(s=>inScope(s.sucursalId)&&s.date===horDay);
   if(!dayShifts.length) return html+emptyState('','Sin turnos ese día','Asigná turnos para ver el horario general por área.');
   const work=dayShifts.filter(s=>!s.off);
+  const offCount=dayShifts.length-work.length;
   let minH=6*60, maxH=22*60;
   work.forEach(s=>{let st=timeToMin(s.start),en=timeToMin(s.end);if(en<st)en+=1440;minH=Math.min(minH,Math.floor(st/60)*60);maxH=Math.max(maxH,Math.ceil(en/60)*60);});
   const win={start:minH,span:Math.max(120,maxH-minH)};
   const hrs=[]; for(let h=minH;h<=maxH;h+=120) hrs.push(h);
   const axis=hrs.map(h=>`<span>${fmt12(String(Math.floor(h/60)%24).padStart(2,'0')+':00')}</span>`).join('');
+  const stepPct=120/win.span*100;
+  // línea de "ahora" (solo si estamos viendo hoy y la hora actual cae en la ventana)
+  let nowLine='';
+  if(horDay===todayISO){
+    const nd=new Date(); const nm=nd.getHours()*60+nd.getMinutes();
+    const np=(nm-win.start)/win.span*100;
+    if(np>=0&&np<=100) nowLine=`<div class="tl-now" style="left:${np}%" title="Ahora · ${fmt12(String(nd.getHours()).padStart(2,'0')+':'+String(nd.getMinutes()).padStart(2,'0'))}"></div>`;
+  }
   let body='';
   HOR_DEPTS.forEach(dept=>{
     const ppl=DB.users.filter(u=>u.active && dept.roles.includes(u.role) && (u.sucursalId==='all'||inScope(u.sucursalId)));
@@ -2252,12 +2303,13 @@ function horTimeline(days){
       const sh=dayShifts.filter(s=>s.userId===u.id);
       if(!sh.length) return '';
       const bars=sh.map(s=> s.off? `<div class="tl-off">Día libre</div>` : tlBar(s,win)).join('');
-      return `<div class="tl-row"><div class="tl-name">${avatarHTML(u)}<span>${esc((u.name||'').split(' ')[0])}</span></div><div class="tl-track">${bars}</div></div>`;
+      return `<div class="tl-row"><div class="tl-name">${avatarHTML(u)}<span>${esc((u.name||'').split(' ')[0])}</span></div><div class="tl-track">${nowLine}${bars}</div></div>`;
     }).filter(Boolean).join('');
     if(rows) body+=`<div class="tl-dept">${dept.label}</div>${rows}`;
   });
   if(!body) return html+emptyState('','Sin turnos ese día','Asigná turnos para ver el horario general por área.');
-  return html+`<div class="card tl-wrap"><div class="tl"><div class="tl-axis">${axis}</div>${body}</div></div>`;
+  const summary=`<div class="tl-summary"><span class="tl-sum-num">${work.length}</span> ${work.length===1?'persona en turno':'personas en turno'}${offCount?` · ${offCount} libre${offCount>1?'s':''}`:''}</div>`;
+  return html+summary+`<div class="card tl-wrap"><div class="tl" style="--tl-step:${stepPct}%"><div class="tl-axis">${axis}</div>${body}</div></div>`;
 }
 function shiftNewModal(){ shBreaks=[]; openModal(shiftForm('Asignar turno',null)); }
 function shiftEditModal(id){ const s=DB.shifts.find(x=>x.id===id); shBreaks=s?(s.breaks||[]).map(b=>({...b})):[]; openModal(shiftForm('Editar turno',s)); }
