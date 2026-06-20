@@ -391,6 +391,20 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .sh-time input{font-size:19px;font-weight:700;text-align:center;padding:13px;width:100%;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);color:var(--text)}
 .sh-time input:focus{border-color:var(--accent);box-shadow:var(--ring);outline:none}
 .sh-arrow{text-align:center;color:var(--text-soft);font-size:16px;font-weight:700;line-height:1;margin:-2px 0}
+/* atajos de turno */
+.sh-presets{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.sh-preset{flex:1 1 calc(50% - 4px);min-width:118px;display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:9px 12px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-soft);font-weight:700;font-size:13px;color:var(--text);text-align:left;transition:border-color var(--t-fast),background var(--t-fast)}
+.sh-preset span{font-size:11px;font-weight:600;color:var(--text-soft)}
+.sh-preset:hover{border-color:var(--accent-line)}
+.sh-preset.on{border-color:var(--accent);background:var(--accent-soft)}
+.sh-preset.on,.sh-preset.on span{color:var(--accent)}
+/* bloque de horas Entra/Sale */
+.sh-block{background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
+.sh-block .sh-row{display:flex;align-items:center;gap:10px;padding:5px 14px}
+.sh-block .sh-row+.sh-row{border-top:1px solid var(--border-soft)}
+.sh-block .sh-row>label{flex:0 0 48px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);margin:0}
+.sh-block .tp{flex:1;background:transparent;border:none;border-radius:0;justify-content:flex-end;padding:7px 0;flex-wrap:nowrap}
+.sh-block .tp:focus-within{box-shadow:none}
 .sh-preview{margin:2px 0 4px}
 .ap.shpreset{padding:9px 13px;font-weight:600}
 .ap.shpreset.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}

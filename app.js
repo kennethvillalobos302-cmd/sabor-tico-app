@@ -2088,10 +2088,10 @@ openModal=function(html,wide){ _openModal(html,wide); if($('#rcIngs')) renderIng
    VISTA: HORARIOS / TURNOS
    ===================================================================== */
 const SHIFT_PRESETS=[
-  {label:'Mañana 06:00–14:00',start:'06:00',end:'14:00',breaks:[]},
-  {label:'Día 08:00–16:00',start:'08:00',end:'16:00',breaks:[{start:'12:00',end:'12:30'}]},
-  {label:'Tarde 14:00–22:00',start:'14:00',end:'22:00',breaks:[]},
-  {label:'Partido 10:00–22:00',start:'10:00',end:'22:00',breaks:[{start:'15:00',end:'18:00'}]},
+  {label:'Apertura',start:'06:00',end:'14:00',breaks:[]},
+  {label:'Día',start:'08:00',end:'16:00',breaks:[{start:'12:00',end:'12:30'}]},
+  {label:'Tarde',start:'14:00',end:'22:00',breaks:[]},
+  {label:'Partido',start:'10:00',end:'22:00',breaks:[{start:'15:00',end:'18:00'}]},
 ];
 let shBreaks=[];
 function timeToMin(t){ if(!t) return 0; const[a,b]=t.split(':').map(Number); return a*60+(b||0); }
@@ -2143,7 +2143,9 @@ function readTP(prefix){ const he=$('#'+prefix+'H'), me_=$('#'+prefix+'M'), ap=$
 function curTP(prefix,def){ return $('#'+prefix+'H')?readTP(prefix):def; }
 function updateShiftPreview(){
   const el=$('#shPreview'); if(!el||!$('#shStartH')) return;
-  el.innerHTML=shiftPreviewHTML(curTP('shStart','10:00'),curTP('shEnd','18:00'),shBreaks);
+  const cs=curTP('shStart','10:00'), ce=curTP('shEnd','18:00');
+  el.innerHTML=shiftPreviewHTML(cs,ce,shBreaks);
+  document.querySelectorAll('.sh-preset').forEach(b=>b.classList.toggle('on', b.dataset.s===cs && b.dataset.e===ce));
 }
 window.updateShiftPreview=updateShiftPreview; window.readTP=readTP;
 
@@ -2311,6 +2313,22 @@ function horTimeline(days){
   const summary=`<div class="tl-summary"><span class="tl-sum-num">${work.length}</span> ${work.length===1?'persona en turno':'personas en turno'}${offCount?` · ${offCount} libre${offCount>1?'s':''}`:''}</div>`;
   return html+summary+`<div class="card tl-wrap"><div class="tl" style="--tl-step:${stepPct}%"><div class="tl-axis">${axis}</div>${body}</div></div>`;
 }
+function shiftPresetChips(){
+  return SHIFT_PRESETS.map((p,i)=>`<button type="button" class="sh-preset" data-s="${p.start}" data-e="${p.end}" onclick="applyShiftPreset(${i})">${p.label}<span>${fmt12(p.start)} – ${fmt12(p.end)}</span></button>`).join('');
+}
+function setTP(prefix,value){
+  const {h,m,ap}=to12(value);
+  const H=$('#'+prefix+'H'), M=$('#'+prefix+'M');
+  if(H)H.value=h; if(M)M.value=m;
+  setAP(prefix,ap);
+}
+function applyShiftPreset(i){
+  const p=SHIFT_PRESETS[i]; if(!p) return;
+  setTP('shStart',p.start); setTP('shEnd',p.end);
+  shBreaks=(p.breaks||[]).map(b=>({...b}));
+  renderBreakRows(); updateShiftPreview();
+}
+window.applyShiftPreset=applyShiftPreset;
 function shiftNewModal(){ shBreaks=[]; openModal(shiftForm('Asignar turno',null)); }
 function shiftEditModal(id){ const s=DB.shifts.find(x=>x.id===id); shBreaks=s?(s.breaks||[]).map(b=>({...b})):[]; openModal(shiftForm('Editar turno',s)); }
 function shiftForm(title,s){
@@ -2323,10 +2341,10 @@ function shiftForm(title,s){
     <div class="field"><label>¿A quién?</label><select class="select" id="shUser">${people.map(u=>`<option value="${u.id}" ${s&&s.userId===u.id?'selected':''}>${esc(u.name)} — ${roleInfo(u.role).short}</option>`).join('')}</select></div>
     <div class="field"><label>Fecha</label>${dateField(date)}</div>
     <div class="field"><label>Horario</label>
-      <div class="sh-pickwrap">
-        <div class="sh-time"><label>Entra</label>${timePicker('shStart',st,'updateShiftPreview()')}</div>
-        <div class="sh-arrow">↓</div>
-        <div class="sh-time"><label>Sale</label>${timePicker('shEnd',en,'updateShiftPreview()')}</div>
+      <div class="sh-presets">${shiftPresetChips()}</div>
+      <div class="sh-block">
+        <div class="sh-row"><label>Entra</label>${timePicker('shStart',st,'updateShiftPreview()')}</div>
+        <div class="sh-row"><label>Sale</label>${timePicker('shEnd',en,'updateShiftPreview()')}</div>
       </div>
       <div class="sh-preview" id="shPreview" style="margin-top:12px"></div>
     </div>
