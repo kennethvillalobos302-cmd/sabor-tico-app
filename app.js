@@ -3085,17 +3085,15 @@ function reservLista(editor){
   </div>`;
   if(!list.length) return html+emptyState('','Sin reservaciones','Cuando registres una reserva aparece acá, ordenada por fecha y hora.', editor?'Nueva reservación':'', editor?'newReservModal()':'');
   html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl rv-table"><thead><tr>
-    <th>Fecha</th><th>Hora</th><th>Cliente</th><th>Personas</th><th>Ocasión</th><th>Teléfono</th><th>Fecha registro</th><th>Hora registro</th><th>Estado</th><th></th></tr></thead><tbody>`;
+    <th>Fecha</th><th>Hora</th><th>Cliente</th><th>Personas</th><th>Ocasión</th><th>Teléfono</th><th>Estado</th><th></th></tr></thead><tbody>`;
   html+=list.map(r=>{const c=clientById(r.clientId); const est=RESERV_EST[r.status]||RESERV_EST.pendiente; const isToday=r.resDate===today;
     return `<tr onclick="reservDetail('${r.id}')" style="cursor:pointer">
       <td>${isToday?'<b style="color:var(--accent)">Hoy</b>':fmtResDate(r.resDate)}</td>
       <td>${fmt12(r.resTime)}</td>
       <td><div style="font-weight:600">${esc(r.clientName||'—')}</div><div style="font-size:11px;color:var(--text-soft)">${r.type==='agencia'?'Agencia':'Cliente'}${c?' · vino '+(c.visits||0)+'x':''}</div></td>
-      <td>${r.people||'—'}</td>
+      <td><b>${r.people||'—'}</b></td>
       <td>${esc(r.occasion||'—')}</td>
       <td>${esc(r.phone||'—')}</td>
-      <td>${fmtResDate(r.regDate)}</td>
-      <td>${fmt12(r.regTime)}</td>
       <td><span class="pill ${est.c}">${est.l}</span></td>
       <td style="text-align:right">${svgIcon('chevron','icon icon-sm')}</td>
     </tr>`;}).join('');
@@ -3119,13 +3117,27 @@ function reservClientes(editor){
   html+=`</tbody></table></div></div>`;
   return html;
 }
-function newReservModal(){ openModal(reservForm('Nueva reservación',null)); }
+const RV_COL={pendiente:'var(--text-soft)',confirmada:'var(--info)',llego:'var(--success)',noshow:'var(--warn)',cancelada:'var(--danger)'};
+const RV_OCC=['Cumpleaños','Aniversario','Negocios','Familiar','Alergia','Silla de bebé'];
+function rvTypeSeg(sel){
+  return `<input type="hidden" id="rvcType" value="${sel}"><div class="prio-seg"><button type="button" class="prio-b ${sel==='cliente'?'on':''}" data-t="cliente" onclick="rvSetType('cliente')">${svgIcon('user','icon icon-sm')} Cliente</button><button type="button" class="prio-b ${sel==='agencia'?'on':''}" data-t="agencia" onclick="rvSetType('agencia')">${svgIcon('users','icon icon-sm')} Agencia</button></div>`;
+}
+function rvSetType(t){ const h=$('#rvcType'); if(h)h.value=t; document.querySelectorAll('.prio-b[data-t]').forEach(b=>b.classList.toggle('on',b.dataset.t===t)); }
+function rvStatusSeg(sel){
+  return `<input type="hidden" id="rvStatus" value="${sel}"><div class="rv-status-seg">`+Object.entries(RESERV_EST).map(([k,v])=>`<button type="button" class="rv-st-b ${sel===k?'on':''}" data-s="${k}" onclick="rvSetStatus('${k}')"><span class="dot-prio" style="background:${RV_COL[k]}"></span>${v.l}</button>`).join('')+`</div>`;
+}
+function rvSetStatus(s){ const h=$('#rvStatus'); if(h)h.value=s; document.querySelectorAll('.rv-st-b').forEach(b=>b.classList.toggle('on',b.dataset.s===s)); }
+function rvPeopleStep(d){ const el=$('#rvPeople'); if(!el)return; let v=(parseInt(el.value,10)||1)+d; v=Math.max(1,v); el.value=v; }
+function rvSetOcc(o){ const el=$('#rvOcc'); if(!el)return; const cur=el.value.trim(); el.value = cur? (cur+', '+o) : o; }
+window.rvSetType=rvSetType; window.rvSetStatus=rvSetStatus; window.rvPeopleStep=rvPeopleStep; window.rvSetOcc=rvSetOcc;
+function newReservModal(){ openModal(reservForm('Nueva reservación',null), true); }
 function reservForm(title,r){
   const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
   const date=r?r.resDate:d.toISOString().slice(0,10);
   const cls=DB.clients||[];
-  return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  return `<div class="modal-head"><h3>${svgIcon('reserva','icon')} ${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
+    <div class="ip-sec">${svgIcon('user','icon icon-sm')} Cliente</div>
     <div class="field"><label>Cliente o agencia</label>
       <select class="select" id="rvClient" onchange="reservClientPick()">
         <option value="">— Nuevo cliente o agencia —</option>
@@ -3133,26 +3145,27 @@ function reservForm(title,r){
       </select>
     </div>
     <div id="rvNewClient" class="${r&&r.clientId?'hidden':''}">
-      <div class="row2">
-        <div class="field"><label>Tipo</label><select class="select" id="rvcType"><option value="cliente">Cliente</option><option value="agencia">Agencia</option></select></div>
-        <div class="field"><label>Nombre</label><input class="input" id="rvcName" placeholder="Nombre del cliente o agencia"></div>
-      </div>
+      <div class="field"><label>Tipo</label>${rvTypeSeg(r&&r.type==='agencia'?'agencia':'cliente')}</div>
+      <div class="field"><label>Nombre</label><input class="input" id="rvcName" value="${r&&!r.clientId?esc(r.clientName||''):''}" placeholder="Nombre del cliente o agencia" autocomplete="off"></div>
     </div>
+    <div class="ip-sec">${svgIcon('reserva','icon icon-sm')} Reserva</div>
     <div class="row2">
-      <div class="field"><label>Fecha de la reserva</label>${dateField(date,'rv')}</div>
+      <div class="field"><label>Fecha</label>${dateField(date,'rv')}</div>
       <div class="field"><label>Hora</label>${timePicker('rvTime', r?r.resTime:'19:00', '')}</div>
     </div>
     <div class="row2">
-      <div class="field"><label>Personas</label><input class="input" id="rvPeople" type="number" min="1" value="${r?r.people:2}"></div>
-      <div class="field"><label>Teléfono de contacto</label><input class="input" id="rvPhone" value="${r?esc(r.phone||''):''}" placeholder="8888-8888"></div>
+      <div class="field"><label>Personas</label><div class="qty-step"><button type="button" onclick="rvPeopleStep(-1)">−</button><input id="rvPeople" type="number" min="1" value="${r?r.people:2}"><button type="button" onclick="rvPeopleStep(1)">+</button></div></div>
+      <div class="field"><label>Teléfono de contacto</label><input class="input" id="rvPhone" value="${r?esc(r.phone||''):''}" placeholder="8888-8888" autocomplete="off"></div>
     </div>
-    <div class="field"><label>Ocasión / nota especial</label><input class="input" id="rvOcc" value="${r?esc(r.occasion||''):''}" placeholder="Cumpleaños, aniversario, alergia, silla de bebé…"></div>
-    <div class="row2">
-      <div class="field"><label>Estado</label><select class="select" id="rvStatus">${Object.entries(RESERV_EST).map(([k,v])=>`<option value="${k}" ${r&&r.status===k?'selected':(!r&&k==='pendiente'?'selected':'')}>${v.l}</option>`).join('')}</select></div>
-      <div class="field"><label>Sucursal</label><select class="select" id="rvSuc">${sucOptionsFor()}</select></div>
+    <div class="ip-sec">${svgIcon('star','icon icon-sm')} Detalles</div>
+    <div class="field"><label>Ocasión / nota especial</label>
+      <div class="due-presets">${RV_OCC.map(o=>`<button type="button" class="chip" onclick="rvSetOcc('${o}')">${o}</button>`).join('')}</div>
+      <input class="input" id="rvOcc" value="${r?esc(r.occasion||''):''}" placeholder="Cumpleaños, alergia, silla de bebé…" autocomplete="off" style="margin-top:9px">
     </div>
+    <div class="field"><label>Estado</label>${rvStatusSeg(r?r.status:'pendiente')}</div>
+    <div class="field"><label>Sucursal</label><select class="select" id="rvSuc">${r?sucOptionsSel(r.sucursalId):sucOptionsFor()}</select></div>
   </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveReserv('${r?r.id:''}')">${r?'Guardar':'Registrar reserva'}</button></div>`;
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveReserv('${r?r.id:''}')">${svgIcon('check','icon icon-sm')} ${r?'Guardar cambios':'Registrar reserva'}</button></div>`;
 }
 function reservClientPick(){
   const sel=$('#rvClient'); const box=$('#rvNewClient');
@@ -3188,25 +3201,29 @@ function saveReserv(id){
 function reservDetail(id){
   const r=DB.reservations.find(x=>x.id===id); if(!r) return;
   const c=clientById(r.clientId); const est=RESERV_EST[r.status]||RESERV_EST.pendiente; const editor=canReservEdit();
-  openModal(`<div class="modal-head"><h3>Reserva · ${esc(r.clientName||'')}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  openModal(`<div class="modal-head"><h3>${svgIcon('reserva','icon')} ${esc(r.clientName||'Reserva')}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
-      <span class="pill ${est.c}">${est.l}</span>
-      <div class="detail-meta">
-        <div class="dm"><div class="dl">Fecha</div><div class="dv">${fmtResDate(r.resDate)}</div></div>
-        <div class="dm"><div class="dl">Hora</div><div class="dv">${fmt12(r.resTime)}</div></div>
-        <div class="dm"><div class="dl">Personas</div><div class="dv">${r.people}</div></div>
-        <div class="dm"><div class="dl">Tipo</div><div class="dv">${r.type==='agencia'?'Agencia':'Cliente'}</div></div>
-        <div class="dm"><div class="dl">Teléfono</div><div class="dv">${esc(r.phone||'—')}</div></div>
-        <div class="dm"><div class="dl">Veces que vino</div><div class="dv">${c?(c.visits||0):'—'}</div></div>
-        <div class="dm"><div class="dl">Ocasión</div><div class="dv">${esc(r.occasion||'—')}</div></div>
-        <div class="dm"><div class="dl">Registrada</div><div class="dv">${fmtResDate(r.regDate)} ${fmt12(r.regTime)}</div></div>
+      <div class="td-top">
+        <span class="pill ${est.c}">${est.l}</span>
+        <span class="td-badge">${svgIcon('reserva','icon icon-sm')} ${fmtResDate(r.resDate)}</span>
+        <span class="td-badge">${svgIcon('clock','icon icon-sm')} ${fmt12(r.resTime)}</span>
+        <span class="td-badge">${svgIcon('users','icon icon-sm')} ${r.people} personas</span>
       </div>
-      ${editor?`<div class="dl" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);font-weight:700;margin:6px 0 8px">Cambiar estado</div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${Object.entries(RESERV_EST).map(([k,v])=>`<button class="chip ${r.status===k?'on':''}" onclick="setReservStatus('${r.id}','${k}')">${v.l}</button>`).join('')}</div>
-      <div style="display:flex;gap:8px"><button class="btn btn-ghost" style="flex:0 0 auto" onclick="editReservModal('${r.id}')">${svgIcon('edit','icon icon-sm')} Editar</button><button class="btn btn-ghost" style="flex:0 0 auto" onclick="delReserv('${r.id}')">${svgIcon('trash','icon icon-sm')} Eliminar</button></div>`:''}
+      ${r.occasion?`<div class="td-desc">${svgIcon('star','icon icon-sm')} ${esc(r.occasion)}</div>`:''}
+      <div class="td-meta">
+        <div class="td-mrow"><span class="td-ml">Cliente</span><span class="td-mv">${esc(r.clientName||'—')} · ${r.type==='agencia'?'Agencia':'Cliente'}</span></div>
+        <div class="td-mrow"><span class="td-ml">Teléfono</span><span class="td-mv">${esc(r.phone||'—')}</span></div>
+        <div class="td-mrow"><span class="td-ml">Veces que vino</span><span class="td-mv">${c?(c.visits||0):'—'}</span></div>
+        <div class="td-mrow"><span class="td-ml">Puntaje</span><span class="td-mv">${c?starsHTML(c.score, editor?c.id:null):'—'}</span></div>
+        <div class="td-mrow"><span class="td-ml">Registrada</span><span class="td-mv">${fmtResDate(r.regDate)} ${fmt12(r.regTime)}</span></div>
+        <div class="td-mrow"><span class="td-ml">Sucursal</span><span class="td-mv">${esc(sucName(r.sucursalId))}</span></div>
+      </div>
+      ${editor?`<div class="td-sec">Cambiar estado</div>
+      <div class="rv-status-seg" style="margin-bottom:16px">${Object.entries(RESERV_EST).map(([k,v])=>`<button class="rv-st-b ${r.status===k?'on':''}" onclick="setReservStatus('${r.id}','${k}')"><span class="dot-prio" style="background:${RV_COL[k]}"></span>${v.l}</button>`).join('')}</div>
+      <div class="td-actions"><button class="btn btn-ghost" onclick="editReservModal('${r.id}')">${svgIcon('edit','icon icon-sm')} Editar</button><button class="btn btn-danger" onclick="delReserv('${r.id}')">${svgIcon('trash','icon icon-sm')} Eliminar</button></div>`:''}
     </div>`,true);
 }
-function editReservModal(id){ const r=DB.reservations.find(x=>x.id===id); openModal(reservForm('Editar reserva',r)); }
+function editReservModal(id){ const r=DB.reservations.find(x=>x.id===id); openModal(reservForm('Editar reserva',r), true); }
 function setReservStatus(id,status){
   const r=DB.reservations.find(x=>x.id===id); if(!r) return;
   if(status==='llego'&&!r.counted){ const c=clientById(r.clientId); if(c)c.visits=(c.visits||0)+1; r.counted=true; }
@@ -3221,20 +3238,23 @@ async function delReserv(id){
   DB.reservations=DB.reservations.filter(x=>x.id!==id); audit('reserva','eliminó una reserva',r.sucursalId);
   closeModal(); toast('Reserva eliminada','ok'); render();
 }
-function newClientModal(){ openModal(clientForm('Nuevo cliente / agencia',null)); }
-function editClientModal(id){ openModal(clientForm('Editar cliente',clientById(id))); }
+function newClientModal(){ openModal(clientForm('Nuevo cliente / agencia',null), true); }
+function editClientModal(id){ openModal(clientForm('Editar cliente',clientById(id)), true); }
+function clType(sel){ return `<input type="hidden" id="clType" value="${sel}"><div class="prio-seg"><button type="button" class="prio-b ${sel==='cliente'?'on':''}" data-ct="cliente" onclick="clSetType('cliente')">${svgIcon('user','icon icon-sm')} Cliente</button><button type="button" class="prio-b ${sel==='agencia'?'on':''}" data-ct="agencia" onclick="clSetType('agencia')">${svgIcon('users','icon icon-sm')} Agencia</button></div>`; }
+function clSetType(t){ const h=$('#clType'); if(h)h.value=t; document.querySelectorAll('.prio-b[data-ct]').forEach(b=>b.classList.toggle('on',b.dataset.ct===t)); }
+window.clSetType=clSetType;
 function clientForm(title,c){
-  return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  return `<div class="modal-head"><h3>${svgIcon('user','icon')} ${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
+    <div class="field"><label>Tipo</label>${clType(c&&c.type==='agencia'?'agencia':'cliente')}</div>
     <div class="row2">
-      <div class="field"><label>Tipo</label><select class="select" id="clType"><option value="cliente" ${c&&c.type==='cliente'?'selected':''}>Cliente</option><option value="agencia" ${c&&c.type==='agencia'?'selected':''}>Agencia</option></select></div>
-      <div class="field"><label>Teléfono</label><input class="input" id="clPhone" value="${c?esc(c.phone||''):''}" placeholder="8888-8888"></div>
+      <div class="field"><label>Nombre</label><input class="input" id="clName" value="${c?esc(c.name):''}" placeholder="Nombre del cliente o agencia" autocomplete="off"></div>
+      <div class="field"><label>Teléfono</label><input class="input" id="clPhone" value="${c?esc(c.phone||''):''}" placeholder="8888-8888" autocomplete="off"></div>
     </div>
-    <div class="field"><label>Nombre</label><input class="input" id="clName" value="${c?esc(c.name):''}" placeholder="Nombre del cliente o agencia"></div>
     <div class="field"><label>Notas</label><textarea class="textarea" id="clNotes" placeholder="Preferencias, alergias, etc.">${c?esc(c.notes||''):''}</textarea></div>
     ${c?`<div class="field"><label>Veces que vino</label><input class="input" id="clVisits" type="number" min="0" value="${c.visits||0}"></div>`:''}
   </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveClient('${c?c.id:''}')">Guardar</button></div>`;
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveClient('${c?c.id:''}')">${svgIcon('check','icon icon-sm')} Guardar</button></div>`;
 }
 function saveClient(id){
   const name=$('#clName').value.trim(); if(!name){ toast('Poné el nombre','err'); return; }
