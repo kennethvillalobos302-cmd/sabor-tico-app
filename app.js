@@ -279,12 +279,23 @@ function seedSouvenirs(suc){
 /* ---------------- Migración de DBs existentes ---------------- */
 function migrate(){
   let ch=false;
-  // Limpieza única para empezar a usarlo en real: si la versión guardada es menor
-  // a la actual, se reinicia a datos limpios (equipo + sucursales, sin ejemplos).
+  // Limpieza única para empezar a usarlo en real. Importante: CONSERVA el equipo,
+  // las sucursales y los chats reales que ya existan; solo borra los datos
+  // operativos de ejemplo. Si no hay equipo aún (instalación nueva), siembra limpio.
   if((DB._dataVersion||0) < DATA_VERSION){
-    DB = seed();
+    if(!Array.isArray(DB.users) || DB.users.length===0){
+      DB = seed(); // instalación nueva: datos limpios de fábrica
+    } else {
+      // se conserva: users, sucursales, chats (grupos y mensajes), invCats
+      DB.tasks=[]; DB.pedidos=[]; DB.projects=[]; DB.reservations=[]; DB.clients=[];
+      DB.souvenirs=[]; DB.souvSales=[]; DB.inventory=[]; DB.recipes=[]; DB.shifts=[];
+      DB.invMoves=[]; DB.notifs=[]; DB.audit=[];
+      // unir puestos viejos de Contabilidad y Recursos en el rol combinado
+      (DB.users||[]).forEach(u=>{ if(u.role==='contabilidad'||u.role==='rrhh') u.role='contarh'; });
+      DB._dataVersion = DATA_VERSION;
+    }
     _migrateReset = true;
-    return; // seed() ya deja todo completo y con la versión al día
+    // seguir con el resto del migrate para rellenar lo que falte
   }
   // unir puestos viejos de Contabilidad y Recursos en el rol combinado
   (DB.users||[]).forEach(u=>{ if(u.role==='contabilidad'||u.role==='rrhh'){ u.role='contarh'; ch=true; } });
@@ -1025,6 +1036,16 @@ window.createPedido=createPedido;
    VISTA: PROYECTOS (pizarra)
    ===================================================================== */
 let activeProj=null;
+let projMobileView='board'; // 'board' | 'chat' — solo afecta celular
+function projTab(which){
+  projMobileView=which;
+  const w=$('#projWork'); if(w) w.classList.toggle('pm-chat', which==='chat');
+  const b=$('#pmtBoard'), c=$('#pmtChat');
+  if(b) b.classList.toggle('on', which==='board');
+  if(c) c.classList.toggle('on', which==='chat');
+  if(which==='chat'){ const m=$('#projChatMsgs'); if(m) m.scrollTop=m.scrollHeight; }
+}
+window.projTab=projTab;
 function viewProyectos(){
   const projs = DB.projects.filter(p=>inScope(p.sucursalId)).filter(p=>isAdmin()||p.memberIds.includes(SES.userId));
   if(activeProj && !projs.find(p=>p.id===activeProj)) activeProj=null;
@@ -1066,8 +1087,14 @@ function viewProyectos(){
     <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','text')">${svgIcon('edit','icon icon-sm')} Nota</button>
     <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','image')">${svgIcon('image','icon icon-sm')} Imagen</button>`:''}
     <div class="ph-spacer"></div>
-    <span style="font-size:12px;color:var(--text-soft);align-self:center">Arrastrá tarjetas o el fondo para moverte</span>
+    <span class="board-hint" style="font-size:12px;color:var(--text-soft);align-self:center">Arrastrá tarjetas o el fondo para moverte</span>
     <button class="btn btn-ghost" style="flex:0 0 auto" onclick="toggleBoardFull()">${svgIcon('chart','icon icon-sm')} Pantalla completa</button>
+  </div>`;
+
+  // En celular: alternar entre Pizarra y Chat (cada uno a pantalla completa)
+  html+=`<div class="proj-mtabs mobile-only">
+    <button class="pmt ${projMobileView==='chat'?'':'on'}" id="pmtBoard" onclick="projTab('board')">${svgIcon('clipboard','icon icon-sm')} Pizarra</button>
+    <button class="pmt ${projMobileView==='chat'?'on':''}" id="pmtChat" onclick="projTab('chat')">${svgIcon('message','icon icon-sm')} Chat del grupo</button>
   </div>`;
 
   const cards=proj.cards;
@@ -1076,7 +1103,7 @@ function viewProyectos(){
   const board = cards.length
     ? `<div class="canvas-wrap" id="canvasWrap" onwheel="boardWheel(event)"><div class="canvas-zoom" id="canvasZoom" style="width:${cw*boardZoom}px;height:${chh*boardZoom}px"><div class="canvas" id="boardCanvas" style="width:${cw}px;height:${chh}px;transform:scale(${boardZoom});transform-origin:0 0" onpointerdown="canvasPanDown(event)"><svg class="canvas-links" width="${cw}" height="${chh}">${links}</svg>${cards.map(c=>boardCard(proj.id,c)).join('')}</div></div></div>`
     : `<div class="card" style="flex:1">${emptyState('','Pizarra vacía','Agregá un título, una nota o una imagen. Movés todo libremente y respondés en cada una.', canEdit?'Agregar nota':'', canEdit?`addCardModal('${proj.id}','text')`:'')}</div>`;
-  html+=`<div class="proj-work ${boardFull?'faux-full':''}" id="projWork">${boardFull?`<button class="btn btn-ghost board-exit" onclick="toggleBoardFull()">${svgIcon('x','icon icon-sm')} Salir de pantalla completa</button>`:''}${board}${projSide(proj)}</div>`;
+  html+=`<div class="proj-work ${boardFull?'faux-full':''} ${projMobileView==='chat'?'pm-chat':''}" id="projWork">${boardFull?`<button class="btn btn-ghost board-exit" onclick="toggleBoardFull()">${svgIcon('x','icon icon-sm')} Salir de pantalla completa</button>`:''}${board}${projSide(proj)}</div>`;
   return html;
 }
 let boardZoom=1, boardFull=false;
