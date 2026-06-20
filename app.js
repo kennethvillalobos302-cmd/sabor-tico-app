@@ -843,21 +843,28 @@ function taskPrioSeg(sel){
   return `<input type="hidden" id="ntPrio" value="${sel}"><div class="prio-seg">`+opts.map(([k,l,c])=>`<button type="button" class="prio-b ${sel===k?'on':''}" data-p="${k}" onclick="setNtPrio('${k}')"><span class="dot-prio" style="background:${c}"></span>${l}</button>`).join('')+`</div>`;
 }
 function setNtPrio(p){ const h=$('#ntPrio'); if(h)h.value=p; document.querySelectorAll('.prio-b').forEach(b=>b.classList.toggle('on',b.dataset.p===p)); }
+function dueParts(ts){
+  const d=new Date(ts);
+  return { iso:`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`,
+    hhmm:`${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}` };
+}
 function ntDuePreset(spec){
   const d=new Date();
   if(spec==='today'){ d.setHours(18,0,0,0); }
   else if(spec==='tomorrow'){ d.setDate(d.getDate()+1); d.setHours(12,0,0,0); }
   else if(spec==='3d'){ d.setDate(d.getDate()+3); d.setHours(12,0,0,0); }
   else if(spec==='week'){ d.setDate(d.getDate()+7); d.setHours(12,0,0,0); }
-  const el=$('#ntDue'); if(el) el.value=toDatetimeLocal(d.getTime());
+  const p=dueParts(d.getTime());
+  pickDate(p.iso,'nt'); setTP('ntT',p.hhmm);
 }
 window.setNtPrio=setNtPrio; window.ntDuePreset=ntDuePreset;
 function taskFormBody(t){
   const people=assignablePeople();
   const sel = t? (t.toIds||[]) : [];
-  let dueStr='';
-  if(t&&t.due) dueStr=toDatetimeLocal(t.due);
-  else if(!t){ const b=new Date(now()+86400e3); b.setHours(12,0,0,0); dueStr=toDatetimeLocal(b.getTime()); }
+  let dueTs;
+  if(t&&t.due) dueTs=t.due;
+  else { const b=new Date(now()+86400e3); b.setHours(12,0,0,0); dueTs=b.getTime(); }
+  const dp=dueParts(dueTs);
   return `
     <div class="field"><label>Título</label><input class="input" id="ntTitle" value="${t?esc(t.title):''}" placeholder="Ej: Preparar salsas del día" autocomplete="off"></div>
     <div class="field"><label>Detalle / instrucciones</label><textarea class="textarea" id="ntDesc" placeholder="Explicá qué hay que hacer…">${t?esc(t.desc||''):''}</textarea></div>
@@ -865,9 +872,12 @@ function taskFormBody(t){
     <div class="assignee-pick" id="ntPeople">${people.map(u=>`<button type="button" class="ap ${sel.includes(u.id)?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${esc((u.name||'').split(' ')[0])} <span style="color:var(--text-soft)">(${roleInfo(u.role).short})</span></button>`).join('')}</div>
     <div class="ip-sec">${svgIcon('clock','icon icon-sm')} Prioridad y fecha</div>
     <div class="field"><label>Prioridad</label>${taskPrioSeg(t?t.prio:'media')}</div>
-    <div class="field"><label>Para cuándo</label>
+    <div class="field"><label>¿Para cuándo?</label>
       <div class="due-presets"><button type="button" class="chip" onclick="ntDuePreset('today')">Hoy</button><button type="button" class="chip" onclick="ntDuePreset('tomorrow')">Mañana</button><button type="button" class="chip" onclick="ntDuePreset('3d')">En 3 días</button><button type="button" class="chip" onclick="ntDuePreset('week')">En 1 semana</button></div>
-      <input class="input" id="ntDue" type="datetime-local" value="${dueStr}">
+      <div class="td-when">
+        <div class="td-when-date">${dateField(dp.iso,'nt')}</div>
+        <div class="td-when-time"><label class="td-when-lbl">Hora</label>${timePicker('ntT',dp.hhmm,'')}</div>
+      </div>
     </div>
     <div class="field"><label>Sucursal</label><select class="select" id="ntSuc">${t?sucOptionsSel(t.sucursalId):sucOptionsFor()}</select></div>`;
 }
@@ -906,9 +916,11 @@ function readTaskForm(){
   if(!title){ toast('Ponele un título a la tarea','err'); return null; }
   const toIds=[...document.querySelectorAll('#ntPeople .ap.on')].map(b=>b.dataset.id);
   if(!toIds.length){ toast('Elegí al menos a una persona','err'); return null; }
-  const dueV=$('#ntDue').value;
+  const dStr=$('#ntDate')?$('#ntDate').value:'';
+  const tStr=$('#ntTH')?readTP('ntT'):'12:00';
+  const due = dStr? new Date(dStr+'T'+(tStr||'12:00')).getTime() : null;
   return { title, desc:$('#ntDesc').value.trim(), toIds, sucursalId:$('#ntSuc').value,
-    prio:($('#ntPrio')?$('#ntPrio').value:'media'), due: dueV?new Date(dueV).getTime():null };
+    prio:($('#ntPrio')?$('#ntPrio').value:'media'), due };
 }
 function createTask(){
   const d=readTaskForm(); if(!d) return;
