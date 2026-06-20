@@ -2285,7 +2285,7 @@ window.prepareModal=prepareModal; window.prepareRecipe=prepareRecipe; window.rec
 window.recipeEditModal=recipeEditModal; window.saveRecipe=saveRecipe; window.addIngRow=addIngRow; window.renderIngRows=renderIngRows;
 // render ingredient rows after recipe modal opens
 const _openModal=openModal;
-openModal=function(html,wide){ _openModal(html,wide); if($('#rcIngs')) renderIngRows(); if($('#facLines')) renderFacLines(); if($('#ipPrev')) ipPreview(); if($('#shBreaks')){ shPresetEdit=false; renderBreakRows(); if($('#shPresetArea')) renderPresetArea(); updateShiftPreview(); } };
+openModal=function(html,wide){ _openModal(html,wide); if($('#rcIngs')) renderIngRows(); if($('#facLines')) renderFacLines(); if($('#ipPrev')) ipPreview(); if($('#svGanPrev')) souvGanPrev(); if($('#shBreaks')){ shPresetEdit=false; renderBreakRows(); if($('#shPresetArea')) renderPresetArea(); updateShiftPreview(); } };
 
 /* =====================================================================
    VISTA: HORARIOS / TURNOS
@@ -2983,50 +2983,66 @@ window.newClientModal=newClientModal; window.editClientModal=editClientModal; wi
    - Kenneth/Gerencia: ven costo, precio y ganancia; administran productos.
    - Jefe de salón / saloneros: solo venden y ven cuántos quedan (sin dinero).
 ===================================================================== */
-let souvTab='productos';
+let souvTab='vender';
 const MGR_ROLES=['admin','gerencia_exp','gerencia_data'];
+let svPayCur='CRC', svSellId=null;
 function souvScoped(){ return (DB.souvenirs||[]).filter(p=>inScope(p.sucursalId)); }
 function souvById(id){ return (DB.souvenirs||[]).find(p=>p.id===id); }
 const souvProfit = p => (+p.price||0)-(+p.cost||0);
 const souvLow = p => (+p.stock||0) <= (+p.minStock||0);
 function souvSalesScoped(){ return (DB.souvSales||[]).filter(v=>inScope(v.sucursalId)); }
+function souvFx(){ const f=+DB.souvFx; return f>0?f:(DB.souvFx=550); }
+function setSouvFx(v){ const f=+v; if(f>0){ DB.souvFx=f; save(); render(); } }
+function usd(colones){ return '$'+((+colones||0)/souvFx()).toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+window.setSouvFx=setSouvFx;
 
 function viewSouvenir(){
   if(!canSouvView()) return emptyState('gift','Sin acceso','Esta sección no está disponible para tu puesto.');
   return canSouvMoney() ? souvManagerView() : souvSellerView();
 }
 
-/* ---- Vista vendedores (jefe de salón / saloneros): SIN dinero ---- */
-function souvSellerView(){
+/* ---- Cuadrícula para vender (la usan todos) ---- */
+function souvSellGrid(){
+  const money_=canSouvMoney();
   const list=souvScoped().slice().sort((a,b)=>a.name.localeCompare(b.name));
-  let html=`<div class="page-head"><div><div class="page-title">Souvenirs</div><div class="page-sub">Tocá un producto para vender · solo se muestra cuántos quedan</div></div></div>`;
-  if(!list.length) return html+emptyState('gift','Sin productos','Todavía no hay souvenirs cargados.');
-  html+=`<div class="souv-grid">`+list.map(p=>{
+  if(!list.length) return emptyState('gift','Sin productos', money_?'Agregá tu primer souvenir con su costo y precio.':'Todavía no hay souvenirs cargados.', money_?'Nuevo producto':'', money_?'souvNewModal()':'');
+  return `<div class="souv-grid">`+list.map(p=>{
     const out=(+p.stock||0)<=0;
     return `<div class="souv-card ${out?'out':''}">
       <div class="souv-ic">${svgIcon('gift','icon')}</div>
       <div class="souv-name">${esc(p.name)}</div>
+      <div class="souv-price">${money(p.price)} <span class="cur-usd">${usd(p.price)}</span></div>
       <div class="souv-stock ${souvLow(p)&&!out?'low':''} ${out?'zero':''}">${out?'Agotado':'Quedan '+(+p.stock||0)}</div>
+      ${money_?`<div class="souv-gan">Ganás ${money(souvProfit(p))} c/u</div>`:''}
       <button class="btn btn-primary souv-sell-btn" ${out?'disabled':''} onclick="souvSellModal('${p.id}')">${svgIcon('plus','icon icon-sm')} Vender</button>
     </div>`;
   }).join('')+`</div>`;
-  return html;
 }
 
-/* ---- Vista Kenneth / Gerencia: inventario, precios, ganancia, ventas ---- */
+/* ---- Vista vendedores (jefe de salón / saloneros): sin costo ni ganancia ---- */
+function souvSellerView(){
+  let html=`<div class="page-head"><div><div class="page-title">Souvenirs</div><div class="page-sub">Tocá un producto para vender · precio en ₡ y $</div></div></div>`;
+  return html+souvSellGrid();
+}
+
+/* ---- Vista Gerencia: vender, inventario, ganancia, reportes ---- */
 function souvManagerView(){
   const guide=sectionGuide('souvenir','¿Cómo funcionan los Souvenirs?',`
-    Acá llevás el <b>inventario y los precios</b> de los souvenirs.
+    Acá vendés y llevás el <b>inventario, los precios y la ganancia</b> de los souvenirs, en <b>colones y dólares</b>.
     <ul style="margin:8px 0 0 18px">
-      <li>Vos ponés el <b>costo</b> y el <b>precio de venta</b>; el sistema calcula tu <b>ganancia</b>.</li>
-      <li>Cuando un salonero vende, se <b>descuenta del inventario</b> y te llega el aviso de la venta.</li>
-      <li>Los saloneros y el jefe de salón <b>no ven dinero</b>, solo cuántos quedan.</li>
+      <li>Poné el <b>tipo de cambio</b> arriba a la derecha; el sistema muestra todo en ₡ y $.</li>
+      <li>Vos definís <b>costo</b> y <b>precio</b>; el sistema calcula tu <b>ganancia</b>.</li>
+      <li>Al vender se <b>descuenta del inventario</b>; en <b>Reportes</b> ves gráficos de ventas y ganancia.</li>
+      <li>Los saloneros venden y ven el <b>precio a cobrar</b>, pero no el costo ni la ganancia.</li>
     </ul>`);
-  let html=`<div class="page-head"><div><div class="page-title">Souvenirs</div><div class="page-sub">Inventario, precios y ventas</div></div>
-    <div class="ph-spacer"></div><button class="btn btn-primary" style="flex:0 0 auto" onclick="souvNewModal()">${svgIcon('plus','icon icon-sm')} Nuevo producto</button></div>`;
+  let html=`<div class="page-head"><div><div class="page-title">Souvenirs</div><div class="page-sub">Vender · inventario · ganancia · reportes</div></div>
+    <div class="ph-spacer"></div>
+    <div class="souv-fx" title="Tipo de cambio del dólar">$1 = ₡<input class="souv-fx-in" type="number" min="1" step="any" value="${souvFx()}" onchange="setSouvFx(this.value)"></div>
+    <button class="btn btn-primary" style="flex:0 0 auto" onclick="souvNewModal()">${svgIcon('plus','icon icon-sm')} Nuevo producto</button></div>`;
   html+=guide;
-  html+=`<div class="hor-modes"><button class="chip ${souvTab==='productos'?'on':''}" onclick="souvTab='productos';render()">Productos</button><button class="chip ${souvTab==='ventas'?'on':''}" onclick="souvTab='ventas';render()">Ventas</button></div>`;
-  html+= souvTab==='ventas' ? souvVentasView() : souvProductosView();
+  const tabs=[['vender','Vender'],['productos','Inventario'],['ventas','Reportes']];
+  html+=`<div class="hor-modes">${tabs.map(([k,l])=>`<button class="chip ${souvTab===k?'on':''}" onclick="souvTab='${k}';render()">${l}</button>`).join('')}</div>`;
+  html+= souvTab==='vender'?souvSellGrid() : souvTab==='ventas'?souvVentasView() : souvProductosView();
   return html;
 }
 
@@ -3038,9 +3054,9 @@ function souvProductosView(){
   const lowN=list.filter(souvLow).length;
   let html=`<div class="kpi-row">
     <div class="kpi"><div class="label">Productos</div><div class="value">${list.length}</div><div class="sub">en catálogo</div></div>
-    <div class="kpi"><div class="label">Unidades</div><div class="value">${stockTot}</div><div class="sub">en inventario</div></div>
-    <div class="kpi"><div class="label">Invertido</div><div class="value">${money(valCost)}</div><div class="sub">costo del inventario</div></div>
-    <div class="kpi ${lowN?'warn':''}"><div class="label">Ganancia potencial</div><div class="value">${money(gananciaPot)}</div><div class="sub">${lowN?lowN+' por reabastecer':'si se vende todo'}</div></div>
+    <div class="kpi ${lowN?'warn':''}"><div class="label">Unidades</div><div class="value">${stockTot}</div><div class="sub">${lowN?lowN+' por reabastecer':'en inventario'}</div></div>
+    <div class="kpi"><div class="label">Invertido</div><div class="value">${money(valCost)}</div><div class="sub">${usd(valCost)}</div></div>
+    <div class="kpi ok"><div class="label">Ganancia potencial</div><div class="value">${money(gananciaPot)}</div><div class="sub">${usd(gananciaPot)}</div></div>
   </div>`;
   if(!list.length) return html+emptyState('gift','Sin productos','Agregá tu primer souvenir con su costo y precio.','Nuevo producto','souvNewModal()');
   html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>
@@ -3049,9 +3065,9 @@ function souvProductosView(){
     <td style="font-weight:600">${esc(p.name)}${souvLow(p)?` <span class="pill atrasada" style="margin-left:4px">Bajo</span>`:''}</td>
     <td><b>${+p.stock||0}</b></td>
     <td>${+p.minStock||0}</td>
-    <td>${money(p.cost)}</td>
-    <td>${money(p.price)}</td>
-    <td style="color:var(--ok,#3a9d6e);font-weight:700">${money(souvProfit(p))}</td>
+    <td>${money(p.cost)}<span class="cur-usd">${usd(p.cost)}</span></td>
+    <td>${money(p.price)}<span class="cur-usd">${usd(p.price)}</span></td>
+    <td style="color:var(--success);font-weight:700">${money(souvProfit(p))}<span class="cur-usd">${usd(souvProfit(p))}</span></td>
     <td style="text-align:right;white-space:nowrap">
       <button class="btn btn-ghost" style="padding:6px 9px" onclick="souvSellModal('${p.id}')">Vender</button>
       <button class="btn btn-ghost" style="padding:6px 9px" onclick="souvStockModal('${p.id}')">Existencias</button>
@@ -3059,6 +3075,29 @@ function souvProductosView(){
     </td></tr>`).join('');
   html+=`</tbody></table></div></div>`;
   return html;
+}
+
+/* ---- Gráficos para gerencia ---- */
+function souvCharts(sales){
+  const today=new Date(); today.setHours(0,0,0,0);
+  const days=[...Array(7)].map((_,i)=>{ const d=new Date(today); d.setDate(today.getDate()-(6-i)); return d; });
+  const dayRev=days.map(d=>{ const key=d.toDateString();
+    const rev=sales.filter(v=>new Date(v.at).toDateString()===key).reduce((s,v)=>s+(+v.price||0)*(+v.qty||0),0);
+    return { lbl:d.toLocaleDateString('es-CR',{weekday:'short'}).replace('.',''), value:rev }; });
+  const maxRev=Math.max(1,...dayRev.map(x=>x.value));
+  const bars=dayRev.map((x,i)=>`<div class="cbar" title="${money(x.value)} · ${usd(x.value)}">
+    <div class="cbar-val">${x.value?Math.round(x.value/1000)+'k':''}</div>
+    <div class="cbar-track"><div class="cbar-fill${i===6?' today':''}" style="height:${Math.round(x.value/maxRev*100)}%"></div></div>
+    <div class="cbar-lbl">${x.lbl}</div></div>`).join('');
+  const byProd={};
+  sales.forEach(v=>{ const g=((+v.price||0)-(+v.cost||0))*(+v.qty||0); byProd[v.name]=(byProd[v.name]||0)+g; });
+  const top=Object.keys(byProd).map(n=>({name:n,g:byProd[n]})).sort((a,b)=>b.g-a.g).slice(0,5);
+  const maxG=Math.max(1,...top.map(t=>t.g));
+  const rows=top.map(t=>`<div class="chart-row"><span class="cr-name">${esc(t.name)}</span><div class="cr-track"><div class="cr-fill" style="width:${Math.max(4,Math.round(t.g/maxG*100))}%"></div></div><span class="cr-val">${money(t.g)}</span></div>`).join('')||'<div class="chart-empty">Sin datos todavía</div>';
+  return `<div class="chart-grid">
+    <div class="chartcard"><div class="chart-title">${svgIcon('trend','icon icon-sm')} Ventas últimos 7 días</div><div class="chart-bars">${bars}</div></div>
+    <div class="chartcard"><div class="chart-title">${svgIcon('chart','icon icon-sm')} Top productos por ganancia</div><div class="chart-rows">${rows}</div></div>
+  </div>`;
 }
 
 function souvVentasView(){
@@ -3069,54 +3108,69 @@ function souvVentasView(){
   const unidades=list.reduce((s,v)=>s+(+v.qty||0),0);
   let html=`<div class="kpi-row">
     <div class="kpi"><div class="label">Ventas</div><div class="value">${list.length}</div><div class="sub">${unidades} unidades</div></div>
-    <div class="kpi"><div class="label">Ingresos</div><div class="value">${money(ingresos)}</div><div class="sub">total vendido</div></div>
-    <div class="kpi"><div class="label">Costo</div><div class="value">${money(costos)}</div><div class="sub">de lo vendido</div></div>
-    <div class="kpi ok"><div class="label">Ganancia</div><div class="value">${money(ganancia)}</div><div class="sub">utilidad neta</div></div>
+    <div class="kpi"><div class="label">Ingresos</div><div class="value">${money(ingresos)}</div><div class="sub">${usd(ingresos)}</div></div>
+    <div class="kpi"><div class="label">Costo</div><div class="value">${money(costos)}</div><div class="sub">${usd(costos)}</div></div>
+    <div class="kpi ok"><div class="label">Ganancia</div><div class="value">${money(ganancia)}</div><div class="sub">${usd(ganancia)}</div></div>
   </div>`;
+  html+=souvCharts(list);
   if(!list.length) return html+emptyState('gift','Sin ventas todavía','Cuando se venda un souvenir, la venta y tu ganancia aparecen acá.');
   html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>
-    <th>Fecha</th><th>Producto</th><th>Cant.</th><th>Precio</th><th>Total</th><th>Ganancia</th><th>Vendió</th></tr></thead><tbody>`;
+    <th>Fecha</th><th>Producto</th><th>Cant.</th><th>Total</th><th>Ganancia</th><th>Pago</th><th>Vendió</th></tr></thead><tbody>`;
   html+=list.map(v=>{const u=userById(v.byId); const tot=(+v.price||0)*(+v.qty||0); const gan=((+v.price||0)-(+v.cost||0))*(+v.qty||0);
     return `<tr>
       <td>${fmtDateTime(v.at)}</td>
       <td style="font-weight:600">${esc(v.name)}</td>
       <td>${+v.qty||0}</td>
-      <td>${money(v.price)}</td>
-      <td><b>${money(tot)}</b></td>
-      <td style="color:var(--ok,#3a9d6e);font-weight:700">${money(gan)}</td>
+      <td><b>${money(tot)}</b><span class="cur-usd">${usd(tot)}</span></td>
+      <td style="color:var(--success);font-weight:700">${money(gan)}</td>
+      <td>${v.payCur==='USD'?'Dólares':'Colones'}</td>
       <td>${esc(u?u.name:'—')}</td>
     </tr>`;}).join('');
   html+=`</tbody></table></div></div>`;
   return html;
 }
 
-/* ---- Vender ---- */
+/* ---- Vender (modal ancho, ₡ y $, cantidad con + / −) ---- */
 function souvSellModal(id){
   const p=souvById(id); if(!p) return;
   if((+p.stock||0)<=0){ toast('No quedan unidades de este producto','err'); return; }
-  const money_=canSouvMoney();
-  openModal(`<div class="modal-head"><h3>Vender · ${esc(p.name)}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  svSellId=id; svPayCur='CRC';
+  openModal(`<div class="modal-head"><h3>Vender</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
-      <div class="souv-sell-stock">Quedan <b>${+p.stock||0}</b> en inventario</div>
-      <div class="field"><label>¿Cuántos vendés?</label><input class="input" id="svQty" type="number" min="1" max="${+p.stock||0}" value="1" autofocus></div>
-      ${money_?`<div class="souv-sell-info">Precio ${money(p.price)} c/u · ganás <b style="color:var(--ok,#3a9d6e)">${money(souvProfit(p))}</b> por unidad</div>`:''}
+      <div class="souv-sellhead"><span class="souv-ic">${svgIcon('gift','icon')}</span><div><div class="souv-sellhead-n">${esc(p.name)}</div><div class="page-sub" style="margin:2px 0 0">Quedan <b>${+p.stock||0}</b> en inventario</div></div></div>
+      <div class="field"><label>¿Cuántos vendés?</label>
+        <div class="qty-step"><button type="button" onclick="souvQtyStep(-1)">−</button><input id="svQty" type="number" min="1" max="${+p.stock||0}" value="1" oninput="souvSellPreview()"><button type="button" onclick="souvQtyStep(1)">+</button></div>
+      </div>
+      <div class="souv-paycur"><span>¿Cómo paga?</span><div class="seg"><button type="button" class="seg-b on" id="svCurCRC" onclick="souvSetCur('CRC')">Colones ₡</button><button type="button" class="seg-b" id="svCurUSD" onclick="souvSetCur('USD')">Dólares $</button></div></div>
+      <div class="souv-total" id="svSellRes"></div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="souvSell('${p.id}')">Confirmar venta</button></div>`);
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="souvSell('${p.id}')">${svgIcon('check','icon icon-sm')} Confirmar venta</button></div>`, true);
+  souvSellPreview();
+}
+function souvQtyStep(d){ const el=$('#svQty'); if(!el)return; const p=souvById(svSellId); const mx=p?(+p.stock||1):1; let q=(parseInt(el.value,10)||1)+d; q=Math.max(1,Math.min(mx,q)); el.value=q; souvSellPreview(); }
+function souvSetCur(c){ svPayCur=c; const a=$('#svCurCRC'),b=$('#svCurUSD'); if(a)a.classList.toggle('on',c==='CRC'); if(b)b.classList.toggle('on',c==='USD'); souvSellPreview(); }
+function souvSellPreview(){
+  const p=souvById(svSellId); const el=$('#svSellRes'); if(!p||!el) return;
+  let q=parseInt(($('#svQty')||{}).value,10)||1; q=Math.max(1,Math.min(+p.stock||1,q));
+  const totC=(+p.price||0)*q, totU=totC/souvFx();
+  const primary = svPayCur==='USD' ? ('$'+totU.toLocaleString('en-US',{minimumFractionDigits:2,maximumFractionDigits:2})) : money(totC);
+  const secondary = svPayCur==='USD' ? money(totC) : usd(totC);
+  let h=`<div class="souv-total-lbl">A cobrar</div><div class="souv-total-big">${primary}</div><div class="souv-total-sub">${secondary}</div>`;
+  if(canSouvMoney()){ h+=`<div class="souv-total-gan">Ganancia ${money(souvProfit(p)*q)}</div>`; }
+  el.innerHTML=h;
 }
 function souvSell(id){
   const p=souvById(id); if(!p) return;
   let qty=parseInt($('#svQty').value,10); if(isNaN(qty)||qty<1)qty=1;
   if(qty>(+p.stock||0)){ toast('No hay suficientes unidades','err'); return; }
   p.stock=(+p.stock||0)-qty;
-  const sale={id:uid(),productId:p.id,name:p.name,qty,price:+p.price||0,cost:+p.cost||0,byId:SES.userId,sucursalId:p.sucursalId,at:now()};
+  const sale={id:uid(),productId:p.id,name:p.name,qty,price:+p.price||0,cost:+p.cost||0,payCur:svPayCur,fx:souvFx(),byId:SES.userId,sucursalId:p.sucursalId,at:now()};
   DB.souvSales.push(sale);
   audit('souvenir',`vendió ${qty}× ${p.name}`,p.sucursalId);
-  // aviso a Kenneth / gerencia con dinero y ganancia
   const ingreso=sale.price*qty, ganancia=(sale.price-sale.cost)*qty;
   const seller=me()?me().name:'';
   notify(DB.users.filter(u=>MGR_ROLES.includes(u.role)).map(u=>u.id),
-    `Venta souvenir: ${qty}× ${p.name} · ${money(ingreso)} (ganancia ${money(ganancia)})${seller?' · '+seller:''}`, 'gift', {view:'souvenir'});
-  // aviso de inventario bajo
+    `Venta souvenir: ${qty}× ${p.name} · ${money(ingreso)} (${usd(ingreso)}) · ganancia ${money(ganancia)}${seller?' · '+seller:''}`, 'gift', {view:'souvenir'});
   if(souvLow(p)){
     notify(DB.users.filter(u=>MGR_ROLES.includes(u.role)).map(u=>u.id),
       `Inventario bajo de souvenir: ${p.name} · quedan ${p.stock}`, 'gift', {view:'souvenir'});
@@ -3127,8 +3181,8 @@ function souvSell(id){
 }
 
 /* ---- Alta / edición de producto (solo gerencia) ---- */
-function souvNewModal(){ if(!canSouvMoney())return; openModal(souvForm('Nuevo souvenir',null)); }
-function souvEditModal(id){ if(!canSouvMoney())return; openModal(souvForm('Editar souvenir',souvById(id))); }
+function souvNewModal(){ if(!canSouvMoney())return; openModal(souvForm('Nuevo souvenir',null), true); }
+function souvEditModal(id){ if(!canSouvMoney())return; openModal(souvForm('Editar souvenir',souvById(id)), true); }
 function souvForm(title,p){
   return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
@@ -3138,13 +3192,18 @@ function souvForm(title,p){
       <div class="field"><label>Avisarme cuando queden</label><input class="input" id="svMin" type="number" min="0" value="${p?(+p.minStock||0):5}"></div>
     </div>
     <div class="row2">
-      <div class="field"><label>Costo por unidad (₡)</label><input class="input" id="svCost" type="number" min="0" step="any" value="${p?(+p.cost||0):0}"></div>
-      <div class="field"><label>Precio de venta (₡)</label><input class="input" id="svPrice" type="number" min="0" step="any" value="${p?(+p.price||0):0}"></div>
+      <div class="field"><label>Costo por unidad (₡)</label><input class="input" id="svCost" type="number" min="0" step="any" value="${p?(+p.cost||0):0}" oninput="souvGanPrev()"></div>
+      <div class="field"><label>Precio de venta (₡)</label><input class="input" id="svPrice" type="number" min="0" step="any" value="${p?(+p.price||0):0}" oninput="souvGanPrev()"></div>
     </div>
-    <div class="souv-sell-info" id="svGanPrev">Ganancia por unidad: <b style="color:var(--ok,#3a9d6e)">${money(p?souvProfit(p):0)}</b></div>
+    <div class="souv-sell-info" id="svGanPrev"></div>
     <div class="field"><label>Sucursal</label><select class="select" id="svSuc">${sucOptionsFor()}</select></div>
   </div>
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveSouv('${p?p.id:''}')">Guardar</button></div>`;
+}
+function souvGanPrev(){
+  const el=$('#svGanPrev'); if(!el) return;
+  const c=+($('#svCost')?$('#svCost').value:0)||0, pr=+($('#svPrice')?$('#svPrice').value:0)||0;
+  el.innerHTML=`Ganancia por unidad: <b style="color:var(--success)">${money(pr-c)}</b> (${usd(pr-c)}) · Precio ${usd(pr)} · Costo ${usd(c)}`;
 }
 function saveSouv(id){
   const name=$('#svName').value.trim(); if(!name){ toast('Poné el nombre del producto','err'); return; }
@@ -3180,6 +3239,7 @@ async function delSouv(id){
 window.viewSouvenir=viewSouvenir; window.souvSellModal=souvSellModal; window.souvSell=souvSell;
 window.souvNewModal=souvNewModal; window.souvEditModal=souvEditModal; window.saveSouv=saveSouv;
 window.souvStockModal=souvStockModal; window.souvAddStock=souvAddStock; window.delSouv=delSouv;
+window.souvQtyStep=souvQtyStep; window.souvSetCur=souvSetCur; window.souvSellPreview=souvSellPreview; window.souvGanPrev=souvGanPrev;
 
 /* =====================================================================
    COMPONENTES COMUNES
