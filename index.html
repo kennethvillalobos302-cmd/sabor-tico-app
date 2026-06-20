@@ -550,15 +550,24 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .fac-card-items>div{font-size:12.5px;color:var(--text-soft);display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
 .fac-card-items>div span{color:var(--text);font-weight:600}
 .fac-card-items>div b{color:var(--text)}
-/* escaneo de factura con foto */
-.fac-scan{margin-bottom:16px}
-.fac-scan-btn{display:flex;align-items:center;gap:13px;width:100%;text-align:left;padding:15px 16px;border:1.5px dashed var(--accent-line);border-radius:var(--r-md);background:var(--accent-soft);color:var(--text);transition:border-color var(--t-fast),background var(--t-fast)}
-.fac-scan-btn:hover{border-color:var(--accent);background:var(--accent-soft)}
-.fac-scan-btn .icon{width:26px;height:26px;color:var(--accent);flex:0 0 auto}
-.fac-scan-t{font-weight:700;font-size:14.5px}
-.fac-scan-s{font-size:12px;color:var(--text-soft);margin-top:2px}
-.fac-scan-status{font-size:12.5px;margin-top:9px;line-height:1.5;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+/* escaneo de factura con foto (acción principal) */
+.fac-scan{margin-bottom:18px}
+.fac-scan-btn{display:flex;flex-direction:column;align-items:center;text-align:center;gap:4px;width:100%;padding:26px 18px;border:2px dashed var(--accent-line);border-radius:var(--r-lg);background:var(--accent-soft);color:var(--text);transition:border-color var(--t-fast),transform var(--t-fast)}
+.fac-scan-btn:hover{border-color:var(--accent)}
+.fac-scan-btn:active{transform:scale(.99)}
+.fac-scan-ico{display:inline-flex;align-items:center;justify-content:center;width:54px;height:54px;border-radius:50%;background:var(--grad-accent);margin-bottom:8px}
+.fac-scan-ico .icon{width:26px;height:26px;color:#fff}
+.fac-scan-t{font-weight:800;font-size:16px}
+.fac-scan-s{font-size:12.5px;color:var(--text-soft);max-width:34ch}
+.fac-scan-status{font-size:12.5px;margin-top:11px;line-height:1.5;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;text-align:center}
 .fac-scan-status:empty{display:none}
+/* estado vacío de productos */
+.fac-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:3px;padding:22px 16px;border:1px dashed var(--border);border-radius:var(--r-md);color:var(--text-soft)}
+.fac-empty .icon{width:30px;height:30px;color:var(--text-dim);margin-bottom:5px}
+.fac-empty-t{font-weight:700;color:var(--text);font-size:14px}
+.fac-empty-s{font-size:12.5px}
+.fac-manual{margin-top:12px;display:inline-flex;align-items:center;gap:6px;padding:9px 16px;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--bg-soft);font-weight:600;font-size:13px;color:var(--text);transition:border-color var(--t-fast)}
+.fac-manual:hover{border-color:var(--accent-line)}
 .fac-ok{color:var(--success);font-weight:600}
 .fac-err{color:var(--danger);font-weight:600}
 .fac-spin{width:15px;height:15px;border:2px solid var(--accent-soft);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:facspin .7s linear infinite;flex:0 0 auto}

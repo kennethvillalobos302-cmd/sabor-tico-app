@@ -1997,35 +1997,41 @@ let facLines=[];
 function invoiceModal(){
   const area=invAreasFor().filter(canInvEditArea);
   const defArea=area.includes(invArea)?invArea:area[0]||'cocina';
-  facLines=[{productId:'',name:'',category:catsForArea(defArea)[0]||'',unit:'unid',qty:1,cost:0}];
+  facLines=[];
   openModal(invoiceForm(defArea), true);
 }
 function invoiceForm(defArea){
   const editable=invAreasFor().filter(canInvEditArea);
   const today=new Date(); today.setMinutes(today.getMinutes()-today.getTimezoneOffset());
   const date=today.toISOString().slice(0,10);
+  const areaSel = editable.length>1
+    ? `<div class="field"><label>Bodega</label><select class="select" id="facArea" onchange="renderFacLines()">${editable.map(a=>`<option value="${a}" ${a===defArea?'selected':''}>${INV_AREA_LABEL[a]}</option>`).join('')}</select></div>`
+    : `<input type="hidden" id="facArea" value="${defArea}">`;
   return `<div class="modal-head"><h3>${svgIcon('truck','icon')} Registrar factura</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
     <div class="fac-scan">
       <input type="file" id="facFile" accept="image/*" capture="environment" style="display:none" onchange="facPhotoChosen(this)">
-      <button type="button" class="fac-scan-btn" onclick="facPickPhoto()">${svgIcon('image','icon')}<div><div class="fac-scan-t">Subir foto de la factura</div><div class="fac-scan-s">La IA lee los productos y los llena por vos · luego revisás</div></div></button>
+      <button type="button" class="fac-scan-btn" onclick="facPickPhoto()">
+        <span class="fac-scan-ico">${svgIcon('image','icon')}</span>
+        <span class="fac-scan-t">Tomar o subir foto de la factura</span>
+        <span class="fac-scan-s">La IA lee proveedor, productos y costos · vos revisás antes de guardar</span>
+      </button>
       <div id="facScanStatus" class="fac-scan-status"></div>
     </div>
-    <div class="ip-hint">O anotá los productos a mano. Al guardar, las cantidades se <b>suman al inventario</b> automáticamente (y los productos nuevos se crean).</div>
+    <div class="ip-sec">${svgIcon('list','icon icon-sm')} Productos</div>
+    <div id="facLines"></div>
+    <div class="fac-total" id="facTotal"></div>
+    <div class="ip-sec">${svgIcon('truck','icon icon-sm')} Datos de la factura</div>
     <div class="row2">
-      <div class="field"><label>Proveedor</label><input class="input" id="facSup" placeholder="Ej: Distribuidora La Cana" autocomplete="off"></div>
+      <div class="field"><label>Proveedor</label><input class="input" id="facSup" placeholder="Lo llena la foto" autocomplete="off"></div>
       <div class="field"><label>N.º de factura</label><input class="input" id="facNum" placeholder="Opcional" autocomplete="off"></div>
     </div>
     <div class="row2">
       <div class="field"><label>Fecha</label>${dateField(date,'fac')}</div>
       <div class="field"><label>Sucursal</label><select class="select" id="facSuc">${sucOptionsFor()}</select></div>
     </div>
-    <div class="field"><label>Bodega para productos nuevos</label><select class="select" id="facArea" onchange="renderFacLines()">${editable.map(a=>`<option value="${a}" ${a===defArea?'selected':''}>${INV_AREA_LABEL[a]}</option>`).join('')}</select></div>
-    <div class="ip-sec">${svgIcon('list','icon icon-sm')} Productos de la factura</div>
-    <div id="facLines"></div>
-    <button class="add-break" onclick="facAddLine()">${svgIcon('plus','icon icon-sm')} Agregar producto</button>
-    <div class="fac-total" id="facTotal"></div>
-    <div class="field" style="margin-top:14px"><label>Nota (opcional)</label><input class="input" id="facNote" placeholder="Ej: pago a 30 días" autocomplete="off"></div>
+    ${areaSel}
+    <div class="field"><label>Nota (opcional)</label><input class="input" id="facNote" placeholder="Ej: pago a 30 días" autocomplete="off"></div>
   </div>
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveInvoice()">${svgIcon('check','icon icon-sm')} Guardar y sumar al inventario</button></div>`;
 }
@@ -2033,6 +2039,14 @@ function renderFacLines(){
   const c=$('#facLines'); if(!c) return;
   const area=$('#facArea')?$('#facArea').value:'cocina';
   const prods=invInScope().filter(p=>(p.area||'cocina')===area).sort((a,b)=>a.name.localeCompare(b.name));
+  if(!facLines.length){
+    c.innerHTML=`<div class="fac-empty">${svgIcon('image','icon')}
+      <div class="fac-empty-t">Todavía no hay productos</div>
+      <div class="fac-empty-s">Subí la foto de la factura y aparecen acá para revisar.</div>
+      <button type="button" class="fac-manual" onclick="facAddLine()">${svgIcon('plus','icon icon-sm')} Agregar a mano</button></div>`;
+    facUpdateTotal();
+    return;
+  }
   c.innerHTML=facLines.map((l,i)=>{
     const isNew=!l.productId;
     const opts=`<option value="">＋ Producto nuevo…</option>`+prods.map(p=>`<option value="${p.id}" ${l.productId===p.id?'selected':''}>${esc(p.name)} (${esc(p.unit)})</option>`).join('');
@@ -2053,7 +2067,7 @@ function renderFacLines(){
         <div class="fac-line-total" id="facLT${i}">${money(l.qty*l.cost)}</div>
       </div>
     </div>`;
-  }).join('');
+  }).join('')+`<button type="button" class="add-break" onclick="facAddLine()">${svgIcon('plus','icon icon-sm')} Agregar otro producto</button>`;
   facUpdateTotal();
 }
 function facSetProduct(idx,pid){
@@ -2062,10 +2076,11 @@ function facSetProduct(idx,pid){
   renderFacLines();
 }
 function facAddLine(){ const area=$('#facArea')?$('#facArea').value:'cocina'; facLines.push({productId:'',name:'',category:catsForArea(area)[0]||'',unit:'unid',qty:1,cost:0}); renderFacLines(); }
-function facDelLine(i){ facLines.splice(i,1); if(!facLines.length) facAddLine(); else renderFacLines(); }
+function facDelLine(i){ facLines.splice(i,1); renderFacLines(); }
 function facUpdateTotal(){
   let t=0; facLines.forEach((l,i)=>{ const lt=(+l.qty||0)*(+l.cost||0); t+=lt; const e=$('#facLT'+i); if(e) e.textContent=money(lt); });
-  const el=$('#facTotal'); if(el) el.innerHTML=`<span>Total de la factura</span><b>${money(t)}</b>`;
+  const el=$('#facTotal'); if(!el) return;
+  el.innerHTML = facLines.length ? `<span>Total · ${facLines.length} ${facLines.length===1?'producto':'productos'}</span><b>${money(t)}</b>` : '';
 }
 function saveInvoice(){
   const supplier=$('#facSup').value.trim();
@@ -2161,8 +2176,8 @@ function applyFacturaAI(out){
     let unit=String(it.unidad||'').toLowerCase().trim(); if(!INV_UNITS.includes(unit)) unit=match?match.unit:'unid';
     return {productId:match?match.id:'', name:match?match.name:name, category:match?match.category:(catsForArea(area)[0]||''), unit, qty:+it.cantidad||1, cost:Math.round(+it.costo_unitario||0)};
   });
-  facLines = lines.length?lines:facLines;
-  if(!facLines.length) facAddLine(); else renderFacLines();
+  if(lines.length) facLines=lines;
+  renderFacLines();
 }
 window.facPickPhoto=facPickPhoto; window.facPhotoChosen=facPhotoChosen;
 
