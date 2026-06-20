@@ -663,10 +663,10 @@ function viewTareas(){
     Acá <b>pedís y seguís el trabajo</b> entre todos los puestos. El chef le pone una tarea a la cocina, el jefe de salón a los saloneros, etc.
     <ul style="margin:8px 0 0 18px">
       <li>Asignás a una o varias personas, con fecha y prioridad.</li>
-      <li>Podés adjuntar <b>notas e imágenes</b>.</li>
-      <li>Cada cambio queda <b>registrado</b>: se sabe quién la marcó hecha, quién la rechazó y quién la dejó atrasar.</li>
-    </ul>
-    <div class="tip"><b>Importante:</b> nadie puede borrar una tarea ni su historial. Así no se puede tapar quién no cumplió.</div>`);
+      <li>Podés <b>responder, comentar</b> y adjuntar notas e imágenes.</li>
+      <li>Quien la asigna (o Administración) puede <b>editarla o eliminarla</b>.</li>
+      <li>Cada cambio queda <b>registrado</b> en el historial.</li>
+    </ul>`);
 
   if(taskSearch){ const q=taskSearch.toLowerCase(); list=list.filter(t=>(t.title||'').toLowerCase().includes(q)||(t.desc||'').toLowerCase().includes(q)); }
 
@@ -755,34 +755,49 @@ function taskDetail(id){
     if(t.status==='pendiente'||t.status==='atrasada') actions+=`<button class="btn btn-ghost" onclick="setTaskStatus('${t.id}','proceso')">${svgIcon('clock','icon icon-sm')} En proceso</button>`;
     if(amResp && t.status!=='rechazada' && t.status!=='hecha') actions+=`<button class="btn btn-ghost" onclick="rejectTask('${t.id}')">${svgIcon('x','icon icon-sm')} Rechazar</button>`;
   }
-  if(canEdit) actions+=`<button class="btn btn-ghost" onclick="editTaskModal('${t.id}')">${svgIcon('edit','icon icon-sm')} Editar</button>`;
+  if(canEdit){
+    actions+=`<button class="btn btn-ghost" onclick="editTaskModal('${t.id}')">${svgIcon('edit','icon icon-sm')} Editar</button>`;
+    actions+=`<button class="btn btn-danger" onclick="delTask('${t.id}')">${svgIcon('trash','icon icon-sm')} Eliminar</button>`;
+  }
+  const pr=prioMeta(t.prio); const overdue=t.status==='atrasada';
 
   openModal(`
-    <div class="modal-head"><h3>${esc(t.title)}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-head"><h3>${esc(t.title)}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
-      <span class="pill ${t.status}" style="font-size:12px">${statusLabel(t.status)}</span>
-      ${t.desc?`<p style="margin:12px 0;font-size:14px;line-height:1.6">${esc(t.desc)}</p>`:''}
-      ${imgs?`<div class="img-prev">${imgs}</div>`:''}
-      <div class="detail-meta">
-        <div class="dm"><div class="dl">Asignada por</div><div class="dv">${from?esc(from.name):'—'}</div></div>
-        <div class="dm"><div class="dl">Responsables</div><div class="dv">${assignees.map(a=>esc(a.name.split(' ')[0])).join(', ')||'—'}</div></div>
-        <div class="dm"><div class="dl">Prioridad</div><div class="dv">${cap(t.prio)}</div></div>
-        <div class="dm"><div class="dl">Para cuándo</div><div class="dv">${fmtDateTime(t.due)}</div></div>
-        <div class="dm"><div class="dl">Sucursal</div><div class="dv">${esc(sucName(t.sucursalId))}</div></div>
-        <div class="dm"><div class="dl">Creada</div><div class="dv">${fmtDate(t.createdAt)}</div></div>
+      <div class="td-top">
+        <span class="pill ${t.status}">${statusLabel(t.status)}</span>
+        <span class="td-badge"><span class="dot-prio" style="background:${pr.color}"></span>Prioridad ${pr.label}</span>
+        <span class="td-badge ${overdue?'tk-due-late':''}">${svgIcon('clock','icon icon-sm')} ${fmtDateTime(t.due)}</span>
       </div>
-      ${actions?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">${actions}</div>`:''}
-      <div class="dl" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);font-weight:700;margin-bottom:6px">Historial (no se puede borrar)</div>
-      <div class="log">${logHtml}</div>
-      <div class="dl" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);font-weight:700;margin:16px 0 8px">Comentarios</div>
-      ${comments||'<div style="color:var(--text-soft);font-size:13px;margin-bottom:8px">Sin comentarios todavía.</div>'}
-      <div style="display:flex;gap:8px;margin-top:8px">
-        <input class="input" id="tcInput" placeholder="Escribí un comentario…">
-        <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addTaskComment('${t.id}')">Enviar</button>
+      ${t.desc?`<div class="td-desc">${esc(t.desc)}</div>`:''}
+      ${imgs?`<div class="img-prev">${imgs}</div>`:''}
+      <div class="td-meta">
+        <div class="td-mrow"><span class="td-ml">Asignada por</span><span class="td-mv">${from?esc(from.name):'—'}</span></div>
+        <div class="td-mrow"><span class="td-ml">Responsables</span><span class="td-mv">${assignees.map(a=>esc(a.name.split(' ')[0])).join(', ')||'—'}</span></div>
+        <div class="td-mrow"><span class="td-ml">Sucursal</span><span class="td-mv">${esc(sucName(t.sucursalId))}</span></div>
+        <div class="td-mrow"><span class="td-ml">Creada</span><span class="td-mv">${fmtDate(t.createdAt)}</span></div>
+      </div>
+      ${actions?`<div class="td-actions">${actions}</div>`:''}
+      <div class="td-sec">Historial</div>
+      <div class="log">${logHtml||'<div class="td-empty">Sin movimientos.</div>'}</div>
+      <div class="td-sec">Respuestas y comentarios</div>
+      <div class="td-comments">${comments||'<div class="td-empty">Sin respuestas todavía. Escribí la primera.</div>'}</div>
+      <div class="td-composer">
+        <input class="input" id="tcInput" placeholder="Escribí una respuesta…" autocomplete="off" onkeydown="if(event.key==='Enter')addTaskComment('${t.id}')">
+        <button class="chat-send" title="Enviar" onclick="addTaskComment('${t.id}')">${svgIcon('send')}</button>
       </div>
     </div>`,true);
 }
 window.taskDetail=taskDetail;
+async function delTask(id){
+  const t=DB.tasks.find(x=>x.id===id); if(!t) return;
+  if(!(t.fromId===SES.userId||isAdmin())){ toast('Solo quien la asignó o Administración puede eliminarla','err'); return; }
+  if(!await confirmDialog(`Se elimina la tarea "${t.title}" con su historial y comentarios. No se puede deshacer.`,{title:'¿Eliminar tarea?',okText:'Sí, eliminar'})) return;
+  DB.tasks=DB.tasks.filter(x=>x.id!==id);
+  audit('tarea',`eliminó la tarea "${t.title}"`,t.sucursalId);
+  closeModal(); toast('Tarea eliminada','ok'); save(); render();
+}
+window.delTask=delTask;
 
 function setTaskStatus(id,status){
   const t=DB.tasks.find(x=>x.id===id); if(!t) return;

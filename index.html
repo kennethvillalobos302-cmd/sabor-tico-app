@@ -353,6 +353,22 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .comment .cname{font-size:12px;font-weight:700}
 .comment .ctext{font-size:13px;margin-top:3px;line-height:1.5}
 .comment .ctime{font-size:10.5px;color:var(--text-soft);margin-top:4px}
+/* detalle de tarea (pop-up rediseñado) */
+.td-top{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px}
+.td-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--text-soft);background:var(--bg-soft);border-radius:var(--r-pill);padding:5px 11px}
+.td-badge.tk-due-late{color:var(--danger);background:var(--danger-bg);font-weight:700}
+.td-desc{font-size:14px;line-height:1.6;background:var(--bg-soft);border:1px solid var(--border-soft);border-radius:var(--r-md);padding:13px 15px;margin-bottom:14px;white-space:pre-wrap}
+.td-meta{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border-soft);border:1px solid var(--border-soft);border-radius:var(--r-md);overflow:hidden;margin-bottom:18px}
+.td-mrow{background:var(--bg-card);padding:11px 14px;display:flex;flex-direction:column;gap:3px}
+.td-ml{font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700;color:var(--text-soft)}
+.td-mv{font-size:13.5px;font-weight:650}
+.td-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px}
+.td-sec{font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);font-weight:700;margin:16px 0 9px}
+.td-comments{display:flex;flex-direction:column;margin-bottom:6px}
+.td-empty{color:var(--text-soft);font-size:13px;padding:4px 0}
+.td-composer{display:flex;gap:9px;align-items:center;margin-top:6px}
+.td-composer .input{flex:1}
+@media(max-width:560px){ .td-meta{grid-template-columns:1fr} }
 
 /* ---------- CHAT ---------- */
 .chat-wrap{display:flex;gap:0;height:calc(100vh - 150px);border:1px solid var(--border-soft);border-radius:var(--r-lg);overflow:hidden;background:var(--bg-card);box-shadow:var(--e1)}
