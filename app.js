@@ -550,16 +550,18 @@ function render(){
   if($('#tbName')) $('#tbName').textContent = me().name;
   if($('#tbRole')) $('#tbRole').textContent = roleInfo(me().role).label;
   // sucursal switch (solo admin puede cambiar; otros fijo)
-  const sucSel=$('#sucSelect');
-  if(sucSel){
+  const sucBtn=$('#sucBtn'), sucLabel=$('#sucBtnLabel'), sucSwitch=$('#sucSwitch');
+  if(sucBtn && sucLabel){
+    const chev=sucSwitch?sucSwitch.querySelector('.suc-chev'):null;
     if(isAdmin()){
-      sucSel.disabled=false;
-      sucSel.innerHTML = `<option value="all">Todas las sucursales</option>`+
-        (DB.sucursales||[]).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
-      sucSel.value=SES.sucFilter;
+      sucBtn.disabled=false;
+      sucLabel.textContent = SES.sucFilter==='all' ? 'Todas las sucursales' : sucName(SES.sucFilter);
+      if(chev) chev.style.display='';
     } else {
-      sucSel.disabled=true;
-      sucSel.innerHTML = `<option>${esc(sucName(me().sucursalId))}</option>`;
+      sucBtn.disabled=true;
+      sucLabel.textContent = sucName(me().sucursalId);
+      if(chev) chev.style.display='none';
+      if(sucSwitch) sucSwitch.classList.remove('open');
     }
   }
   // badge
@@ -3729,7 +3731,18 @@ window.exportData=exportData;
 /* =====================================================================
    SUCURSAL switch
    ===================================================================== */
-$('#sucSelect').addEventListener('change',e=>{ SES.sucFilter=e.target.value; render(); });
+function toggleSucMenu(e){
+  if(e) e.stopPropagation();
+  if(!isAdmin()) return;
+  const sw=$('#sucSwitch'), menu=$('#sucMenu'); if(!sw||!menu) return;
+  if(sw.classList.contains('open')){ sw.classList.remove('open'); return; }
+  const groups=[{id:'all',name:'Todas las sucursales'},...(DB.sucursales||[])];
+  menu.innerHTML=groups.map(g=>`<button type="button" class="suc-opt ${SES.sucFilter===g.id?'on':''}" onclick="pickSuc('${g.id}')"><svg class="icon icon-sm" viewBox="0 0 24 24"><use href="#i-pin"/></svg>${esc(g.name)}<svg class="icon icon-sm suc-check" viewBox="0 0 24 24"><use href="#i-check"/></svg></button>`).join('');
+  sw.classList.add('open');
+}
+function pickSuc(id){ SES.sucFilter=id; const sw=$('#sucSwitch'); if(sw) sw.classList.remove('open'); render(); }
+window.toggleSucMenu=toggleSucMenu; window.pickSuc=pickSuc;
+document.addEventListener('click',e=>{ const sw=$('#sucSwitch'); if(sw && sw.classList.contains('open') && !sw.contains(e.target)) sw.classList.remove('open'); });
 
 /* =====================================================================
    LOGIN
