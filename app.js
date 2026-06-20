@@ -958,7 +958,7 @@ function sucOptionsFor(){
 /* =====================================================================
    VISTA: PEDIDOS / PROVEEDURÍA
    ===================================================================== */
-let pedFilter='activos';
+let pedFilter='activos', pedSearch='';
 function viewPedidos(){
   const all=DB.pedidos.filter(p=>inScope(p.sucursalId)).filter(visiblePedido);
   let list=[...all];
@@ -966,26 +966,37 @@ function viewPedidos(){
   else if(pedFilter==='mios') list=list.filter(p=>p.fromId===SES.userId);
   else if(pedFilter==='ami') list=list.filter(p=>pedAreaMine(p.area));
   else if(pedFilter!=='todos') list=list.filter(p=>p.status===pedFilter);
+  if(pedSearch){ const q=pedSearch.toLowerCase(); list=list.filter(p=>(p.item||'').toLowerCase().includes(q)||(p.desc||'').toLowerCase().includes(q)); }
   list.sort((a,b)=>b.createdAt-a.createdAt);
 
   const guide = sectionGuide('pedidos','¿Para qué sirve Pedidos?',`
-    Es para <b>pedir cosas internamente</b> a un área: a Proveeduría (insumos), a Contabilidad (pagos/facturas) o a RRHH (permisos, adelantos).
+    Es para <b>pedir cosas internamente</b> a un área: a Proveeduría (insumos), a Contabilidad (pagos/facturas) o a Recursos (permisos, adelantos).
     <ul style="margin:8px 0 0 18px">
       <li>El cocinero pide tomates a Proveeduría.</li>
       <li>Se ve el <b>proceso</b>: pendiente → en proceso → entregado.</li>
-      <li>Si el área no cumple, queda <b>registrado quién</b> tenía el pedido y no lo movió.</li>
-    </ul>
-    <div class="tip"><b>Tip:</b> marcá "en proceso" apenas lo veas, así el que pidió sabe que estás en eso.</div>`);
+      <li>Quien pidió (o Administración) puede <b>editar o eliminar</b> el pedido.</li>
+    </ul>`);
+
+  const activos=all.filter(p=>p.status==='pendiente'||p.status==='proceso').length;
+  const aMiArea=all.filter(p=>pedAreaMine(p.area)&&(p.status==='pendiente'||p.status==='proceso')).length;
+  const entregados=all.filter(p=>p.status==='entregado').length;
+  const mios=all.filter(p=>p.fromId===SES.userId).length;
 
   const chips=[['activos','Activos'],['mios','Yo pedí'],['ami','A mi área'],['entregado','Entregados'],['todos','Todos']]
     .map(([k,l])=>`<button class="chip ${pedFilter===k?'on':''}" onclick="setPedFilter('${k}')">${l}</button>`).join('');
 
-  let html=`<div class="page-head"><div><div class="page-title">Pedidos</div><div class="page-sub">Solicitudes a Proveeduría, Contabilidad y RRHH</div></div>
-    <div class="ph-spacer"></div><button class="btn btn-primary" style="flex:0 0 auto" onclick="newPedidoModal()">+ Pedir algo</button></div>`;
+  let html=`<div class="page-head"><div><div class="page-title">Pedidos</div><div class="page-sub">Solicitudes a Proveeduría, Contabilidad y Recursos</div></div>
+    <div class="ph-spacer"></div><button class="btn btn-primary" style="flex:0 0 auto" onclick="newPedidoModal()">${svgIcon('plus','icon icon-sm')} Pedir algo</button></div>`;
   html+=guide;
-  html+=`<div class="toolbar">${chips}</div>`;
+  html+=`<div class="kpi-row">
+    <div class="kpi" onclick="setPedFilter('activos')" style="cursor:pointer"><div class="label">Activos</div><div class="value">${activos}</div><div class="sub">en curso</div></div>
+    <div class="kpi ${aMiArea?'warn':''}" onclick="setPedFilter('ami')" style="cursor:pointer"><div class="label">A mi área</div><div class="value">${aMiArea}</div><div class="sub">por atender</div></div>
+    <div class="kpi" onclick="setPedFilter('mios')" style="cursor:pointer"><div class="label">Yo pedí</div><div class="value">${mios}</div><div class="sub">en total</div></div>
+    <div class="kpi ok" onclick="setPedFilter('entregado')" style="cursor:pointer"><div class="label">Entregados</div><div class="value">${entregados}</div><div class="sub">completados</div></div>
+  </div>`;
+  html+=`<div class="toolbar"><input class="input search" placeholder="Buscar pedido…" value="${esc(pedSearch)}" oninput="pedSearch=this.value;clearTimeout(window._ps);window._ps=setTimeout(render,250)">${chips}</div>`;
   html+= list.length? list.map(pedidoRow).join('')
-    : emptyState('📦','No hay pedidos','Cuando pidás algo a un área aparece acá con su estado.','+ Pedir algo','newPedidoModal()');
+    : emptyState('📦','No hay pedidos', pedSearch?'No hay pedidos que coincidan con la búsqueda.':'Cuando pidás algo a un área aparece acá con su estado.','+ Pedir algo','newPedidoModal()');
   return html;
 }
 function visiblePedido(p){
@@ -994,58 +1005,75 @@ function visiblePedido(p){
 }
 window.setPedFilter=k=>{pedFilter=k;render();};
 
+function pedStatusCls(s){ return s==='entregado'?'hecha':s==='proceso'?'proceso':s==='rechazado'?'rechazada':'pendiente'; }
+function pedStatusLabel(s){ return ({pendiente:'Pendiente',proceso:'En proceso',entregado:'Entregado',rechazado:'Rechazado'})[s]||s; }
+function urgMeta(u){ return u==='alta'?{label:'Alta',color:'var(--danger)'}:u==='baja'?{label:'Baja',color:'var(--text-dim)'}:{label:'Media',color:'var(--warn)'}; }
+function pedAreaIcon(area){ return area==='proveeduria'?'box':area==='contabilidad'?'clipboard':area==='rrhh'?'users':'box'; }
 function pedidoRow(p){
   const from=userById(p.fromId);
-  const st = p.status==='entregado'?'hecha':p.status==='proceso'?'proceso':p.status==='rechazado'?'rechazada':'pendiente';
-  const urg = p.urgencia==='alta'?'var(--danger)':p.urgencia==='media'?'var(--warn)':'var(--text-soft)';
-  return `<div class="tk" onclick="pedidoDetail('${p.id}')">
-    <div class="av" style="background:${pedInfo(p.area).color}">${pedInfo(p.area).short.slice(0,1)}</div>
+  const info=pedInfo(p.area);
+  const urg=urgMeta(p.urgencia);
+  return `<div class="tk tk-prio-${p.urgencia}" onclick="pedidoDetail('${p.id}')">
+    <div class="tk-bar"></div>
     <div class="tk-main">
-      <div class="tk-title">${esc(p.item)} ${p.qty>1?`<span style="color:var(--text-soft)">×${p.qty}</span>`:''}</div>
+      <div class="tk-row1"><div class="tk-title">${esc(p.item)} ${p.qty>1?`<span class="tk-qty">×${p.qty}</span>`:''}</div><span class="pill ${pedStatusCls(p.status)}">${pedStatusLabel(p.status)}</span></div>
       <div class="tk-meta">
-        <span><span class="dot-prio" style="background:${urg}"></span> ${cap(p.urgencia)}</span>
-        <span>Pidió: ${from?esc(from.name.split(' ')[0]):'—'}</span>
-        <span>→ ${pedInfo(p.area).short}</span>
-        <span>📍 ${esc(sucName(p.sucursalId))}</span>
+        <span class="ped-area-chip">${svgIcon(pedAreaIcon(p.area),'icon icon-sm')} ${info.short}</span>
+        <span><span class="dot-prio" style="background:${urg.color}"></span>${urg.label}</span>
+        <span>${svgIcon('user','icon icon-sm')} ${from?esc(from.name.split(' ')[0]):'—'}</span>
+        <span>${svgIcon('pin','icon icon-sm')} ${esc(sucName(p.sucursalId))}</span>
       </div>
-      ${p.desc?`<div class="tk-desc">${esc(p.desc).slice(0,90)}</div>`:''}
+      ${p.desc?`<div class="tk-desc">${esc(p.desc).slice(0,110)}${p.desc.length>110?'…':''}</div>`:''}
     </div>
-    <span class="pill ${st}">${({pendiente:'Pendiente',proceso:'En proceso',entregado:'Entregado',rechazado:'Rechazado'})[p.status]}</span>
   </div>`;
 }
 
 function pedidoDetail(id){
   const p=DB.pedidos.find(x=>x.id===id); if(!p) return;
   const from=userById(p.fromId);
+  const info=pedInfo(p.area);
+  const urg=urgMeta(p.urgencia);
   const canManage = pedAreaMine(p.area) || isAdmin();
+  const canEditPed = p.fromId===SES.userId || isAdmin();
   const logHtml=[...p.log].reverse().map(l=>{const u=userById(l.byId);return `<div class="log-item"><b>${u?esc((u.name||'').split(' ')[0]):'—'}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`;}).join('');
   const comments=(p.comments||[]).map(c=>{const u=userById(c.byId);return `<div class="comment">${avatarHTML(u)}<div class="cbody"><div class="cname">${u?esc(u.name):''}</div><div class="ctext">${esc(c.text)}</div><div class="ctime">${timeAgo(c.at)}</div></div></div>`;}).join('');
+  const prodRow = p.productId?(()=>{const pr=DB.inventory.find(x=>x.id===p.productId);return `<div class="td-mrow"><span class="td-ml">Producto ligado</span><span class="td-mv">${pr?esc(pr.name)+' · '+pr.stock+' '+pr.unit:'(eliminado)'}</span></div>`;})():'';
   let actions='';
   if(canManage && p.status!=='entregado' && p.status!=='rechazado'){
-    if(p.status==='pendiente') actions+=`<button class="btn btn-ghost" onclick="setPedStatus('${p.id}','proceso')">▶️ Tomarlo (en proceso)</button>`;
-    actions+=`<button class="btn btn-primary" onclick="setPedStatus('${p.id}','entregado')">✅ Entregado</button>`;
-    actions+=`<button class="btn btn-ghost" onclick="setPedStatus('${p.id}','rechazado')">✋ No se puede</button>`;
+    if(p.status==='pendiente') actions+=`<button class="btn btn-ghost" onclick="setPedStatus('${p.id}','proceso')">${svgIcon('clock','icon icon-sm')} Tomarlo</button>`;
+    actions+=`<button class="btn btn-primary" onclick="setPedStatus('${p.id}','entregado')">${svgIcon('check','icon icon-sm')} Entregado</button>`;
+    actions+=`<button class="btn btn-ghost" onclick="setPedStatus('${p.id}','rechazado')">${svgIcon('x','icon icon-sm')} No se puede</button>`;
+  }
+  if(canEditPed){
+    if(p.status!=='entregado') actions+=`<button class="btn btn-ghost" onclick="editPedidoModal('${p.id}')">${svgIcon('edit','icon icon-sm')} Editar</button>`;
+    actions+=`<button class="btn btn-danger" onclick="delPedido('${p.id}')">${svgIcon('trash','icon icon-sm')} Eliminar</button>`;
   }
   openModal(`
-    <div class="modal-head"><h3>${esc(p.item)}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-head"><h3>${esc(p.item)}${p.qty>1?` <span class="tk-qty">×${p.qty}</span>`:''}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
-      <span class="pill ${p.status==='entregado'?'hecha':p.status==='proceso'?'proceso':p.status==='rechazado'?'rechazada':'pendiente'}">${({pendiente:'Pendiente',proceso:'En proceso',entregado:'Entregado',rechazado:'Rechazado'})[p.status]}</span>
-      ${p.desc?`<p style="margin:12px 0;font-size:14px;line-height:1.6">${esc(p.desc)}</p>`:''}
-      <div class="detail-meta">
-        <div class="dm"><div class="dl">Cantidad</div><div class="dv">${p.qty}</div></div>
-        <div class="dm"><div class="dl">Área</div><div class="dv">${pedInfo(p.area).label}</div></div>
-        ${p.productId?(()=>{const pr=DB.inventory.find(x=>x.id===p.productId);return `<div class="dm"><div class="dl">Producto ligado</div><div class="dv">${pr?esc(pr.name)+' · quedan '+pr.stock+' '+pr.unit:'(eliminado)'}</div></div>`;})():''}
-        <div class="dm"><div class="dl">Pedido por</div><div class="dv">${from?esc(from.name):'—'}</div></div>
-        <div class="dm"><div class="dl">Urgencia</div><div class="dv">${cap(p.urgencia)}</div></div>
-        <div class="dm"><div class="dl">Sucursal</div><div class="dv">${esc(sucName(p.sucursalId))}</div></div>
-        <div class="dm"><div class="dl">Creado</div><div class="dv">${fmtDateTime(p.createdAt)}</div></div>
+      <div class="td-top">
+        <span class="pill ${pedStatusCls(p.status)}">${pedStatusLabel(p.status)}</span>
+        <span class="td-badge"><span class="dot-prio" style="background:${urg.color}"></span>Urgencia ${urg.label}</span>
+        <span class="td-badge">${svgIcon(pedAreaIcon(p.area),'icon icon-sm')} ${info.short}</span>
       </div>
-      ${actions?`<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px">${actions}</div>`:''}
-      <div class="dl" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);font-weight:700;margin-bottom:6px">Historial</div>
-      <div class="log">${logHtml}</div>
-      <div class="dl" style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);font-weight:700;margin:16px 0 8px">Comentarios</div>
-      ${comments||'<div style="color:var(--text-soft);font-size:13px;margin-bottom:8px">Sin comentarios.</div>'}
-      <div style="display:flex;gap:8px;margin-top:8px"><input class="input" id="pcInput" placeholder="Comentario…"><button class="btn btn-ghost" style="flex:0 0 auto" onclick="addPedComment('${p.id}')">Enviar</button></div>
+      ${p.desc?`<div class="td-desc">${esc(p.desc)}</div>`:''}
+      <div class="td-meta">
+        <div class="td-mrow"><span class="td-ml">Cantidad</span><span class="td-mv">${p.qty}</span></div>
+        <div class="td-mrow"><span class="td-ml">Área</span><span class="td-mv">${info.short}</span></div>
+        <div class="td-mrow"><span class="td-ml">Pedido por</span><span class="td-mv">${from?esc(from.name):'—'}</span></div>
+        <div class="td-mrow"><span class="td-ml">Sucursal</span><span class="td-mv">${esc(sucName(p.sucursalId))}</span></div>
+        ${prodRow}
+        <div class="td-mrow"><span class="td-ml">Creado</span><span class="td-mv">${fmtDateTime(p.createdAt)}</span></div>
+      </div>
+      ${actions?`<div class="td-actions">${actions}</div>`:''}
+      <div class="td-sec">Historial</div>
+      <div class="log">${logHtml||'<div class="td-empty">Sin movimientos.</div>'}</div>
+      <div class="td-sec">Respuestas y comentarios</div>
+      <div class="td-comments">${comments||'<div class="td-empty">Sin respuestas todavía.</div>'}</div>
+      <div class="td-composer">
+        <input class="input" id="pcInput" placeholder="Escribí una respuesta…" autocomplete="off" onkeydown="if(event.key==='Enter')addPedComment('${p.id}')">
+        <button class="chat-send" title="Enviar" onclick="addPedComment('${p.id}')">${svgIcon('send')}</button>
+      </div>
     </div>`,true);
 }
 window.pedidoDetail=pedidoDetail;
@@ -1082,32 +1110,57 @@ function addPedComment(id){
 }
 window.addPedComment=addPedComment;
 
+const PED_PICK=[
+  ['proveeduria','Proveeduría','Insumos y productos','box'],
+  ['contabilidad','Contabilidad','Pagos y facturas','clipboard'],
+  ['rrhh','Recursos','Permisos y adelantos','users'],
+];
+function pedAreaPick(sel){
+  return `<input type="hidden" id="npArea" value="${sel}"><div class="ped-area-pick">`+PED_PICK.map(([k,l,s,ic])=>`<button type="button" class="ped-area-b ${sel===k?'on':''}" data-a="${k}" onclick="setNpArea('${k}')"><span class="ped-area-ic">${svgIcon(ic,'icon icon-sm')}</span><span class="ped-area-tx"><span class="ped-area-n">${l}</span><span class="ped-area-s">${s}</span></span></button>`).join('')+`</div>`;
+}
+function setNpArea(a){ const h=$('#npArea'); if(h)h.value=a; document.querySelectorAll('.ped-area-b').forEach(b=>b.classList.toggle('on',b.dataset.a===a)); const w=$('#npProdWrap'); if(w) w.style.display = a==='proveeduria'?'':'none'; }
+function pedUrgSeg(sel){
+  const opts=[['alta','Alta','var(--danger)'],['media','Media','var(--warn)'],['baja','Baja','var(--text-dim)']];
+  return `<input type="hidden" id="npUrg" value="${sel}"><div class="prio-seg">`+opts.map(([k,l,c])=>`<button type="button" class="prio-b ${sel===k?'on':''}" data-u="${k}" onclick="setNpUrg('${k}')"><span class="dot-prio" style="background:${c}"></span>${l}</button>`).join('')+`</div>`;
+}
+function setNpUrg(u){ const h=$('#npUrg'); if(h)h.value=u; document.querySelectorAll('.prio-b').forEach(b=>b.classList.toggle('on',b.dataset.u===u)); }
+window.setNpArea=setNpArea; window.setNpUrg=setNpUrg;
+function pedidoFormBody(p){
+  const area = p? p.area : 'proveeduria';
+  return `
+    <div class="ip-sec">${svgIcon('box','icon icon-sm')} ¿A qué área se lo pedís?</div>
+    ${pedAreaPick(area)}
+    <div class="field"><label>¿Qué necesitás?</label><input class="input" id="npItem" value="${p?esc(p.item):''}" placeholder="Ej: Caja de tomates" autocomplete="off"></div>
+    <div class="field" id="npProdWrap" style="${area==='proveeduria'?'':'display:none'}"><label>Ligar a producto del inventario (opcional)</label>
+      <select class="select" id="npProd" onchange="onPedProdPick()"><option value="">— Sin ligar —</option>
+        ${invInScope().map(x=>`<option value="${x.id}" data-name="${esc(x.name)}" ${p&&p.productId===x.id?'selected':''}>${esc(x.name)} · ${esc(sucName(x.sucursalId))} · ${x.stock} ${x.unit}</option>`).join('')}
+      </select>
+      <div class="ped-hint">Si lo ligás, al marcar <b>Entregado</b> se descuenta solo del inventario.</div>
+    </div>
+    <div class="ip-sec">${svgIcon('clipboard','icon icon-sm')} Detalles</div>
+    <div class="row2">
+      <div class="field"><label>Cantidad</label><input class="input" id="npQty" type="number" min="1" step="any" value="${p?(p.qty||1):1}"></div>
+      <div class="field"><label>Sucursal</label><select class="select" id="npSuc">${p?sucOptionsSel(p.sucursalId):sucOptionsFor()}</select></div>
+    </div>
+    <div class="field"><label>Urgencia</label>${pedUrgSeg(p?p.urgencia:'media')}</div>
+    <div class="field"><label>Detalle</label><textarea class="textarea" id="npDesc" placeholder="¿Para qué? ¿Para cuándo?">${p?esc(p.desc||''):''}</textarea></div>`;
+}
 function newPedidoModal(){
   openModal(`
-    <div class="modal-head"><h3>Pedir algo</h3><button class="modal-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">
-      <div class="field"><label>¿A qué área?</label><select class="select" id="npArea">
-        <option value="proveeduria">Proveeduría — insumos / productos</option>
-        <option value="contabilidad">Contabilidad — pagos / facturas</option>
-        <option value="rrhh">Recursos — permisos / adelantos</option>
-      </select></div>
-      <div class="field"><label>¿Qué necesitás?</label><input class="input" id="npItem" placeholder="Ej: Caja de tomates"></div>
-      <div class="field" id="npProdWrap"><label>Ligar a producto del inventario (opcional)</label>
-        <select class="select" id="npProd" onchange="onPedProdPick()"><option value="">— Sin ligar —</option>
-          ${invInScope().map(p=>`<option value="${p.id}" data-name="${esc(p.name)}" data-unit="${p.unit}">${esc(p.name)} · ${esc(sucName(p.sucursalId))} · ${p.stock} ${p.unit}</option>`).join('')}
-        </select>
-        <div style="font-size:11.5px;color:var(--text-soft);margin-top:6px">Si lo ligás, al marcar <b>Entregado</b> se descuenta solo del inventario.</div>
-      </div>
-      <div class="row2">
-        <div class="field"><label>Cantidad</label><input class="input" id="npQty" type="number" min="1" step="any" value="1"></div>
-        <div class="field"><label>Urgencia</label><select class="select" id="npUrg"><option value="alta">Alta</option><option value="media" selected>Media</option><option value="baja">Baja</option></select></div>
-      </div>
-      <div class="field"><label>Detalle</label><textarea class="textarea" id="npDesc" placeholder="¿Para qué? ¿Para cuándo?"></textarea></div>
-      <div class="field"><label>Sucursal</label><select class="select" id="npSuc">${sucOptionsFor()}</select></div>
-    </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="createPedido()">Enviar pedido</button></div>`);
+    <div class="modal-head"><h3>${svgIcon('box','icon')} Pedir algo</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">${pedidoFormBody(null)}</div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="createPedido()">${svgIcon('send','icon icon-sm')} Enviar pedido</button></div>`, true);
 }
 window.newPedidoModal=newPedidoModal;
+function editPedidoModal(id){
+  const p=DB.pedidos.find(x=>x.id===id); if(!p) return;
+  if(!(p.fromId===SES.userId||isAdmin())){ toast('Solo quien pidió o Administración puede editarlo','err'); return; }
+  openModal(`
+    <div class="modal-head"><h3>${svgIcon('edit','icon')} Editar pedido</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">${pedidoFormBody(p)}</div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="pedidoDetail('${p.id}')">Cancelar</button><button class="btn btn-primary" onclick="savePedidoEdit('${p.id}')">${svgIcon('check','icon icon-sm')} Guardar cambios</button></div>`, true);
+}
+window.editPedidoModal=editPedidoModal;
 
 function onPedProdPick(){
   const sel=$('#npProd'); const opt=sel.options[sel.selectedIndex];
@@ -1115,22 +1168,45 @@ function onPedProdPick(){
 }
 window.onPedProdPick=onPedProdPick;
 
-function createPedido(){
-  const item=$('#npItem').value.trim(); if(!item){ toast('Decí qué necesitás','err'); return; }
+function readPedForm(){
+  const item=$('#npItem').value.trim(); if(!item){ toast('Decí qué necesitás','err'); return null; }
   const area=$('#npArea').value;
   const prodEl=$('#npProd');
-  const p={ id:uid(), item, desc:$('#npDesc').value.trim(), qty:+$('#npQty').value||1, fromId:SES.userId, area, assignedId:null,
-    productId:(prodEl&&prodEl.value)||null,
-    sucursalId:$('#npSuc').value, urgencia:$('#npUrg').value, status:'pendiente', createdAt:now(), comments:[],
+  return { item, desc:$('#npDesc').value.trim(), qty:+$('#npQty').value||1, area,
+    productId:(area==='proveeduria'&&prodEl&&prodEl.value)||null,
+    sucursalId:$('#npSuc').value, urgencia:($('#npUrg')?$('#npUrg').value:'media') };
+}
+function createPedido(){
+  const d=readPedForm(); if(!d) return;
+  const p={ id:uid(), ...d, fromId:SES.userId, assignedId:null, status:'pendiente', createdAt:now(), comments:[],
     log:[{at:now(),byId:SES.userId,text:'creó la solicitud'}] };
   DB.pedidos.unshift(p);
-  const info=pedInfo(area);
-  audit('pedido',`pidió "${item}" a ${info.short}`,p.sucursalId);
+  const info=pedInfo(d.area);
+  audit('pedido',`pidió "${d.item}" a ${info.short}`,p.sucursalId);
   const targets=DB.users.filter(u=>(info.roles||[]).includes(u.role)).map(u=>u.id);
-  notify(targets, `${me().name.split(' ')[0]} pidió: "${item}" (${info.short})`, 'pedido', {view:'pedidos'});
+  notify(targets, `${me().name.split(' ')[0]} pidió: "${d.item}" (${info.short})`, 'pedido', {view:'pedidos'});
   closeModal(); toast('Pedido enviado','ok'); render();
 }
 window.createPedido=createPedido;
+function savePedidoEdit(id){
+  const p=DB.pedidos.find(x=>x.id===id); if(!p) return;
+  if(!(p.fromId===SES.userId||isAdmin())){ toast('Solo quien pidió o Administración puede editarlo','err'); return; }
+  const d=readPedForm(); if(!d) return;
+  Object.assign(p, d);
+  p.log.push({at:now(),byId:SES.userId,text:'editó la solicitud'});
+  audit('pedido',`editó "${d.item}"`,p.sucursalId);
+  closeModal(); toast('Pedido actualizado','ok'); save(); render();
+}
+window.savePedidoEdit=savePedidoEdit;
+async function delPedido(id){
+  const p=DB.pedidos.find(x=>x.id===id); if(!p) return;
+  if(!(p.fromId===SES.userId||isAdmin())){ toast('Solo quien pidió o Administración puede eliminarlo','err'); return; }
+  if(!await confirmDialog(`Se elimina el pedido "${p.item}" con su historial. No se puede deshacer.`,{title:'¿Eliminar pedido?',okText:'Sí, eliminar'})) return;
+  DB.pedidos=DB.pedidos.filter(x=>x.id!==id);
+  audit('pedido',`eliminó el pedido "${p.item}"`,p.sucursalId);
+  closeModal(); toast('Pedido eliminado','ok'); save(); render();
+}
+window.delPedido=delPedido;
 
 /* =====================================================================
    VISTA: PROYECTOS (pizarra)

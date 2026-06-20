@@ -311,6 +311,21 @@ input,textarea,select{font-family:inherit;font-size:14px}
 .td-when-time{flex:0 0 auto}
 .td-when-lbl{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);margin-bottom:7px}
 .td-when .tp{padding:7px 10px}
+/* pedidos: selector de área + chips */
+.tk-qty{color:var(--text-soft);font-weight:600;font-size:13px}
+.ped-area-chip{display:inline-flex;align-items:center;gap:5px;font-weight:600}
+.ped-area-chip .icon{color:var(--text-soft);vertical-align:-2px}
+.ped-area-pick{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.ped-area-b{display:flex;align-items:center;gap:12px;text-align:left;width:100%;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-soft);transition:border-color var(--t-fast),background var(--t-fast)}
+.ped-area-b:hover{border-color:var(--accent-line)}
+.ped-area-b.on{border-color:var(--accent);background:var(--accent-soft)}
+.ped-area-ic{width:38px;height:38px;flex:0 0 auto;border-radius:11px;display:flex;align-items:center;justify-content:center;background:var(--bg-card);color:var(--accent)}
+.ped-area-b.on .ped-area-ic{background:var(--grad-accent);color:#fff}
+.ped-area-ic .icon{width:18px;height:18px}
+.ped-area-tx{display:flex;flex-direction:column;min-width:0}
+.ped-area-n{font-weight:700;font-size:14px}
+.ped-area-s{font-size:12px;color:var(--text-soft)}
+.ped-hint{font-size:11.5px;color:var(--text-soft);margin-top:7px;line-height:1.5}
 
 .empty{text-align:center;padding:52px 20px;color:var(--text-soft)}
 .empty .em-ico{font-size:42px;margin-bottom:12px;opacity:.9}
