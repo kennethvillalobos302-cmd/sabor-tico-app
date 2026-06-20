@@ -3198,7 +3198,7 @@ function reservForm(title,r){
       <div class="field"><label>Nombre</label><input class="input" id="rvcName" value="${r&&!r.clientId?esc(r.clientName||''):''}" placeholder="Nombre del cliente o agencia" autocomplete="off"></div>
     </div>
     <div class="ip-sec">${svgIcon('reserva','icon icon-sm')} Reserva</div>
-    <div class="row2">
+    <div class="row2 rv-when">
       <div class="field"><label>Fecha</label>${dateField(date,'rv')}</div>
       <div class="field"><label>Hora</label>${timePicker('rvTime', r?r.resTime:'19:00', '')}</div>
     </div>
