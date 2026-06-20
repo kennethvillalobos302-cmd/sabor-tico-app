@@ -1466,17 +1466,17 @@ function markSeen(c){
 function viewChat(){
   const chats=myChats();
   const guide=sectionGuide('chat','¿Cómo funcionan los mensajes?',`
-    Tenés <b>chats directos</b> con cualquier compañero y <b>grupos</b> de trabajo.
+    Tenés <b>chats directos</b> con cualquier compañero y <b>grupos</b> de trabajo, como en WhatsApp.
     <ul style="margin:8px 0 0 18px">
-      <li>Los <b>grupos solo los crea y configura Administración</b>.</li>
-      <li>Gerencia puede <b>ver todos los chats</b> para llevar el control del restaurante.</li>
-    </ul>
-    <div class="tip"><b>Honestos:</b> esto no es para vigilar de más, es para resolver rápido y que nada se pierda en mensajes sueltos.</div>`);
+      <li>Cualquiera puede <b>crear un grupo</b>; quien lo crea (o Administración) puede <b>editar el nombre, agregar/quitar miembros y eliminarlo</b>.</li>
+      <li>Tocá el nombre del grupo arriba para ver su <b>info y miembros</b>, o <b>salir</b> del grupo.</li>
+      <li>Podés <b>eliminar mensajes</b> (solo para vos o para todos).</li>
+    </ul>`);
 
   let html=`<div class="page-head"><div><div class="page-title">Mensajes</div><div class="page-sub">${isAdmin()?'Vista total · Gerencia':'Tus chats y grupos'}</div></div>
     <div class="ph-spacer"></div>
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="newDMModal()">✉️ Nuevo chat</button>
-    ${isAdmin()?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="newGroupModal()">+ Nuevo grupo</button>`:''}
+    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="newDMModal()">${svgIcon('message','icon icon-sm')} Nuevo chat</button>
+    <button class="btn btn-primary" style="flex:0 0 auto" onclick="newGroupModal()">${svgIcon('users','icon icon-sm')} Nuevo grupo</button>
   </div>`;
   html+=guide;
 
@@ -1510,9 +1510,13 @@ function viewChat(){
     paneHtml=`<div class="chat-pane" id="chatPane">
       <div class="chat-head">
         <button class="icon-btn mobile-only" style="width:32px;height:32px" onclick="backChatList()">←</button>
-        ${cur.type==='group'?`<div class="av" style="background:var(--accent)">${(cur.name||'#')[0]}</div>`:avatarHTML(userById(curMem.find(i=>i!==SES.userId)))}
-        <div><div style="font-weight:700">${esc(headName)}</div><div style="font-size:11px;color:var(--text-soft)">${cur.type==='group'?curMem.length+' miembros':'Chat directo'}</div></div>
-        ${adminPeek?`<div class="ph-spacer"></div><span class="admin-eye">👁️ viendo como Gerencia</span>`:''}
+        <div class="chat-head-main" ${cur.type==='group'?`onclick="groupInfoModal('${cur.id}')" style="cursor:pointer"`:''}>
+          ${cur.type==='group'?`<div class="av" style="background:var(--grad-accent)">${esc((cur.name||'#')[0])}</div>`:avatarHTML(userById(curMem.find(i=>i!==SES.userId)))}
+          <div><div style="font-weight:700">${esc(headName)}</div><div style="font-size:11px;color:var(--text-soft)">${cur.type==='group'?curMem.length+' miembros · tocá para ver info':'Chat directo'}</div></div>
+        </div>
+        <div class="ph-spacer"></div>
+        ${adminPeek?`<span class="admin-eye">👁️ Gerencia</span>`:''}
+        ${cur.type==='group'?`<button class="icon-btn" style="width:36px;height:36px" title="Info del grupo" onclick="groupInfoModal('${cur.id}')">${svgIcon('info','icon icon-sm')}</button>`:''}
       </div>
       <div class="chat-msgs" id="chatMsgs">${msgsHtml||'<div style="margin:auto;color:var(--text-soft);font-size:13px">Escribí el primer mensaje 👋</div>'}</div>
       ${curMem.includes(SES.userId)?`
@@ -1635,6 +1639,84 @@ function createGroup(){
   closeModal(); SES.activeChat=c.id; toast('Grupo creado','ok'); render();
 }
 window.createGroup=createGroup;
+
+/* ---- Gestión de grupos (tipo WhatsApp) ---- */
+function canManageGroup(c){ return !!c && (c.createdById===SES.userId || isAdmin()); }
+function groupInfoModal(id){
+  const c=DB.chats.find(x=>x.id===id); if(!c||c.type!=='group') return;
+  const manage=canManageGroup(c);
+  const isMember=(c.memberIds||[]).includes(SES.userId);
+  const members=(c.memberIds||[]).map(i=>userById(i)).filter(Boolean);
+  const rows=members.map(u=>{
+    const isCreator=u.id===c.createdById, meu=u.id===SES.userId;
+    return `<div class="gi-member">${avatarHTML(u)}
+      <div class="gi-m-main"><div class="gi-m-name">${esc(u.name)}${meu?' <span class="pill proceso">vos</span>':''}</div><div class="gi-m-sub">${isCreator?'Creador del grupo':roleInfo(u.role).short}</div></div>
+      ${(manage&&!isCreator)?`<button class="icon-btn" style="width:32px;height:32px;flex:0 0 auto" title="Quitar del grupo" onclick="groupRemoveMember('${c.id}','${u.id}')">${svgIcon('x','icon icon-sm')}</button>`:''}</div>`;
+  }).join('');
+  openModal(`<div class="modal-head"><h3>Info del grupo</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="gi-head"><div class="av gi-av" style="background:var(--grad-accent)">${esc((c.name||'#')[0])}</div>
+        ${manage?`<input class="input gi-name" id="giName" value="${esc(c.name||'')}" placeholder="Nombre del grupo" autocomplete="off">`:`<div class="gi-title">${esc(c.name||'')}</div>`}
+      </div>
+      <div class="gi-sec"><span>Miembros · ${members.length}</span>${manage?`<button type="button" class="pe-link" onclick="groupAddMembersModal('${c.id}')">${svgIcon('plus','icon icon-sm')} Agregar</button>`:''}</div>
+      <div class="gi-list">${rows||'<div style="color:var(--text-soft);font-size:13px;padding:8px 0">Sin miembros.</div>'}</div>
+      <div class="gi-actions">
+        ${isMember?`<button class="btn btn-ghost" onclick="leaveGroup('${c.id}')">${svgIcon('logout','icon icon-sm')} Salir del grupo</button>`:''}
+        ${manage?`<button class="btn btn-danger" onclick="delGroup('${c.id}')">${svgIcon('trash','icon icon-sm')} Eliminar grupo</button>`:''}
+      </div>
+    </div>
+    ${manage
+      ? `<div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button><button class="btn btn-primary" onclick="groupRename('${c.id}')">${svgIcon('check','icon icon-sm')} Guardar</button></div>`
+      : `<div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Cerrar</button></div>`}`, true);
+}
+function groupRename(id){
+  const c=DB.chats.find(x=>x.id===id); if(!c||!canManageGroup(c)) return;
+  const n=$('#giName'); const name=n?n.value.trim():''; if(!name){ toast('Ponele nombre al grupo','err'); return; }
+  if(name!==c.name){ c.name=name; audit('chat',`renombró el grupo a "${name}"`,c.sucursalId); }
+  closeModal(); toast('Grupo actualizado','ok'); save(); render();
+}
+function groupAddMembersModal(id){
+  const c=DB.chats.find(x=>x.id===id); if(!c||!canManageGroup(c)) return;
+  const avail=DB.users.filter(u=>u.active && !(c.memberIds||[]).includes(u.id));
+  if(!avail.length){ toast('Ya están todos en el grupo','ok'); return; }
+  openModal(`<div class="modal-head"><h3>Agregar miembros</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body"><div class="field"><label>Elegí a quién agregar a "${esc(c.name)}"</label>
+      <div class="assignee-pick" id="gaMembers">${avail.map(u=>`<button type="button" class="ap" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${esc((u.name||'').split(' ')[0])}</button>`).join('')}</div></div></div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="groupInfoModal('${c.id}')">Volver</button><button class="btn btn-primary" onclick="groupAddMembers('${c.id}')">${svgIcon('plus','icon icon-sm')} Agregar</button></div>`);
+}
+function groupAddMembers(id){
+  const c=DB.chats.find(x=>x.id===id); if(!c||!canManageGroup(c)) return;
+  const add=[...document.querySelectorAll('#gaMembers .ap.on')].map(b=>b.dataset.id);
+  if(!add.length){ toast('Elegí al menos una persona','err'); return; }
+  add.forEach(uid=>{ if(!c.memberIds.includes(uid)) c.memberIds.push(uid); });
+  audit('chat',`agregó ${add.length} miembro(s) al grupo "${c.name}"`,c.sucursalId);
+  notify(add,`Te agregaron al grupo "${c.name}"`,'msg',{view:'chat',chatId:c.id});
+  toast('Miembros agregados','ok'); save(); render(); groupInfoModal(id);
+}
+function groupRemoveMember(id,uid){
+  const c=DB.chats.find(x=>x.id===id); if(!c||!canManageGroup(c)) return;
+  if(uid===c.createdById){ toast('No se puede quitar al creador del grupo','err'); return; }
+  c.memberIds=(c.memberIds||[]).filter(i=>i!==uid);
+  const u=userById(uid);
+  audit('chat',`quitó a ${u?u.name.split(' ')[0]:'alguien'} del grupo "${c.name}"`,c.sucursalId);
+  save(); render(); groupInfoModal(id);
+}
+async function leaveGroup(id){
+  const c=DB.chats.find(x=>x.id===id); if(!c) return;
+  if(!await confirmDialog(`Vas a salir del grupo "${c.name}". Podés volver si te agregan de nuevo.`,{title:'¿Salir del grupo?',okText:'Sí, salir'})) return;
+  c.memberIds=(c.memberIds||[]).filter(i=>i!==SES.userId);
+  audit('chat',`salió del grupo "${c.name}"`,c.sucursalId);
+  closeModal(); SES.activeChat=null; toast('Saliste del grupo','ok'); save(); render();
+}
+async function delGroup(id){
+  const c=DB.chats.find(x=>x.id===id); if(!c||!canManageGroup(c)) return;
+  if(!await confirmDialog(`Se elimina el grupo "${c.name}" y todos sus mensajes, para todos. No se puede deshacer.`,{title:'¿Eliminar grupo?',okText:'Sí, eliminar'})) return;
+  DB.chats=DB.chats.filter(x=>x.id!==id);
+  audit('chat',`eliminó el grupo "${c.name}"`,c.sucursalId);
+  closeModal(); SES.activeChat=null; toast('Grupo eliminado','ok'); save(); render();
+}
+window.groupInfoModal=groupInfoModal; window.groupRename=groupRename; window.groupAddMembersModal=groupAddMembersModal;
+window.groupAddMembers=groupAddMembers; window.groupRemoveMember=groupRemoveMember; window.leaveGroup=leaveGroup; window.delGroup=delGroup;
 
 /* =====================================================================
    VISTA: EQUIPO (admin)

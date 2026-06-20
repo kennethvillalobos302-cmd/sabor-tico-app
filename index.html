@@ -360,7 +360,23 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .chat-send{width:45px;height:45px;border-radius:50%;background:var(--grad-accent);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform var(--t-fast),filter var(--t-fast)}
 .chat-send:hover{filter:brightness(1.07)}
 .chat-send:active{transform:scale(.94)}
-.admin-eye{font-size:11px;color:var(--warn);background:var(--warn-bg);padding:4px 9px;border-radius:var(--r-sm);font-weight:700}
+.admin-eye{font-size:11px;color:var(--warn);background:var(--warn-bg);padding:4px 9px;border-radius:var(--r-sm);font-weight:700;white-space:nowrap}
+.chat-head-main{display:flex;align-items:center;gap:11px;min-width:0;border-radius:var(--r-md);padding:3px;margin:-3px}
+.chat-head-main[style*=pointer]:hover{background:var(--bg-soft)}
+/* info / gestión de grupo */
+.gi-head{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+.gi-av{width:54px;height:54px;border-radius:16px;font-size:22px;font-weight:800;color:#fff;flex:0 0 auto;text-transform:uppercase}
+.gi-name{flex:1;font-size:16px;font-weight:700}
+.gi-title{flex:1;font-size:19px;font-weight:800;letter-spacing:-.3px}
+.gi-sec{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft)}
+.gi-list{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}
+.gi-member{display:flex;align-items:center;gap:11px;padding:8px 4px;border-radius:var(--r-sm)}
+.gi-member:hover{background:var(--bg-soft)}
+.gi-m-main{flex:1;min-width:0}
+.gi-m-name{font-weight:650;font-size:14px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+.gi-m-sub{font-size:12px;color:var(--text-soft);margin-top:1px}
+.gi-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;padding-top:14px;border-top:1px solid var(--border-soft)}
+.gi-actions .btn{flex:1;min-width:140px}
 
 /* ---------- BOARD (proyectos) ---------- */
 .board{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start}
