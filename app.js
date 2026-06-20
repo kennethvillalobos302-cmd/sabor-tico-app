@@ -649,7 +649,7 @@ function horaSaludo(){ const h=new Date().getHours(); return h<12?'Buenos días'
 /* =====================================================================
    VISTA: TAREAS
    ===================================================================== */
-let taskFilter='todas';
+let taskFilter='todas', taskSearch='';
 function viewTareas(){
   const all = (DB.tasks||[]).filter(t=>t&&inScope(t.sucursalId)).filter(visibleTask);
   refreshOverdue();
@@ -668,15 +668,28 @@ function viewTareas(){
     </ul>
     <div class="tip"><b>Importante:</b> nadie puede borrar una tarea ni su historial. Así no se puede tapar quién no cumplió.</div>`);
 
+  if(taskSearch){ const q=taskSearch.toLowerCase(); list=list.filter(t=>(t.title||'').toLowerCase().includes(q)||(t.desc||'').toLowerCase().includes(q)); }
+
+  const mineActive=all.filter(t=>(t.toIds||[]).includes(SES.userId)&&(t.status==='pendiente'||t.status==='proceso'||t.status==='atrasada')).length;
+  const procN=all.filter(t=>t.status==='proceso').length;
+  const lateN=all.filter(t=>t.status==='atrasada').length;
+  const doneN=all.filter(t=>t.status==='hecha').length;
+
   const chips = [['todas','Todas'],['mias','Para mí'],['asignadas','Yo asigné'],['pendiente','Pendientes'],['proceso','En proceso'],['atrasada','Atrasadas'],['hecha','Hechas']]
     .map(([k,l])=>`<button class="chip ${taskFilter===k?'on':''}" onclick="setTaskFilter('${k}')">${l}</button>`).join('');
 
   let html = `<div class="page-head"><div><div class="page-title">Tareas</div><div class="page-sub">Asigná, seguí y controlá el trabajo</div></div>
-    <div class="ph-spacer"></div><button class="btn btn-primary" style="flex:0 0 auto" onclick="newTaskModal()">+ Nueva tarea</button></div>`;
+    <div class="ph-spacer"></div><button class="btn btn-primary" style="flex:0 0 auto" onclick="newTaskModal()">${svgIcon('plus','icon icon-sm')} Nueva tarea</button></div>`;
   html += guide;
-  html += `<div class="toolbar">${chips}</div>`;
+  html += `<div class="kpi-row">
+    <div class="kpi" onclick="setTaskFilter('mias')" style="cursor:pointer"><div class="label">Para mí</div><div class="value">${mineActive}</div><div class="sub">pendientes</div></div>
+    <div class="kpi" onclick="setTaskFilter('proceso')" style="cursor:pointer"><div class="label">En proceso</div><div class="value">${procN}</div><div class="sub">en curso</div></div>
+    <div class="kpi ${lateN?'alert':''}" onclick="setTaskFilter('atrasada')" style="cursor:pointer"><div class="label">Atrasadas</div><div class="value">${lateN}</div><div class="sub">requieren atención</div></div>
+    <div class="kpi ok" onclick="setTaskFilter('hecha')" style="cursor:pointer"><div class="label">Hechas</div><div class="value">${doneN}</div><div class="sub">completadas</div></div>
+  </div>`;
+  html += `<div class="toolbar"><input class="input search" placeholder="Buscar tarea…" value="${esc(taskSearch)}" oninput="taskSearch=this.value;clearTimeout(window._ts);window._ts=setTimeout(render,250)">${chips}</div>`;
   html += list.length ? list.map(taskRow).join('')
-    : emptyState('📝','No hay tareas acá','Cuando alguien asigne una tarea, aparece en esta lista. Probá creando una.','+ Nueva tarea','newTaskModal()');
+    : emptyState('📝','No hay tareas acá', taskSearch?'No hay tareas que coincidan con la búsqueda.':'Cuando alguien asigne una tarea, aparece en esta lista. Probá creando una.','+ Nueva tarea','newTaskModal()');
   return html;
 }
 function visibleTask(t){
@@ -694,24 +707,24 @@ function refreshOverdue(){
   if(changed) save();
 }
 
+function prioMeta(p){ return p==='alta'?{label:'Alta',color:'var(--danger)'}:p==='baja'?{label:'Baja',color:'var(--text-dim)'}:{label:'Media',color:'var(--warn)'}; }
 function taskRow(t){
-  const from=userById(t.fromId);
-  const prioCls = t.prio==='alta'?'pr-alta':t.prio==='media'?'pr-media':'pr-baja';
-  const dotColor = t.prio==='alta'?'var(--danger)':t.prio==='media'?'var(--warn)':'var(--text-soft)';
-  const who = (t.toIds||[]).map(id=>{const u=userById(id);return u?initials(u.name):'?';}).join(', ') || '—';
-  return `<div class="tk" onclick="taskDetail('${t.id}')">
-    ${avatarHTML(from)}
+  const overdue = t.status==='atrasada';
+  const pr = prioMeta(t.prio);
+  const assignees=(t.toIds||[]).map(i=>userById(i)).filter(Boolean);
+  const avs = assignees.slice(0,4).map(u=>`<span class="tk-av">${avatarHTML(u)}</span>`).join('') + (assignees.length>4?`<span class="tk-av more">+${assignees.length-4}</span>`:'');
+  return `<div class="tk tk-prio-${t.prio}${overdue?' tk-overdue':''}" onclick="taskDetail('${t.id}')">
+    <div class="tk-bar"></div>
     <div class="tk-main">
-      <div class="tk-title">${esc(t.title)} ${t.images&&t.images.length?'📎':''}</div>
+      <div class="tk-row1"><div class="tk-title">${esc(t.title)} ${t.images&&t.images.length?svgIcon('clip','icon icon-sm'):''}</div><span class="pill ${t.status}">${statusLabel(t.status)}</span></div>
       <div class="tk-meta">
-        <span><span class="dot-prio" style="background:${dotColor}"></span> ${cap(t.prio)}</span>
-        <span>→ ${esc(who)}</span>
-        <span>⏰ ${fmtDate(t.due)}</span>
-        <span>📍 ${esc(sucName(t.sucursalId))}</span>
+        <span class="tk-prio-chip"><span class="dot-prio" style="background:${pr.color}"></span>${pr.label}</span>
+        <span class="${overdue?'tk-due-late':''}">${svgIcon('clock','icon icon-sm')} ${fmtDate(t.due)}</span>
+        <span class="tk-avs">${avs||'—'}</span>
+        <span>${svgIcon('pin','icon icon-sm')} ${esc(sucName(t.sucursalId))}</span>
       </div>
-      ${t.desc?`<div class="tk-desc">${esc(t.desc).slice(0,90)}${t.desc.length>90?'…':''}</div>`:''}
+      ${t.desc?`<div class="tk-desc">${esc(t.desc).slice(0,110)}${t.desc.length>110?'…':''}</div>`:''}
     </div>
-    <span class="pill ${t.status}">${statusLabel(t.status)}</span>
   </div>`;
 }
 function statusLabel(s){ return {pendiente:'Pendiente',proceso:'En proceso',hecha:'Hecha',rechazada:'Rechazada',atrasada:'Atrasada'}[s]||s||'—'; }
@@ -735,12 +748,14 @@ function taskDetail(id){
     return `<div class="comment">${avatarHTML(u)}<div class="cbody"><div class="cname">${u?esc(u.name):'—'}</div><div class="ctext">${esc(c.text)}</div><div class="ctime">${timeAgo(c.at)}</div></div></div>`;
   }).join('');
 
+  const canEdit = t.fromId===SES.userId || isAdmin();
   let actions='';
   if(canManage){
-    if(t.status!=='hecha') actions+=`<button class="btn btn-primary" onclick="setTaskStatus('${t.id}','hecha')">✅ Marcar hecha</button>`;
-    if(t.status==='pendiente'||t.status==='atrasada') actions+=`<button class="btn btn-ghost" onclick="setTaskStatus('${t.id}','proceso')">▶️ En proceso</button>`;
-    if(amResp && t.status!=='rechazada' && t.status!=='hecha') actions+=`<button class="btn btn-ghost" onclick="rejectTask('${t.id}')">✋ Rechazar</button>`;
+    if(t.status!=='hecha') actions+=`<button class="btn btn-primary" onclick="setTaskStatus('${t.id}','hecha')">${svgIcon('check','icon icon-sm')} Marcar hecha</button>`;
+    if(t.status==='pendiente'||t.status==='atrasada') actions+=`<button class="btn btn-ghost" onclick="setTaskStatus('${t.id}','proceso')">${svgIcon('clock','icon icon-sm')} En proceso</button>`;
+    if(amResp && t.status!=='rechazada' && t.status!=='hecha') actions+=`<button class="btn btn-ghost" onclick="rejectTask('${t.id}')">${svgIcon('x','icon icon-sm')} Rechazar</button>`;
   }
+  if(canEdit) actions+=`<button class="btn btn-ghost" onclick="editTaskModal('${t.id}')">${svgIcon('edit','icon icon-sm')} Editar</button>`;
 
   openModal(`
     <div class="modal-head"><h3>${esc(t.title)}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
@@ -804,36 +819,66 @@ function addTaskComment(id){
 }
 window.addTaskComment=addTaskComment;
 
-/* ----- Nueva tarea ----- */
+/* ----- Nueva / editar tarea ----- */
 let newImgs=[];
+function toDatetimeLocal(ts){ const d=new Date(ts); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,16); }
+function sucOptionsSel(selId){ return DB.sucursales.map(s=>`<option value="${s.id}" ${s.id===selId?'selected':''}>${esc(s.name)}</option>`).join(''); }
+function taskPrioSeg(sel){
+  const opts=[['alta','Alta','var(--danger)'],['media','Media','var(--warn)'],['baja','Baja','var(--text-dim)']];
+  return `<input type="hidden" id="ntPrio" value="${sel}"><div class="prio-seg">`+opts.map(([k,l,c])=>`<button type="button" class="prio-b ${sel===k?'on':''}" data-p="${k}" onclick="setNtPrio('${k}')"><span class="dot-prio" style="background:${c}"></span>${l}</button>`).join('')+`</div>`;
+}
+function setNtPrio(p){ const h=$('#ntPrio'); if(h)h.value=p; document.querySelectorAll('.prio-b').forEach(b=>b.classList.toggle('on',b.dataset.p===p)); }
+function ntDuePreset(spec){
+  const d=new Date();
+  if(spec==='today'){ d.setHours(18,0,0,0); }
+  else if(spec==='tomorrow'){ d.setDate(d.getDate()+1); d.setHours(12,0,0,0); }
+  else if(spec==='3d'){ d.setDate(d.getDate()+3); d.setHours(12,0,0,0); }
+  else if(spec==='week'){ d.setDate(d.getDate()+7); d.setHours(12,0,0,0); }
+  const el=$('#ntDue'); if(el) el.value=toDatetimeLocal(d.getTime());
+}
+window.setNtPrio=setNtPrio; window.ntDuePreset=ntDuePreset;
+function taskFormBody(t){
+  const people=assignablePeople();
+  const sel = t? (t.toIds||[]) : [];
+  let dueStr='';
+  if(t&&t.due) dueStr=toDatetimeLocal(t.due);
+  else if(!t){ const b=new Date(now()+86400e3); b.setHours(12,0,0,0); dueStr=toDatetimeLocal(b.getTime()); }
+  return `
+    <div class="field"><label>Título</label><input class="input" id="ntTitle" value="${t?esc(t.title):''}" placeholder="Ej: Preparar salsas del día" autocomplete="off"></div>
+    <div class="field"><label>Detalle / instrucciones</label><textarea class="textarea" id="ntDesc" placeholder="Explicá qué hay que hacer…">${t?esc(t.desc||''):''}</textarea></div>
+    <div class="ip-sec">${svgIcon('users','icon icon-sm')} ¿A quién se la asignás?</div>
+    <div class="assignee-pick" id="ntPeople">${people.map(u=>`<button type="button" class="ap ${sel.includes(u.id)?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${esc((u.name||'').split(' ')[0])} <span style="color:var(--text-soft)">(${roleInfo(u.role).short})</span></button>`).join('')}</div>
+    <div class="ip-sec">${svgIcon('clock','icon icon-sm')} Prioridad y fecha</div>
+    <div class="field"><label>Prioridad</label>${taskPrioSeg(t?t.prio:'media')}</div>
+    <div class="field"><label>Para cuándo</label>
+      <div class="due-presets"><button type="button" class="chip" onclick="ntDuePreset('today')">Hoy</button><button type="button" class="chip" onclick="ntDuePreset('tomorrow')">Mañana</button><button type="button" class="chip" onclick="ntDuePreset('3d')">En 3 días</button><button type="button" class="chip" onclick="ntDuePreset('week')">En 1 semana</button></div>
+      <input class="input" id="ntDue" type="datetime-local" value="${dueStr}">
+    </div>
+    <div class="field"><label>Sucursal</label><select class="select" id="ntSuc">${t?sucOptionsSel(t.sucursalId):sucOptionsFor()}</select></div>`;
+}
 function newTaskModal(){
   newImgs=[];
-  const sucOpts = sucOptionsFor();
-  const people = assignablePeople();
   openModal(`
-    <div class="modal-head"><h3>Nueva tarea</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+    <div class="modal-head"><h3>${svgIcon('check','icon')} Nueva tarea</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
-      <div class="field"><label>Título</label><input class="input" id="ntTitle" placeholder="Ej: Preparar salsas del día"></div>
-      <div class="field"><label>Detalle / instrucciones</label><textarea class="textarea" id="ntDesc" placeholder="Explicá qué hay que hacer…"></textarea></div>
-      <div class="field"><label>¿A quién se la asignás?</label>
-        <div class="assignee-pick" id="ntPeople">${people.map(u=>`<button class="ap" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${(u.name||'').split(' ')[0]} <span style="color:var(--text-soft)">(${roleInfo(u.role).short})</span></button>`).join('')}</div>
-      </div>
-      <div class="row2">
-        <div class="field"><label>Prioridad</label><select class="select" id="ntPrio"><option value="alta">Alta</option><option value="media" selected>Media</option><option value="baja">Baja</option></select></div>
-        <div class="field"><label>Para cuándo</label><input class="input" id="ntDue" type="datetime-local"></div>
-      </div>
-      <div class="field"><label>Sucursal</label><select class="select" id="ntSuc">${sucOpts}</select></div>
+      ${taskFormBody(null)}
       <div class="field"><label>Fotos / notas (opcional)</label>
         <input type="file" id="ntImg" accept="image/*" multiple onchange="pickImgs(this)">
         <div class="img-prev" id="ntImgPrev"></div>
       </div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="createTask()">Crear tarea</button></div>`);
-  // default due en 1 día
-  const d=new Date(now()+86400e3); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
-  $('#ntDue').value=d.toISOString().slice(0,16);
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="createTask()">${svgIcon('check','icon icon-sm')} Crear tarea</button></div>`, true);
 }
 window.newTaskModal=newTaskModal;
+function editTaskModal(id){
+  const t=DB.tasks.find(x=>x.id===id); if(!t) return;
+  if(!(t.fromId===SES.userId||isAdmin())){ toast('Solo quien la asignó puede editarla','err'); return; }
+  openModal(`
+    <div class="modal-head"><h3>${svgIcon('edit','icon')} Editar tarea</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">${taskFormBody(t)}</div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="taskDetail('${t.id}')">Cancelar</button><button class="btn btn-primary" onclick="saveTaskEdit('${t.id}')">${svgIcon('check','icon icon-sm')} Guardar cambios</button></div>`, true);
+}
+window.editTaskModal=editTaskModal;
 
 async function pickImgs(input){
   newImgs = await readImages(input.files);
@@ -841,22 +886,37 @@ async function pickImgs(input){
 }
 window.pickImgs=pickImgs;
 
-function createTask(){
+function readTaskForm(){
   const title=$('#ntTitle').value.trim();
-  if(!title){ toast('Ponele un título a la tarea','err'); return; }
+  if(!title){ toast('Ponele un título a la tarea','err'); return null; }
   const toIds=[...document.querySelectorAll('#ntPeople .ap.on')].map(b=>b.dataset.id);
-  if(!toIds.length){ toast('Elegí al menos a una persona','err'); return; }
+  if(!toIds.length){ toast('Elegí al menos a una persona','err'); return null; }
   const dueV=$('#ntDue').value;
-  const t={ id:uid(), title, desc:$('#ntDesc').value.trim(), fromId:SES.userId, toIds,
-    sucursalId:$('#ntSuc').value, prio:$('#ntPrio').value, due: dueV?new Date(dueV).getTime():null,
-    status:'pendiente', images:newImgs, createdAt:now(), comments:[],
+  return { title, desc:$('#ntDesc').value.trim(), toIds, sucursalId:$('#ntSuc').value,
+    prio:($('#ntPrio')?$('#ntPrio').value:'media'), due: dueV?new Date(dueV).getTime():null };
+}
+function createTask(){
+  const d=readTaskForm(); if(!d) return;
+  const t={ id:uid(), ...d, fromId:SES.userId, status:'pendiente', images:newImgs, createdAt:now(), comments:[],
     log:[{at:now(),byId:SES.userId,text:'creó la tarea'}] };
   DB.tasks.unshift(t);
-  audit('tarea',`creó "${title}" → ${toIds.map(i=>userById(i)?.name.split(' ')[0]).join(', ')}`,t.sucursalId);
-  notify(toIds, `${me().name.split(' ')[0]} te asignó: "${title}"`, '✅', {view:'tareas'});
+  audit('tarea',`creó "${d.title}" → ${d.toIds.map(i=>userById(i)?.name.split(' ')[0]).join(', ')}`,t.sucursalId);
+  notify(d.toIds, `${me().name.split(' ')[0]} te asignó: "${d.title}"`, '✅', {view:'tareas'});
   closeModal(); toast('Tarea creada y notificada ✅','ok'); render();
 }
 window.createTask=createTask;
+function saveTaskEdit(id){
+  const t=DB.tasks.find(x=>x.id===id); if(!t) return;
+  if(!(t.fromId===SES.userId||isAdmin())){ toast('Solo quien la asignó puede editarla','err'); return; }
+  const d=readTaskForm(); if(!d) return;
+  Object.assign(t, d);
+  if(t.status==='atrasada' && t.due && t.due>now()) t.status='pendiente';
+  t.log.push({at:now(),byId:SES.userId,text:'editó la tarea'});
+  audit('tarea',`editó "${d.title}"`,t.sucursalId);
+  notify(d.toIds.filter(i=>i!==SES.userId), `${me().name.split(' ')[0]} actualizó la tarea "${d.title}"`, 'check', {view:'tareas'});
+  closeModal(); toast('Tarea actualizada','ok'); save(); render();
+}
+window.saveTaskEdit=saveTaskEdit;
 
 /* helpers de asignación / sucursal */
 function assignablePeople(){
