@@ -354,7 +354,7 @@ const canSouvMoney = () => hasRole('admin','gerencia_exp','gerencia_data'); // v
 const canSouvSell = () => hasRole('admin','gerencia_exp','jefe_salon','salonero');
 function sucName(id){ if(id==='all') return 'Todas'; const s=DB.sucursales.find(x=>x.id===id); return s?s.name:'—'; }
 function lowStock(p){ return p.stock<=p.minStock; }
-function invInScope(){ const a=invAreasFor(); return DB.inventory.filter(p=>inScope(p.sucursalId) && a.includes(p.area||'cocina')); }
+function invInScope(){ const a=invAreasFor(); return (DB.inventory||[]).filter(p=>p&&inScope(p.sucursalId) && a.includes(p.area||'cocina')); }
 
 /* Sucursal visible para el usuario actual + filtro */
 function visibleSuc(){
@@ -575,9 +575,10 @@ function render(){
     if(SES.view==='proyectos'){ const pc=$('#projChatMsgs'); if(pc) pc.scrollTop=pc.scrollHeight; applyZoom(); }
   }catch(e){
     console.error('view '+SES.view, e);
-    v.innerHTML=`<div class="card" style="max-width:520px;margin:30px auto;text-align:center">
+    v.innerHTML=`<div class="card" style="max-width:560px;margin:30px auto;text-align:center">
       <div style="font-weight:700;font-size:16px;margin-bottom:8px">Esta sección tuvo un problema al cargar</div>
       <div class="page-sub" style="margin-bottom:14px">Probá con otra sección desde el menú. Si sigue, avisá a Gerencia.</div>
+      <pre style="text-align:left;white-space:pre-wrap;word-break:break-word;background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:12px;color:var(--danger);margin:0 0 14px;max-height:180px;overflow:auto">${esc('['+SES.view+'] '+(e&&e.message?e.message:String(e))+(e&&e.stack?'\n'+e.stack.split('\n').slice(0,4).join('\n'):''))}</pre>
       <button class="btn btn-primary" style="display:inline-block;width:auto;padding:10px 18px" onclick="go('inicio')">Ir a Inicio</button></div>`;
   }
   save();
@@ -589,15 +590,15 @@ window.render = render;
    ===================================================================== */
 function viewInicio(){
   const u=me();
-  const misTareas = DB.tasks.filter(t=>t.toIds.includes(u.id) && inScope(t.sucursalId));
+  const misTareas = (DB.tasks||[]).filter(t=>t&&(t.toIds||[]).includes(u.id) && inScope(t.sucursalId));
   const pend = misTareas.filter(t=>t.status==='pendiente'||t.status==='proceso').length;
   const atras = misTareas.filter(t=>t.status==='atrasada').length;
-  const misPedidos = DB.pedidos.filter(p=>(p.area===u.role||isAdmin()) && (p.status==='pendiente'||p.status==='proceso') && inScope(p.sucursalId)).length;
+  const misPedidos = (DB.pedidos||[]).filter(p=>p&&(pedAreaMine(p.area)||isAdmin()) && (p.status==='pendiente'||p.status==='proceso') && inScope(p.sucursalId)).length;
 
   // Panel "quién no cumple" — tareas atrasadas/rechazadas agrupadas por responsable
-  const fails = DB.tasks.filter(t=>(t.status==='atrasada'||t.status==='rechazada') && inScope(t.sucursalId));
+  const fails = (DB.tasks||[]).filter(t=>t&&(t.status==='atrasada'||t.status==='rechazada') && inScope(t.sucursalId));
   const byResp={};
-  fails.forEach(t=>t.toIds.forEach(id=>{ byResp[id]=(byResp[id]||0)+1; }));
+  fails.forEach(t=>(t.toIds||[]).forEach(id=>{ byResp[id]=(byResp[id]||0)+1; }));
   const failRows = Object.entries(byResp).sort((a,b)=>b[1]-a[1]).map(([id,n])=>{
     const usr=userById(id); if(!usr) return '';
     return `<div class="tk" style="cursor:default">${avatarHTML(usr)}<div class="tk-main">
@@ -679,7 +680,8 @@ window.setTaskFilter = k => { taskFilter=k; render(); };
 
 function refreshOverdue(){
   let changed=false;
-  DB.tasks.forEach(t=>{
+  (DB.tasks||[]).forEach(t=>{
+    if(!t) return;
     if((t.status==='pendiente'||t.status==='proceso') && t.due && t.due<now()){ t.status='atrasada'; changed=true; }
   });
   if(changed) save();
@@ -2331,7 +2333,7 @@ function checkShiftReminders(){
 }
 function todayShiftCard(){
   const iso=new Date().toISOString().slice(0,10);
-  const mine=DB.shifts.filter(s=>s.userId===SES.userId && s.date===iso).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
+  const mine=(DB.shifts||[]).filter(s=>s&&s.userId===SES.userId && s.date===iso).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
   if(mine.some(s=>s.off)) return `<div class="card sched-card free"><span class="av" style="background:var(--bg-soft)">${svgIcon('calendar')}</span><div><div style="font-weight:700">Hoy es tu día libre</div><div class="page-sub" style="margin:0">Disfrutá. No tenés turno hoy.</div></div></div>`;
   const work=mine.filter(s=>!s.off);
   if(!work.length) return `<div class="card sched-card free"><span class="av" style="background:var(--bg-soft)">${svgIcon('calendar')}</span><div><div style="font-weight:700">Hoy estás libre</div><div class="page-sub" style="margin:0">No tenés turno asignado para hoy.</div></div></div>`;
@@ -2452,7 +2454,7 @@ function viewReportes(){
    ===================================================================== */
 const RESERV_EST={pendiente:{l:'Pendiente',c:'pendiente'},confirmada:{l:'Confirmada',c:'proceso'},llego:{l:'Llegó',c:'hecha'},noshow:{l:'No llegó',c:'atrasada'},cancelada:{l:'Cancelada',c:'rechazada'}};
 let resvTab='lista', resvFilter='proximas', resvEstado='todos', resvSearch='';
-function reservScoped(){ return (DB.reservations||[]).filter(r=>inScope(r.sucursalId)); }
+function reservScoped(){ return (DB.reservations||[]).filter(r=>r&&inScope(r.sucursalId)); }
 function clientById(id){ return (DB.clients||[]).find(c=>c.id===id); }
 function starsHTML(score,cid){
   let s=''; for(let i=1;i<=5;i++){ s+=`<button class="star ${i<=(score||0)?'on':''}" ${cid?`onclick="setScore('${cid}',${i})"`:'disabled'} title="${i} de 5">${svgIcon('star','icon icon-sm')}</button>`; }
@@ -2461,7 +2463,7 @@ function starsHTML(score,cid){
 function reservTodayCard(){
   if(!canReservView()) return '';
   const today=new Date().toISOString().slice(0,10);
-  const rs=reservScoped().filter(r=>r.resDate===today && r.status!=='cancelada').sort((a,b)=>(a.resTime||'').localeCompare(b.resTime||''));
+  const rs=reservScoped().filter(r=>r&&r.resDate===today && r.status!=='cancelada').sort((a,b)=>(a.resTime||'').localeCompare(b.resTime||''));
   const pers=rs.reduce((s,r)=>s+(+r.people||0),0);
   if(!rs.length) return `<div class="card sched-card free"><span class="av" style="background:var(--bg-soft)">${svgIcon('reserva')}</span><div style="flex:1"><div style="font-weight:700">Sin reservas para hoy</div><div class="page-sub" style="margin:0">Cuando registres una, aparece acá.</div></div><button class="btn btn-ghost" style="flex:0 0 auto" onclick="go('reservas')">Ver</button></div>`;
   return `<div class="card sched-card"><span class="av" style="background:var(--grad-accent)">${svgIcon('reserva')}</span>
