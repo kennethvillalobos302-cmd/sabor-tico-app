@@ -1,6 +1,6 @@
 # Activar "Subir foto de la factura" (lectura con IA)
 
-Esto permite que en **Inventario → Registrar factura** subás una **foto de la factura** y la app lea sola los productos (proveedor, cantidades, costos) para revisarlos y sumarlos al inventario.
+Esto permite que en **Inventario → Registrar factura** subás una **foto o un PDF de la factura** y la app lea sola los productos (proveedor, cantidades, costos) para revisarlos y sumarlos al inventario.
 
 Necesita una **llave de API de OpenAI** (la IA que lee la imagen). Es de pago por uso: cada factura escaneada cuesta **centavos** (unos ₡5–₡20 según el tamaño de la foto). La llave queda **guardada en secreto en Vercel**, nunca en la app, así que nadie la puede robar.
 

@@ -24,11 +24,15 @@ export default async function handler(req, res) {
   try {
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     const image = body.image;
+    const pdf = body.file;
     const media_type = body.media_type || 'image/jpeg';
-    if (!image) {
-      res.status(400).json({ error: 'No se recibió la imagen de la factura' });
+    if (!image && !pdf) {
+      res.status(400).json({ error: 'No se recibió la imagen ni el PDF de la factura' });
       return;
     }
+    const mediaPart = pdf
+      ? { type: 'file', file: { filename: body.filename || 'factura.pdf', file_data: 'data:application/pdf;base64,' + pdf } }
+      : { type: 'image_url', image_url: { url: 'data:' + media_type + ';base64,' + image } };
 
     // Salida estructurada (Structured Outputs). En modo strict todas las
     // propiedades deben ir en "required"; las opcionales se permiten nulas.
@@ -77,7 +81,7 @@ export default async function handler(req, res) {
           role: 'user',
           content: [
             { type: 'text', text: prompt },
-            { type: 'image_url', image_url: { url: 'data:' + media_type + ';base64,' + image } }
+            mediaPart
           ]
         }],
         response_format: {

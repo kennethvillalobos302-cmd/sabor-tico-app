@@ -2010,10 +2010,10 @@ function invoiceForm(defArea){
   return `<div class="modal-head"><h3>${svgIcon('truck','icon')} Registrar factura</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
     <div class="fac-scan">
-      <input type="file" id="facFile" accept="image/*" capture="environment" style="display:none" onchange="facPhotoChosen(this)">
+      <input type="file" id="facFile" accept="image/*,application/pdf" style="display:none" onchange="facPhotoChosen(this)">
       <button type="button" class="fac-scan-btn" onclick="facPickPhoto()">
         <span class="fac-scan-ico">${svgIcon('image','icon')}</span>
-        <span class="fac-scan-t">Tomar o subir foto de la factura</span>
+        <span class="fac-scan-t">Subir foto o PDF de la factura</span>
         <span class="fac-scan-s">La IA lee proveedor, productos y costos · vos revisás antes de guardar</span>
       </button>
       <div id="facScanStatus" class="fac-scan-status"></div>
@@ -2144,14 +2144,26 @@ function fileToScaledJpeg(file,maxDim){
     img.src=url;
   });
 }
+function fileToBase64(file){
+  return new Promise((resolve,reject)=>{
+    const r=new FileReader();
+    r.onload=()=>{ const s=String(r.result||''); resolve(s.includes(',')?s.split(',')[1]:s); };
+    r.onerror=()=>reject(new Error('No se pudo leer el archivo'));
+    r.readAsDataURL(file);
+  });
+}
 async function facPhotoChosen(input){
   const file=input&&input.files&&input.files[0]; if(input) input.value='';
   if(!file) return;
   const st=$('#facScanStatus');
+  const isPdf = file.type==='application/pdf' || /\.pdf$/i.test(file.name||'');
+  if(isPdf && file.size>4.2*1024*1024){ if(st) st.innerHTML=`<span class="fac-err">El PDF es muy grande (máx ~4 MB). Probá con una foto o un PDF más liviano.</span>`; return; }
   if(st) st.innerHTML=`<span class="fac-spin"></span> Leyendo la factura… puede tardar unos segundos`;
   try{
-    const data=await fileToScaledJpeg(file,1600);
-    const r=await fetch('/api/leer-factura',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:data,media_type:'image/jpeg'})});
+    let payload;
+    if(isPdf){ payload={ file:await fileToBase64(file), filename:file.name||'factura.pdf' }; }
+    else { payload={ image:await fileToScaledJpeg(file,1600), media_type:'image/jpeg' }; }
+    const r=await fetch('/api/leer-factura',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
     let out; const txt=await r.text();
     try{ out=JSON.parse(txt); }catch(_){ out=null; }
     if(!r.ok){ throw new Error((out&&out.error)|| (r.status===404?'La función aún no está publicada en Vercel':('Error '+r.status))); }
