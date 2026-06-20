@@ -30,6 +30,8 @@
   /* espaciado base 4 */
   --sp:4px;
 }
+:root,:root[data-theme="dark"]{color-scheme:dark}
+:root[data-theme="light"]{color-scheme:light}
 :root[data-theme="dark"]{
   --bg:#141010;
   --bg-elev:#1b1514;
@@ -382,23 +384,23 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .sh-time label{display:block;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);margin-bottom:7px}
 .sh-time input{font-size:19px;font-weight:700;text-align:center;padding:13px;width:100%;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);color:var(--text)}
 .sh-time input:focus{border-color:var(--accent);box-shadow:var(--ring);outline:none}
-.sh-arrow{padding-bottom:16px;color:var(--text-soft);font-size:18px;font-weight:700}
+.sh-arrow{text-align:center;color:var(--text-soft);font-size:16px;font-weight:700;line-height:1;margin:-2px 0}
 .sh-preview{margin:2px 0 4px}
 .ap.shpreset{padding:9px 13px;font-weight:600}
 .ap.shpreset.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}
 .brk-row{display:flex;gap:8px;margin-bottom:10px;align-items:center;flex-wrap:wrap}
 /* selector de hora AM/PM */
-.tp{display:inline-flex;align-items:center;gap:3px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);padding:5px 7px}
+.tp{display:inline-flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:3px 4px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);padding:6px 8px;overflow:visible;max-width:100%}
 .tp select{background:transparent;border:none;color:var(--text);font-weight:800;font-size:19px;outline:none;cursor:pointer;padding:7px 2px;-webkit-appearance:none;appearance:none;text-align:center}
-.tp-num{width:2.3ch;background:transparent;border:none;color:var(--text);font-weight:800;font-size:22px;outline:none;text-align:center;padding:7px 2px;caret-color:var(--accent)}
+.tp-num{width:1.9ch;min-width:1.9ch;background:transparent;border:none;color:var(--text);font-weight:800;font-size:21px;outline:none;text-align:center;padding:6px 1px;caret-color:var(--accent)}
 .tp-num::placeholder{color:var(--text-soft);opacity:.45}
 .tp:focus-within{border-color:var(--accent);box-shadow:0 0 0 2px rgba(184,58,82,.18)}
-.tp .tp-colon{font-weight:800;color:var(--text-soft);font-size:18px}
-.tp-ampm{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-left:5px}
-.tp-ap{padding:9px 11px;font-size:12px;font-weight:700;color:var(--text-soft);background:transparent;border:none;cursor:pointer;transition:background var(--t-fast),color var(--t-fast)}
+.tp .tp-colon{font-weight:800;color:var(--text-soft);font-size:18px;padding:0 1px}
+.tp-ampm{display:inline-flex;flex:0 0 auto;border:1px solid var(--border);border-radius:8px;overflow:hidden;margin-left:4px}
+.tp-ap{padding:8px 10px;font-size:12px;font-weight:700;color:var(--text-soft);background:transparent;border:none;cursor:pointer;transition:background var(--t-fast),color var(--t-fast)}
 .tp-ap.on{background:var(--accent);color:#fff}
-.sh-pickwrap{display:flex;align-items:flex-end;gap:10px}
-.sh-pickwrap .sh-time{flex:1;display:flex;flex-direction:column;gap:7px}
+.sh-pickwrap{display:flex;flex-direction:column;align-items:stretch;gap:10px}
+.sh-pickwrap .sh-time{display:flex;flex-direction:column;gap:7px}
 .sh-pickwrap .tp{width:100%;justify-content:center}
 .add-break{width:100%;border:1.5px dashed var(--border);background:transparent;border-radius:var(--r-md);padding:11px;font-weight:600;color:var(--text-soft);display:flex;align-items:center;justify-content:center;gap:8px;transition:border-color var(--t-fast),color var(--t-fast)}
 .add-break:hover{border-color:var(--accent);color:var(--accent)}
@@ -634,12 +636,12 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 /* selector de hora grande y claro */
 .tp{gap:4px;padding:6px 8px;border-radius:var(--r-md)}
 .tp select{font-size:20px;padding:8px 4px;-webkit-appearance:none;appearance:none;background:none;cursor:pointer}
-.tp-num{font-size:24px;padding:9px 4px;width:2.4ch}
+.tp-num{font-size:22px;padding:8px 2px;width:2ch;min-width:2ch}
 .tp-colon{font-size:19px}
-.tp-ampm{margin-left:6px;border-radius:9px}
-.tp-ap{padding:10px 13px;font-size:13px}
-.sh-pickwrap{gap:8px}
-.sh-arrow{font-size:18px;color:var(--text-soft)}
+.tp-ampm{margin-left:5px;border-radius:9px}
+.tp-ap{padding:10px 12px;font-size:13px}
+.sh-pickwrap{gap:9px}
+.sh-arrow{font-size:16px;color:var(--text-soft);text-align:center}
 /* chips y botones con mejor área táctil */
 .chip{padding:9px 14px}
 .ap{padding:8px 12px}

@@ -4,6 +4,11 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
+/* Versión de datos: al subir este número, la app hace una limpieza única
+   (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
+   dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
+const DATA_VERSION = 2;
+let _migrateReset = false;
 const FB = (window.SABOR_CLOUD && window.SABOR_CLOUD.databaseURL) ? window.SABOR_CLOUD : null;
 const CLIENT_ID = Math.random().toString(36).slice(2);
 let fbdb=null, cloudOn=false, _applyingRemote=false, _saveTimer=null;
@@ -16,13 +21,27 @@ const ROLES = {
   cocinero:    { label:'Cocina',          short:'Cocina',       color:'#a8475a' }, /* vino claro */
   salonero:    { label:'Salonero',        short:'Salonero',     color:'#4e5a63' }, /* gris azulado */
   proveeduria: { label:'Proveeduría',     short:'Proveeduría',  color:'#5c5650' }, /* gris cálido */
-  contabilidad:{ label:'Contabilidad',    short:'Conta',        color:'#7a6a62' }, /* taupe */
-  rrhh:        { label:'Recursos Humanos',short:'RRHH',         color:'#3f3a3a' }, /* carbón */
+  contarh:     { label:'Contabilidad y Recursos', short:'Conta + RH', color:'#7a6a62' }, /* taupe */
   gerencia_exp:{ label:'Gerencia de Experiencia', short:'Ger. Experiencia', color:'#9a2f48' },
   gerencia_data:{ label:'Gerencia de Estadística y Diseño', short:'Ger. Estadística', color:'#6b4a3a' },
   bartender:   { label:'Bartender',       short:'Bartender',    color:'#514a44' },
 };
 const ROLE_KEYS = Object.keys(ROLES);
+
+/* Áreas de pedidos (a quién va dirigida una solicitud). Una misma persona
+   (Melanie · contarh) atiende tanto Contabilidad como Recursos. */
+const PED_AREAS = {
+  proveeduria:  { label:'Proveeduría — insumos / productos', short:'Proveeduría', color:'#5c5650', roles:['proveeduria'] },
+  contabilidad: { label:'Contabilidad — pagos / facturas',   short:'Contabilidad', color:'#7a6a62', roles:['contarh'] },
+  rrhh:         { label:'Recursos — permisos / adelantos',   short:'Recursos',     color:'#3f3a3a', roles:['contarh'] },
+};
+function pedInfo(area){
+  if(PED_AREAS[area]) return PED_AREAS[area];
+  if(ROLES[area]) return {label:ROLES[area].label, short:ROLES[area].short, color:ROLES[area].color, roles:[area]};
+  return {label:area, short:area, color:'#888', roles:[area]};
+}
+function pedAreaMine(area){ return (pedInfo(area).roles||[]).includes(me().role); }
+const roleInfo = r => ROLES[r] || {label:r,short:r,color:'#777'};
 
 /* ---------------- Helpers ---------------- */
 const $ = s => document.querySelector(s);
@@ -46,7 +65,7 @@ function timeAgo(ts){
 function initials(name){ return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
 function avatarHTML(u, cls=''){
   if(!u) return `<div class="av ${cls}" style="background:#888">?</div>`;
-  return `<div class="av ${cls}" style="background:${ROLES[u.role].color}">${initials(u.name)}</div>`;
+  return `<div class="av ${cls}" style="background:${roleInfo(u.role).color}">${initials(u.name)}</div>`;
 }
 
 /* ---------------- Estado ---------------- */
@@ -83,7 +102,7 @@ async function cloudInit(){
   migrate();
   try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
   cloudOn=true;
-  if(!(val && val.data)) await cloudPush();
+  if(!(val && val.data) || _migrateReset){ await cloudPush(); _migrateReset=false; }
   try{
     fbdb.ref('state').on('value', (snap)=>{
       const v=snap.val(); if(!v || !v.data || v.client===CLIENT_ID) return;
@@ -109,8 +128,7 @@ function seed(){
     U('Jafet Mora','salonero',s1,'8902-5567'),
     U('Bryan Castro','salonero',s2,'8456-1209'),
     U('Diego Vargas','proveeduria','all','8533-9914'),
-    U('Sofía Núñez','contabilidad','all','7211-6648'),
-    U('Andrea Rojas','rrhh','all','8377-4521'),
+    U('Melanie','contarh','all',''),
     U('Carla Méndez','jefe_salon',s2,'8190-7763'),
     U('Andrés Quirós','bartender',s1,'8654-2210'),
     U('Valeria Campos','gerencia_exp','all','8443-9921'),
@@ -119,50 +137,29 @@ function seed(){
   const byRole = r => users.find(u=>u.role===r);
   const chef=byRole('chef'), coc=byRole('cocinero'), prov=byRole('proveeduria'), js=byRole('jefe_salon'), admin=byRole('admin');
 
-  const inv = seedInventory(s1,s2);
-  const recetas = seedRecipes(inv, chef.id);
-  const turnos = seedShifts(s1,s2,users);
-  const cli = seedClients();
-  const resv = seedReservations(cli, s1, admin.id);
-  const souv = seedSouvenirs(s1);
-
+  // Inicio en limpio para uso real: sin datos de ejemplo, solo el equipo, las sucursales
+  // y dos grupos de chat listos (sin mensajes) para que el equipo se comunique de una.
   const db = {
+    _dataVersion: DATA_VERSION,
     sucursales:[{id:s1,name:'Sabor Tico — Central'},{id:s2,name:'Sabor Tico — Norte'}],
     users,
-    inventory:inv,
+    inventory:[],
     invCats:JSON.parse(JSON.stringify(DEFAULT_CATS)),
     invMoves:[],
-    recipes:recetas,
-    shifts:turnos,
-    tasks:[
-      task('Preparar mise en place del almuerzo','Dejar listas las salsas y guarniciones antes de las 11am.',chef.id,[coc.id],s1,'alta', now()+3600e3*4,'pendiente'),
-      task('Limpieza profunda de cámara fría','Revisar fechas y descartar lo vencido.',js.id,[coc.id],s1,'media', now()-3600e3*20,'atrasada'),
-      task('Recibir pedido de verduras','Verificar contra factura y reportar faltantes.',chef.id,[prov.id],s1,'alta', now()+3600e3*2,'proceso'),
-    ],
-    pedidos:[
-      pedido('Tomates (caja)','Se acabaron para la salsa de la casa.',2,chef.id,'proveeduria',s1,'alta','pendiente'),
-      pedido('Servilletas','Para el salón, quedan pocas.',10,js.id,'proveeduria',s2,'media','proceso'),
-      pedido('Adelanto de salario','Solicitud de adelanto quincenal.',1,byRole('salonero').id,'rrhh',s1,'baja','pendiente'),
-    ],
-    projects:[
-      { id:uid(), name:'Remodelación del salón', desc:'Renovar el salón principal de la sucursal Central.', sucursalId:s1,
-        memberIds:[admin.id, js.id, byRole('salonero').id], createdAt:now()-86400e3*2,
-        cards:[
-          card('Idea: barra nueva en la entrada con madera clara.', chef.id),
-          card('Pendiente: cotizar 12 sillas nuevas antes del viernes.', admin.id),
-        ] },
-    ],
+    recipes:[],
+    shifts:[],
+    tasks:[],
+    pedidos:[],
+    projects:[],
     chats:[
-      { id:uid(), type:'group', name:'Equipo Central', memberIds:users.filter(u=>u.sucursalId===s1||u.sucursalId==='all').map(u=>u.id), sucursalId:s1, createdById:admin.id,
-        msgs:[ msg(admin.id,'Buenos días equipo, hoy esperamos lleno al almuerzo 💪'), msg(js.id,'Listos, salón preparado.') ] },
-      { id:uid(), type:'group', name:'Cocina', memberIds:[admin.id,chef.id,coc.id], sucursalId:s1, createdById:admin.id,
-        msgs:[ msg(chef.id,'Lucía, arrancá con el arroz por favor.') ] },
+      { id:uid(), type:'group', name:'Equipo Central', memberIds:users.filter(u=>u.sucursalId===s1||u.sucursalId==='all').map(u=>u.id), sucursalId:s1, createdById:admin.id, createdAt:now(), msgs:[] },
+      { id:uid(), type:'group', name:'Equipo Norte', memberIds:users.filter(u=>u.sucursalId===s2||u.sucursalId==='all').map(u=>u.id), sucursalId:s2, createdById:admin.id, createdAt:now(), msgs:[] },
     ],
     notifs:[],
     audit:[],
-    clients:cli,
-    reservations:resv,
-    souvenirs:souv,
+    clients:[],
+    reservations:[],
+    souvenirs:[],
     souvSales:[],
   };
   return db;
@@ -282,6 +279,15 @@ function seedSouvenirs(suc){
 /* ---------------- Migración de DBs existentes ---------------- */
 function migrate(){
   let ch=false;
+  // Limpieza única para empezar a usarlo en real: si la versión guardada es menor
+  // a la actual, se reinicia a datos limpios (equipo + sucursales, sin ejemplos).
+  if((DB._dataVersion||0) < DATA_VERSION){
+    DB = seed();
+    _migrateReset = true;
+    return; // seed() ya deja todo completo y con la versión al día
+  }
+  // unir puestos viejos de Contabilidad y Recursos en el rol combinado
+  (DB.users||[]).forEach(u=>{ if(u.role==='contabilidad'||u.role==='rrhh'){ u.role='contarh'; ch=true; } });
   // asegurar que las colecciones base existan (datos sincronizados pueden venir incompletos)
   ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients','souvenirs','souvSales'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
   const s=DB.sucursales||[]; const s1=s[0]?s[0].id:'all'; const s2=s[1]?s[1].id:s1;
@@ -313,7 +319,7 @@ const isAdmin = () => me() && me().role==='admin';
 const hasRole = (...rs) => me() && rs.includes(me().role);
 // Inventario por área: Cocina (Proveeduría/Chef) y Bar (Bartender/Jefe de Salón)
 function invAreasFor(){
-  if(hasRole('admin','contabilidad','gerencia_data')) return ['cocina','bar'];
+  if(hasRole('admin','contarh','gerencia_data')) return ['cocina','bar'];
   if(hasRole('proveeduria','chef','cocinero')) return ['cocina'];
   if(hasRole('bartender','jefe_salon')) return ['bar'];
   return [];
@@ -328,8 +334,8 @@ const canInvView = () => invAreasFor().length>0;
 const canInvEdit = () => invAreasFor().some(canInvEditArea);
 const canRecipeEdit = () => hasRole('admin','chef');
 const canRecipeView = () => hasRole('admin','chef','cocinero','bartender');
-const canShiftManage = () => hasRole('admin','jefe_salon','rrhh','gerencia_exp');
-const canPersonal = () => hasRole('admin','rrhh');
+const canShiftManage = () => hasRole('admin','jefe_salon','contarh','gerencia_exp');
+const canPersonal = () => hasRole('admin','contarh');
 const canReservView = () => hasRole('admin','gerencia_exp','gerencia_data','jefe_salon','salonero','bartender','chef');
 const canReservEdit = () => hasRole('admin','gerencia_exp','jefe_salon','salonero');
 const canSouvView = () => hasRole('admin','gerencia_exp','gerencia_data','jefe_salon','salonero');
@@ -446,8 +452,7 @@ const ROLE_NAV = {
   jefe_salon:  ['inicio','tareas','pedidos','reservas','souvenir','inventario','horarios','proyectos','chat'],
   salonero:    ['inicio','tareas','pedidos','reservas','souvenir','horarios','proyectos','chat'],
   proveeduria: ['inicio','tareas','pedidos','inventario','horarios','proyectos','chat'],
-  contabilidad:['inicio','tareas','pedidos','inventario','reportes','proyectos','chat'],
-  rrhh:        ['inicio','tareas','pedidos','personal','horarios','proyectos','chat'],
+  contarh:     ['inicio','tareas','pedidos','inventario','personal','horarios','reportes','proyectos','chat'],
   gerencia_exp:['inicio','tareas','pedidos','reservas','souvenir','horarios','personal','proyectos','chat','reportes'],
   gerencia_data:['inicio','tareas','pedidos','reservas','souvenir','inventario','proyectos','chat','reportes'],
   bartender:   ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
@@ -463,7 +468,7 @@ function pendingForMe(){
 }
 function pedidosForMe(){
   if(!me()) return 0;
-  return (DB.pedidos||[]).filter(p=> (p.area===me().role||isAdmin()) && (p.status==='pendiente'||p.status==='proceso') && inScope(p.sucursalId)).length;
+  return (DB.pedidos||[]).filter(p=> (pedAreaMine(p.area)||isAdmin()) && (p.status==='pendiente'||p.status==='proceso') && inScope(p.sucursalId)).length;
 }
 function navBadge(id){
   try{
@@ -848,7 +853,7 @@ function viewPedidos(){
   let list=[...all];
   if(pedFilter==='activos') list=list.filter(p=>p.status==='pendiente'||p.status==='proceso');
   else if(pedFilter==='mios') list=list.filter(p=>p.fromId===SES.userId);
-  else if(pedFilter==='ami') list=list.filter(p=>p.area===me().role);
+  else if(pedFilter==='ami') list=list.filter(p=>pedAreaMine(p.area));
   else if(pedFilter!=='todos') list=list.filter(p=>p.status===pedFilter);
   list.sort((a,b)=>b.createdAt-a.createdAt);
 
@@ -874,7 +879,7 @@ function viewPedidos(){
 }
 function visiblePedido(p){
   if(isAdmin()) return true;
-  return p.fromId===SES.userId || p.area===me().role;
+  return p.fromId===SES.userId || pedAreaMine(p.area);
 }
 window.setPedFilter=k=>{pedFilter=k;render();};
 
@@ -883,13 +888,13 @@ function pedidoRow(p){
   const st = p.status==='entregado'?'hecha':p.status==='proceso'?'proceso':p.status==='rechazado'?'rechazada':'pendiente';
   const urg = p.urgencia==='alta'?'var(--danger)':p.urgencia==='media'?'var(--warn)':'var(--text-soft)';
   return `<div class="tk" onclick="pedidoDetail('${p.id}')">
-    <div class="av" style="background:${ROLES[p.area]?ROLES[p.area].color:'#888'}">${(ROLES[p.area]?ROLES[p.area].short:'?').slice(0,1)}</div>
+    <div class="av" style="background:${pedInfo(p.area).color}">${pedInfo(p.area).short.slice(0,1)}</div>
     <div class="tk-main">
       <div class="tk-title">${esc(p.item)} ${p.qty>1?`<span style="color:var(--text-soft)">×${p.qty}</span>`:''}</div>
       <div class="tk-meta">
         <span><span class="dot-prio" style="background:${urg}"></span> ${cap(p.urgencia)}</span>
         <span>Pidió: ${from?esc(from.name.split(' ')[0]):'—'}</span>
-        <span>→ ${ROLES[p.area]?ROLES[p.area].short:p.area}</span>
+        <span>→ ${pedInfo(p.area).short}</span>
         <span>📍 ${esc(sucName(p.sucursalId))}</span>
       </div>
       ${p.desc?`<div class="tk-desc">${esc(p.desc).slice(0,90)}</div>`:''}
@@ -901,7 +906,7 @@ function pedidoRow(p){
 function pedidoDetail(id){
   const p=DB.pedidos.find(x=>x.id===id); if(!p) return;
   const from=userById(p.fromId);
-  const canManage = p.area===me().role || isAdmin();
+  const canManage = pedAreaMine(p.area) || isAdmin();
   const logHtml=[...p.log].reverse().map(l=>{const u=userById(l.byId);return `<div class="log-item"><b>${u?esc(u.name.split(' ')[0]):'—'}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`;}).join('');
   const comments=(p.comments||[]).map(c=>{const u=userById(c.byId);return `<div class="comment">${avatarHTML(u)}<div class="cbody"><div class="cname">${u?esc(u.name):''}</div><div class="ctext">${esc(c.text)}</div><div class="ctime">${timeAgo(c.at)}</div></div></div>`;}).join('');
   let actions='';
@@ -917,7 +922,7 @@ function pedidoDetail(id){
       ${p.desc?`<p style="margin:12px 0;font-size:14px;line-height:1.6">${esc(p.desc)}</p>`:''}
       <div class="detail-meta">
         <div class="dm"><div class="dl">Cantidad</div><div class="dv">${p.qty}</div></div>
-        <div class="dm"><div class="dl">Área</div><div class="dv">${ROLES[p.area]?ROLES[p.area].label:p.area}</div></div>
+        <div class="dm"><div class="dl">Área</div><div class="dv">${pedInfo(p.area).label}</div></div>
         ${p.productId?(()=>{const pr=DB.inventory.find(x=>x.id===p.productId);return `<div class="dm"><div class="dl">Producto ligado</div><div class="dv">${pr?esc(pr.name)+' · stock '+pr.stock+' '+pr.unit:'(eliminado)'}</div></div>`;})():''}
         <div class="dm"><div class="dl">Pedido por</div><div class="dv">${from?esc(from.name):'—'}</div></div>
         <div class="dm"><div class="dl">Urgencia</div><div class="dv">${cap(p.urgencia)}</div></div>
@@ -971,9 +976,9 @@ function newPedidoModal(){
     <div class="modal-head"><h3>Pedir algo</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
       <div class="field"><label>¿A qué área?</label><select class="select" id="npArea">
-        <option value="proveeduria">📦 Proveeduría — insumos / productos</option>
-        <option value="contabilidad">💵 Contabilidad — pagos / facturas</option>
-        <option value="rrhh">👤 Recursos Humanos — permisos / adelantos</option>
+        <option value="proveeduria">Proveeduría — insumos / productos</option>
+        <option value="contabilidad">Contabilidad — pagos / facturas</option>
+        <option value="rrhh">Recursos — permisos / adelantos</option>
       </select></div>
       <div class="field"><label>¿Qué necesitás?</label><input class="input" id="npItem" placeholder="Ej: Caja de tomates"></div>
       <div class="field" id="npProdWrap"><label>Ligar a producto del inventario (opcional)</label>
@@ -1008,10 +1013,11 @@ function createPedido(){
     sucursalId:$('#npSuc').value, urgencia:$('#npUrg').value, status:'pendiente', createdAt:now(), comments:[],
     log:[{at:now(),byId:SES.userId,text:'creó la solicitud'}] };
   DB.pedidos.unshift(p);
-  audit('pedido',`pidió "${item}" a ${ROLES[area].short}`,p.sucursalId);
-  const targets=DB.users.filter(u=>u.role===area).map(u=>u.id);
-  notify(targets, `${me().name.split(' ')[0]} pidió: "${item}" (${ROLES[area].short})`, '📦', {view:'pedidos'});
-  closeModal(); toast('Pedido enviado 📦','ok'); render();
+  const info=pedInfo(area);
+  audit('pedido',`pidió "${item}" a ${info.short}`,p.sucursalId);
+  const targets=DB.users.filter(u=>(info.roles||[]).includes(u.role)).map(u=>u.id);
+  notify(targets, `${me().name.split(' ')[0]} pidió: "${item}" (${info.short})`, 'pedido', {view:'pedidos'});
+  closeModal(); toast('Pedido enviado','ok'); render();
 }
 window.createPedido=createPedido;
 
@@ -1729,15 +1735,11 @@ function rolePanel(){
     return wrap('🍽️ Tu puesto · Salonero','Tus tareas y tu horario',
       b('Mi horario',"go('horarios')")+b('Pedir algo',"newPedidoModal()"));
   }
-  if(r==='contabilidad'){
+  if(r==='contarh'){
+    const sol=(DB.pedidos||[]).filter(p=>(p.area==='rrhh'||p.area==='contabilidad')&&(p.status==='pendiente'||p.status==='proceso')&&inScope(p.sucursalId)).length;
     const val=invInScope().reduce((s,p)=>s+p.stock*p.cost,0);
-    return wrap('💵 Tu puesto · Contabilidad', `Valor de inventario: <b>${money(val)}</b>`,
-      b('Reportes',"go('reportes')")+b('Ver inventario',"go('inventario')")+b('Solicitudes',"go('pedidos')"));
-  }
-  if(r==='rrhh'){
-    const sol=DB.pedidos.filter(p=>p.area==='rrhh'&&(p.status==='pendiente'||p.status==='proceso')&&inScope(p.sucursalId)).length;
-    return wrap('👤 Tu puesto · Recursos Humanos', `${sol} solicitud(es) por atender`,
-      b('Personal',"go('personal')")+b('Horarios',"go('horarios')")+b('Solicitudes',"go('pedidos')"));
+    return wrap('Tu puesto · Contabilidad y Recursos', `${sol} solicitud(es) por atender · inventario ${money(val)}`,
+      b('Solicitudes',"go('pedidos')")+b('Personal',"go('personal')")+b('Horarios',"go('horarios')")+b('Reportes',"go('reportes')"));
   }
   if(r==='gerencia_exp'){
     return wrap('Tu puesto · Gerencia de Experiencia','Calidad de servicio, equipo y turnos',
@@ -2107,38 +2109,45 @@ window.updateShiftPreview=updateShiftPreview; window.readTP=readTP;
 
 /* ---- Calendario personalizado ---- */
 let shDate='', shCalMonth=null;
-function fmtDateLong(iso){ return new Date(iso+'T00:00').toLocaleDateString('es-CR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); }
-function dateField(value){
-  shDate=value; shCalMonth=new Date(value+'T00:00'); shCalMonth.setDate(1);
-  return `<div class="datepick" id="shDateBox">
-    <button type="button" class="input datepick-btn" onclick="toggleCal(event)">${svgIcon('calendar','icon icon-sm')}<span id="shDateLabel" style="flex:1">${fmtDateLong(value)}</span>${svgIcon('chevron','icon icon-sm')}</button>
-    <div class="cal" id="shCal" style="display:none"></div>
+let _cal={}; // estado por instancia del calendario: prefix -> {month:Date}
+function fmtDateLong(iso){ if(!iso) return '—'; const x=new Date(iso+'T00:00'); if(isNaN(x)) return '—'; return x.toLocaleDateString('es-CR',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); }
+function dateField(value, prefix='sh'){
+  value = value || new Date().toISOString().slice(0,10);
+  if(prefix==='sh'){ shDate=value; } // compatibilidad
+  const m=new Date(value+'T00:00'); m.setDate(1); _cal[prefix]={month:m};
+  return `<div class="datepick" id="${prefix}DateBox">
+    <input type="hidden" id="${prefix}Date" value="${value}">
+    <button type="button" class="input datepick-btn" onclick="toggleCal(event,'${prefix}')">${svgIcon('calendar','icon icon-sm')}<span id="${prefix}DateLabel" style="flex:1">${fmtDateLong(value)}</span>${svgIcon('chevron','icon icon-sm')}</button>
+    <div class="cal" id="${prefix}Cal" style="display:none"></div>
   </div>`;
 }
-function renderCal(){
-  const c=$('#shCal'); if(!c) return; const m=shCalMonth;
+function renderCal(prefix){
+  prefix=prefix||'sh';
+  const c=$('#'+prefix+'Cal'); if(!c) return;
+  const st=_cal[prefix]; if(!st) return; const m=st.month;
+  const cur = $('#'+prefix+'Date') ? $('#'+prefix+'Date').value : '';
   const y=m.getFullYear(), mo=m.getMonth();
   const startDow=(new Date(y,mo,1).getDay()+6)%7;
   const days=new Date(y,mo+1,0).getDate();
   const today=new Date().toISOString().slice(0,10);
   let cells=''; for(let i=0;i<startDow;i++) cells+='<div></div>';
   for(let d=1;d<=days;d++){ const iso=`${y}-${String(mo+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-    cells+=`<button type="button" class="cal-day ${iso===shDate?'sel':''} ${iso===today?'today':''}" onclick="pickDate('${iso}')">${d}</button>`; }
-  c.innerHTML=`<div class="cal-head"><button type="button" class="icon-btn" style="width:30px;height:30px" onclick="calMove(-1)">${svgIcon('back','icon icon-sm')}</button>
+    cells+=`<button type="button" class="cal-day ${iso===cur?'sel':''} ${iso===today?'today':''}" onclick="pickDate('${iso}','${prefix}')">${d}</button>`; }
+  c.innerHTML=`<div class="cal-head"><button type="button" class="icon-btn" style="width:30px;height:30px" onclick="calMove(-1,'${prefix}')">${svgIcon('back','icon icon-sm')}</button>
     <span>${m.toLocaleDateString('es-CR',{month:'long',year:'numeric'})}</span>
-    <button type="button" class="icon-btn" style="width:30px;height:30px" onclick="calMove(1)"><svg class="icon icon-sm" viewBox="0 0 24 24" style="transform:scaleX(-1)"><use href="#i-back"/></svg></button></div>
+    <button type="button" class="icon-btn" style="width:30px;height:30px" onclick="calMove(1,'${prefix}')"><svg class="icon icon-sm" viewBox="0 0 24 24" style="transform:scaleX(-1)"><use href="#i-back"/></svg></button></div>
     <div class="cal-grid cal-dow"><div>L</div><div>M</div><div>M</div><div>J</div><div>V</div><div>S</div><div>D</div></div>
     <div class="cal-grid" style="margin-top:3px">${cells}</div>`;
 }
-function toggleCal(e){ if(e)e.stopPropagation(); const c=$('#shCal'); if(!c)return; const show=c.style.display==='none'; c.style.display=show?'block':'none'; if(show) renderCal(); }
-function calMove(d){ shCalMonth.setMonth(shCalMonth.getMonth()+d); renderCal(); }
-function pickDate(iso){ shDate=iso; const l=$('#shDateLabel'); if(l)l.textContent=fmtDateLong(iso); const c=$('#shCal'); if(c)c.style.display='none'; }
+function toggleCal(e,prefix){ if(e)e.stopPropagation(); prefix=prefix||'sh'; const c=$('#'+prefix+'Cal'); if(!c)return; const show=c.style.display==='none'; c.style.display=show?'block':'none'; if(show) renderCal(prefix); }
+function calMove(d,prefix){ prefix=prefix||'sh'; if(!_cal[prefix])return; _cal[prefix].month.setMonth(_cal[prefix].month.getMonth()+d); renderCal(prefix); }
+function pickDate(iso,prefix){ prefix=prefix||'sh'; const h=$('#'+prefix+'Date'); if(h)h.value=iso; if(prefix==='sh')shDate=iso; const l=$('#'+prefix+'DateLabel'); if(l)l.textContent=fmtDateLong(iso); const c=$('#'+prefix+'Cal'); if(c)c.style.display='none'; }
 window.toggleCal=toggleCal; window.calMove=calMove; window.pickDate=pickDate;
 const HOR_DEPTS=[
   {label:'Salón',roles:['jefe_salon','salonero','bartender']},
   {label:'Cocina',roles:['chef','cocinero']},
   {label:'Gerencia',roles:['admin','gerencia_exp','gerencia_data']},
-  {label:'Administración',roles:['proveeduria','contabilidad','rrhh']},
+  {label:'Administración',roles:['proveeduria','contarh']},
 ];
 let horMode='general', horDay='';
 function viewHorarios(){
@@ -2224,7 +2233,7 @@ function shiftForm(title,s){
     <div class="field"><label>Horario</label>
       <div class="sh-pickwrap">
         <div class="sh-time"><label>Entra</label>${timePicker('shStart',st,'updateShiftPreview()')}</div>
-        <div class="sh-arrow">→</div>
+        <div class="sh-arrow">↓</div>
         <div class="sh-time"><label>Sale</label>${timePicker('shEnd',en,'updateShiftPreview()')}</div>
       </div>
       <div class="sh-preview" id="shPreview" style="margin-top:12px"></div>
@@ -2312,7 +2321,7 @@ window.addBreakRow=addBreakRow; window.renderBreakRows=renderBreakRows;
 function viewPersonal(){
   const manage=canPersonal();
   const people=DB.users.filter(u=>isAdmin()||u.sucursalId==='all'||inScope(u.sucursalId));
-  const sols=DB.pedidos.filter(p=>p.area==='rrhh'&&inScope(p.sucursalId)).sort((a,b)=>b.createdAt-a.createdAt);
+  const sols=DB.pedidos.filter(p=>(p.area==='rrhh'||p.area==='contabilidad')&&inScope(p.sucursalId)).sort((a,b)=>b.createdAt-a.createdAt);
   const guide=sectionGuide('personal','Personal y RRHH',`
     Directorio del equipo y <b>solicitudes a Recursos Humanos</b> (permisos, adelantos, vacaciones).
     <div class="tip"><b>Tip:</b> respondé las solicitudes desde Pedidos para que quede el registro de quién y cuándo.</div>`);
@@ -2524,7 +2533,7 @@ function reservForm(title,r){
       </div>
     </div>
     <div class="row2">
-      <div class="field"><label>Fecha de la reserva</label><input class="input" id="rvDate" type="date" value="${date}"></div>
+      <div class="field"><label>Fecha de la reserva</label>${dateField(date,'rv')}</div>
       <div class="field"><label>Hora</label>${timePicker('rvTime', r?r.resTime:'19:00', '')}</div>
     </div>
     <div class="row2">
