@@ -293,9 +293,9 @@ input,textarea,select{font-family:inherit;font-size:14px}
 .empty .em-d{font-size:13px;max-width:360px;margin:0 auto 18px;line-height:1.6}
 
 /* ---------- MODAL ---------- */
-.modal-bg{position:fixed;inset:0;background:rgba(6,8,14,.6);display:none;align-items:center;justify-content:center;z-index:60;padding:16px;backdrop-filter:blur(4px)}
+.modal-bg{position:fixed;inset:0;background:rgba(6,8,14,.72);display:none;align-items:center;justify-content:center;z-index:60;padding:16px}
 .modal-bg.on{display:flex}
-.modal{background:var(--bg-card);border:1px solid var(--border);border-radius:calc(var(--r-lg) + 2px);box-shadow:var(--e3);width:100%;max-width:540px;max-height:92vh;overflow-y:auto}
+.modal{background:var(--bg-card);border:1px solid var(--border);border-radius:calc(var(--r-lg) + 2px);box-shadow:var(--e3);width:100%;max-width:540px;max-height:92vh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .modal.wide{max-width:760px}
 .modal-head{display:flex;align-items:center;padding:18px 22px;border-bottom:1px solid var(--border-soft);position:sticky;top:0;background:var(--bg-card);z-index:2}
 .modal-head h3{font-size:18px;font-weight:750;letter-spacing:-.3px}
