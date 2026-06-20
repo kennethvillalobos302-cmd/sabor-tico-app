@@ -62,7 +62,7 @@ function timeAgo(ts){
   if(s<86400) return 'hace '+Math.floor(s/3600)+' h';
   return 'hace '+Math.floor(s/86400)+' d';
 }
-function initials(name){ return name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase(); }
+function initials(name){ return String(name||'?').trim().split(/\s+/).map(w=>w[0]||'').slice(0,2).join('').toUpperCase()||'?'; }
 function avatarHTML(u, cls=''){
   if(!u) return `<div class="av ${cls}" style="background:#888">?</div>`;
   return `<div class="av ${cls}" style="background:${roleInfo(u.role).color}">${initials(u.name)}</div>`;
@@ -602,13 +602,13 @@ function viewInicio(){
     const usr=userById(id); if(!usr) return '';
     return `<div class="tk" style="cursor:default">${avatarHTML(usr)}<div class="tk-main">
       <div class="tk-title">${esc(usr.name)} <span class="pill rechazada">${n} sin cumplir</span></div>
-      <div class="tk-meta">${ROLES[usr.role].label} · ${esc(sucName(usr.sucursalId))}</div></div></div>`;
+      <div class="tk-meta">${roleInfo(usr.role).label} · ${esc(sucName(usr.sucursalId))}</div></div></div>`;
   }).join('');
 
-  const greet = `${horaSaludo()}, ${u.name.split(' ')[0]} 👋`;
+  const greet = `${horaSaludo()}, ${(u.name||'').split(' ')[0]} 👋`;
 
   let html = `<div class="page-head"><div><div class="page-title">${esc(greet)}</div>
-    <div class="page-sub">${ROLES[u.role].label}${isAdmin()?' · viendo '+sucName(SES.sucFilter):' · '+sucName(u.sucursalId)}</div></div></div>`;
+    <div class="page-sub">${roleInfo(u.role).label}${isAdmin()?' · viendo '+sucName(SES.sucFilter):' · '+sucName(u.sucursalId)}</div></div></div>`;
 
   html += todayShiftCard();
   html += reservTodayCard();
@@ -643,10 +643,10 @@ function horaSaludo(){ const h=new Date().getHours(); return h<12?'Buenos días'
    ===================================================================== */
 let taskFilter='todas';
 function viewTareas(){
-  const all = DB.tasks.filter(t=>inScope(t.sucursalId)).filter(visibleTask);
+  const all = (DB.tasks||[]).filter(t=>t&&inScope(t.sucursalId)).filter(visibleTask);
   refreshOverdue();
   let list=[...all];
-  if(taskFilter==='mias') list=list.filter(t=>t.toIds.includes(SES.userId));
+  if(taskFilter==='mias') list=list.filter(t=>(t.toIds||[]).includes(SES.userId));
   else if(taskFilter==='asignadas') list=list.filter(t=>t.fromId===SES.userId);
   else if(taskFilter!=='todas') list=list.filter(t=>t.status===taskFilter);
   list.sort((a,b)=>(a.due||9e15)-(b.due||9e15));
@@ -673,7 +673,7 @@ function viewTareas(){
 }
 function visibleTask(t){
   if(isAdmin()) return true;
-  return t.toIds.includes(SES.userId) || t.fromId===SES.userId || me().role==='chef' || me().role==='jefe_salon';
+  return (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId || me().role==='chef' || me().role==='jefe_salon';
 }
 window.setTaskFilter = k => { taskFilter=k; render(); };
 
@@ -689,7 +689,7 @@ function taskRow(t){
   const from=userById(t.fromId);
   const prioCls = t.prio==='alta'?'pr-alta':t.prio==='media'?'pr-media':'pr-baja';
   const dotColor = t.prio==='alta'?'var(--danger)':t.prio==='media'?'var(--warn)':'var(--text-soft)';
-  const who = t.toIds.map(id=>{const u=userById(id);return u?initials(u.name):'?';}).join(', ');
+  const who = (t.toIds||[]).map(id=>{const u=userById(id);return u?initials(u.name):'?';}).join(', ') || '—';
   return `<div class="tk" onclick="taskDetail('${t.id}')">
     ${avatarHTML(from)}
     <div class="tk-main">
@@ -705,8 +705,8 @@ function taskRow(t){
     <span class="pill ${t.status}">${statusLabel(t.status)}</span>
   </div>`;
 }
-function statusLabel(s){ return {pendiente:'Pendiente',proceso:'En proceso',hecha:'Hecha',rechazada:'Rechazada',atrasada:'Atrasada'}[s]||s; }
-function cap(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+function statusLabel(s){ return {pendiente:'Pendiente',proceso:'En proceso',hecha:'Hecha',rechazada:'Rechazada',atrasada:'Atrasada'}[s]||s||'—'; }
+function cap(s){ s=(s==null?'':String(s)); return s? s.charAt(0).toUpperCase()+s.slice(1) : '—'; }
 
 /* ----- Detalle de tarea ----- */
 function taskDetail(id){
@@ -719,7 +719,7 @@ function taskDetail(id){
   const imgs = (t.images||[]).map(s=>`<img src="${s}" onclick="window.open().document.write('<img src=\\'${s}\\' style=max-width:100%>')">`).join('');
   const logHtml = [...t.log].reverse().map(l=>{
     const u=userById(l.byId);
-    return `<div class="log-item"><b>${u?esc(u.name.split(' ')[0]):'—'}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`;
+    return `<div class="log-item"><b>${u?esc((u.name||'').split(' ')[0]):'—'}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`;
   }).join('');
   const comments = (t.comments||[]).map(c=>{
     const u=userById(c.byId);
@@ -807,7 +807,7 @@ function newTaskModal(){
       <div class="field"><label>Título</label><input class="input" id="ntTitle" placeholder="Ej: Preparar salsas del día"></div>
       <div class="field"><label>Detalle / instrucciones</label><textarea class="textarea" id="ntDesc" placeholder="Explicá qué hay que hacer…"></textarea></div>
       <div class="field"><label>¿A quién se la asignás?</label>
-        <div class="assignee-pick" id="ntPeople">${people.map(u=>`<button class="ap" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${u.name.split(' ')[0]} <span style="color:var(--text-soft)">(${ROLES[u.role].short})</span></button>`).join('')}</div>
+        <div class="assignee-pick" id="ntPeople">${people.map(u=>`<button class="ap" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${(u.name||'').split(' ')[0]} <span style="color:var(--text-soft)">(${roleInfo(u.role).short})</span></button>`).join('')}</div>
       </div>
       <div class="row2">
         <div class="field"><label>Prioridad</label><select class="select" id="ntPrio"><option value="alta">Alta</option><option value="media" selected>Media</option><option value="baja">Baja</option></select></div>
@@ -922,7 +922,7 @@ function pedidoDetail(id){
   const p=DB.pedidos.find(x=>x.id===id); if(!p) return;
   const from=userById(p.fromId);
   const canManage = pedAreaMine(p.area) || isAdmin();
-  const logHtml=[...p.log].reverse().map(l=>{const u=userById(l.byId);return `<div class="log-item"><b>${u?esc(u.name.split(' ')[0]):'—'}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`;}).join('');
+  const logHtml=[...p.log].reverse().map(l=>{const u=userById(l.byId);return `<div class="log-item"><b>${u?esc((u.name||'').split(' ')[0]):'—'}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`;}).join('');
   const comments=(p.comments||[]).map(c=>{const u=userById(c.byId);return `<div class="comment">${avatarHTML(u)}<div class="cbody"><div class="cname">${u?esc(u.name):''}</div><div class="ctext">${esc(c.text)}</div><div class="ctime">${timeAgo(c.at)}</div></div></div>`;}).join('');
   let actions='';
   if(canManage && p.status!=='entregado' && p.status!=='rechazado'){
@@ -1141,7 +1141,7 @@ window.toggleBoardFull=toggleBoardFull;
 function projSide(proj){
   const msgs=(proj.chat||[]).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
     const media=m.media?(m.media.type==='video'?`<video src="${m.media.data}" controls></video>`:`<img src="${m.media.data}">`):'';
-    return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc(u.name.split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
+    return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
   const inCall=proj.call&&proj.call.active;
   return `<div class="proj-side">
     <div class="proj-side-head"><span style="font-weight:700;font-size:13px">Chat del grupo</span><div class="ph-spacer"></div>
@@ -1172,7 +1172,7 @@ function boardCard(projId,c){
     ${c.parentId?'<div class="reply-tag">↳ respuesta</div>':''}
     ${c.img?`<img src="${c.img}" draggable="false">`:''}
     ${c.text?`<div class="bc-text">${esc(c.text)}</div>`:''}
-    <div class="bc-foot"><span class="bc-meta">${u?esc(u.name.split(' ')[0]):'—'} · ${timeAgo(c.at)}</span>
+    <div class="bc-foot"><span class="bc-meta">${u?esc((u.name||'').split(' ')[0]):'—'} · ${timeAgo(c.at)}</span>
       <button class="bc-btn bc-reply" title="Responder con una nota" onclick="replyModal('${projId}','${c.id}')">${svgIcon('message','icon icon-sm')} Responder</button></div>
   </div>`;
 }
@@ -1353,7 +1353,7 @@ function callOverlay(projId){
     <div class="modal-body">
       <div class="call-grid">
         <div class="call-tile"><video id="callLocal" autoplay muted playsinline></video><span class="call-name">Vos</span></div>
-        ${parts.filter(u=>u.id!==SES.userId).map(u=>`<div class="call-tile other">${avatarHTML(u)}<span class="call-name">${esc(u.name.split(' ')[0])}</span></div>`).join('')}
+        ${parts.filter(u=>u.id!==SES.userId).map(u=>`<div class="call-tile other">${avatarHTML(u)}<span class="call-name">${esc((u.name||'').split(' ')[0])}</span></div>`).join('')}
       </div>
       <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap">
         <button class="btn btn-ghost" id="micBtn" style="flex:0 0 auto" onclick="toggleCall('audio')">${svgIcon('message','icon icon-sm')} Micrófono</button>
@@ -1395,7 +1395,7 @@ function newProjectModal(){
       <div class="field"><label>Nombre</label><input class="input" id="npName" placeholder="Ej: Remodelación del salón"></div>
       <div class="field"><label>Descripción</label><textarea class="textarea" id="npDescP" placeholder="¿De qué se trata?"></textarea></div>
       <div class="field"><label>¿Quiénes participan?</label>
-        <div class="assignee-pick" id="npMembers">${people.map(u=>`<button class="ap ${u.id===SES.userId?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${u.name.split(' ')[0]} <span style="color:var(--text-soft)">(${ROLES[u.role].short})</span></button>`).join('')}</div>
+        <div class="assignee-pick" id="npMembers">${people.map(u=>`<button class="ap ${u.id===SES.userId?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${(u.name||'').split(' ')[0]} <span style="color:var(--text-soft)">(${roleInfo(u.role).short})</span></button>`).join('')}</div>
       </div>
       <div class="field"><label>Sucursal</label><select class="select" id="npSucP">${sucOptionsFor()}</select></div>
     </div>
@@ -1419,7 +1419,7 @@ function manageMembers(projId){
   const people=DB.users.filter(u=>u.active);
   openModal(`
     <div class="modal-head"><h3>Miembros · ${esc(p.name)}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body"><div class="assignee-pick" id="mmPick">${people.map(u=>`<button class="ap ${p.memberIds.includes(u.id)?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${u.name.split(' ')[0]} <span style="color:var(--text-soft)">(${ROLES[u.role].short})</span></button>`).join('')}</div></div>
+    <div class="modal-body"><div class="assignee-pick" id="mmPick">${people.map(u=>`<button class="ap ${p.memberIds.includes(u.id)?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${(u.name||'').split(' ')[0]} <span style="color:var(--text-soft)">(${roleInfo(u.role).short})</span></button>`).join('')}</div></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveMembers('${projId}')">Guardar</button></div>`);
 }
 window.manageMembers=manageMembers;
@@ -1496,7 +1496,7 @@ function viewChat(){
     const msgsHtml = visibleMsgs.map(m=>{
       const u=userById(m.byId); const mine=m.byId===SES.userId;
       const media = m.media ? (m.media.type==='video' ? `<video src="${m.media.data}" controls></video>` : `<img src="${m.media.data}">`) : '';
-      return `<div class="msg ${mine?'mine':''}">${(!mine&&cur.type==='group')?`<div class="mname">${u?esc(u.name.split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})} <button class="msg-del" title="Eliminar" onclick="delMsgMenu('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button></div></div>`;
+      return `<div class="msg ${mine?'mine':''}">${(!mine&&cur.type==='group')?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})} <button class="msg-del" title="Eliminar" onclick="delMsgMenu('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button></div></div>`;
     }).join('');
     paneHtml=`<div class="chat-pane" id="chatPane">
       <div class="chat-head">
@@ -1609,7 +1609,7 @@ function newGroupModal(){
     <div class="modal-head"><h3>Nuevo grupo</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
       <div class="field"><label>Nombre del grupo</label><input class="input" id="ngName" placeholder="Ej: Cocina Central"></div>
-      <div class="field"><label>Miembros</label><div class="assignee-pick" id="ngMembers">${people.map(u=>`<button class="ap ${u.id===SES.userId?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${u.name.split(' ')[0]}</button>`).join('')}</div></div>
+      <div class="field"><label>Miembros</label><div class="assignee-pick" id="ngMembers">${people.map(u=>`<button class="ap ${u.id===SES.userId?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${(u.name||'').split(' ')[0]}</button>`).join('')}</div></div>
       <div class="field"><label>Sucursal</label><select class="select" id="ngSuc">${sucOptionsFor()}</select></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="createGroup()">Crear grupo</button></div>`);
@@ -1649,7 +1649,7 @@ function viewEquipo(){
     html+=`<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Teléfono</th><th>Estado</th><th></th></tr></thead><tbody>`;
     html+=people.map(u=>`<tr>
       <td><div style="display:flex;align-items:center;gap:10px">${avatarHTML(u)}<div><div style="font-weight:600">${esc(u.name)}</div><div style="font-size:11px;color:var(--text-soft)">PIN ${u.pin}</div></div></div></td>
-      <td><span class="role-badge">${ROLES[u.role].label}</span></td>
+      <td><span class="role-badge">${roleInfo(u.role).label}</span></td>
       <td>${esc(u.phone||'—')}</td>
       <td>${u.active?'<span class="pill hecha">Activo</span>':'<span class="pill rechazada">Inactivo</span>'}</td>
       <td style="text-align:right"><button class="btn btn-ghost" style="padding:6px 10px" onclick="editUserModal('${u.id}')">Editar</button></td>
@@ -1684,7 +1684,7 @@ function saveUser(id){
   const name=$('#uName').value.trim(); if(!name){ toast('Ponele nombre','err'); return; }
   const data={name,role:$('#uRole').value,pin:$('#uPin').value||'1234',sucursalId:$('#uSuc').value,phone:($('#uPhone')?$('#uPhone').value.trim():'')};
   if(id){ const u=userById(id); Object.assign(u,data); u.active=$('#uActive').value==='1'; audit('equipo',`editó al usuario ${name}`); }
-  else { DB.users.push({id:uid(),...data,active:true}); audit('equipo',`agregó al usuario ${name} (${ROLES[data.role].short})`); }
+  else { DB.users.push({id:uid(),...data,active:true}); audit('equipo',`agregó al usuario ${name} (${roleInfo(data.role).short})`); }
   closeModal(); toast('Usuario guardado','ok'); render();
 }
 window.saveUser=saveUser;
@@ -1940,7 +1940,7 @@ function invMovesModal(){
   const rows=moves.map(m=>{
     const p=DB.inventory.find(x=>x.id===m.productId); const u=userById(m.byId);
     const sign=m.type==='entrada'?'+':'−'; const col=m.type==='entrada'?'var(--success)':'var(--danger)';
-    return `<div class="log-item"><b style="color:${col}">${sign}${m.qty}</b> ${p?esc(p.name):'—'} · ${esc(m.type)} · ${u?esc(u.name.split(' ')[0]):''}${m.note?' · '+esc(m.note):''} <span style="opacity:.7">· ${fmtDateTime(m.at)}</span></div>`;
+    return `<div class="log-item"><b style="color:${col}">${sign}${m.qty}</b> ${p?esc(p.name):'—'} · ${esc(m.type)} · ${u?esc((u.name||'').split(' ')[0]):''}${m.note?' · '+esc(m.note):''} <span style="opacity:.7">· ${fmtDateTime(m.at)}</span></div>`;
   }).join('');
   openModal(`<div class="modal-head"><h3>Movimientos de inventario</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">${moves.length?`<div class="log">${rows}</div>`:'<div class="empty"><div class="em-ico">📜</div><div class="em-d">Sin movimientos todavía.</div></div>'}</div>`,true);
@@ -2212,7 +2212,7 @@ function horList(days,manage){
         const timeHtml=s.off?`<span style="color:var(--accent);font-weight:700">Día libre</span>`:`<span>${svgIcon('clock','icon icon-sm')} ${fmt12(s.start)} – ${fmt12(s.end)}</span>`;
         return `<div class="sched-row${mine?' mine':''}">${avatarHTML(u)}
           <div class="tk-main"><div class="tk-title">${u?esc(u.name):'—'} ${mine?'<span class="pill proceso">vos</span>':''}</div>
-          <div class="tk-meta">${timeHtml}<span>${u?ROLES[u.role].short:''}</span><span>${svgIcon('pin','icon icon-sm')} ${esc(sucName(s.sucursalId))}</span>${s.note?`<span>${esc(s.note)}</span>`:''}</div>
+          <div class="tk-meta">${timeHtml}<span>${u?roleInfo(u.role).short:''}</span><span>${svgIcon('pin','icon icon-sm')} ${esc(sucName(s.sucursalId))}</span>${s.note?`<span>${esc(s.note)}</span>`:''}</div>
           ${brk?`<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:7px">${brk}</div>`:''}</div>
           ${manage?`<div style="display:flex;gap:6px;align-items:flex-start"><button class="icon-btn" style="width:34px;height:34px" title="Editar" onclick="shiftEditModal('${s.id}')">${svgIcon('edit','icon icon-sm')}</button><button class="icon-btn" style="width:34px;height:34px" title="Quitar" onclick="delShift('${s.id}')">${svgIcon('trash','icon icon-sm')}</button></div>`:''}</div>`;}).join('')}
     </div>`;
@@ -2243,7 +2243,7 @@ function horTimeline(days){
       const sh=dayShifts.filter(s=>s.userId===u.id);
       if(!sh.length) return '';
       const bars=sh.map(s=> s.off? `<div class="tl-off">Día libre</div>` : tlBar(s,win)).join('');
-      return `<div class="tl-row"><div class="tl-name">${avatarHTML(u)}<span>${esc(u.name.split(' ')[0])}</span></div><div class="tl-track">${bars}</div></div>`;
+      return `<div class="tl-row"><div class="tl-name">${avatarHTML(u)}<span>${esc((u.name||'').split(' ')[0])}</span></div><div class="tl-track">${bars}</div></div>`;
     }).filter(Boolean).join('');
     if(rows) body+=`<div class="tl-dept">${dept.label}</div>${rows}`;
   });
@@ -2259,7 +2259,7 @@ function shiftForm(title,s){
   const st=s&&s.start?s.start:'10:00', en=s&&s.end?s.end:'18:00';
   return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
-    <div class="field"><label>¿A quién?</label><select class="select" id="shUser">${people.map(u=>`<option value="${u.id}" ${s&&s.userId===u.id?'selected':''}>${esc(u.name)} — ${ROLES[u.role].short}</option>`).join('')}</select></div>
+    <div class="field"><label>¿A quién?</label><select class="select" id="shUser">${people.map(u=>`<option value="${u.id}" ${s&&s.userId===u.id?'selected':''}>${esc(u.name)} — ${roleInfo(u.role).short}</option>`).join('')}</select></div>
     <div class="field"><label>Fecha</label>${dateField(date)}</div>
     <div class="field"><label>Horario</label>
       <div class="sh-pickwrap">
@@ -2362,7 +2362,7 @@ function viewPersonal(){
   html+=`<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Sucursal</th><th>Teléfono</th>${manage?'<th></th>':''}</tr></thead><tbody>`;
   html+=people.map(u=>`<tr>
     <td><div style="display:flex;align-items:center;gap:10px">${avatarHTML(u)}<div style="font-weight:600">${esc(u.name)}</div></div></td>
-    <td><span class="role-badge">${ROLES[u.role].label}</span></td>
+    <td><span class="role-badge">${roleInfo(u.role).label}</span></td>
     <td>${esc(sucName(u.sucursalId))}</td>
     <td>${esc(u.phone||'—')}</td>
     ${manage?`<td style="text-align:right"><button class="btn btn-ghost" style="padding:6px 10px" onclick="editUserModal('${u.id}')">Editar</button></td>`:''}
@@ -2427,7 +2427,7 @@ function viewReportes(){
   html+=`<div class="card"><div style="font-weight:700;font-size:15px;margin-bottom:14px">🏆 Cumplimiento por persona</div>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Asign.</th><th>Hechas</th><th>Atrasadas</th><th>Rechaz.</th><th>%</th></tr></thead><tbody>
     ${prod.map(x=>`<tr><td><div style="display:flex;align-items:center;gap:8px">${avatarHTML(x.u)}<span style="font-weight:600">${esc(x.u.name)}</span></div></td>
-      <td>${ROLES[x.u.role].short}</td><td>${x.total}</td><td style="color:var(--success);font-weight:700">${x.h}</td>
+      <td>${roleInfo(x.u.role).short}</td><td>${x.total}</td><td style="color:var(--success);font-weight:700">${x.h}</td>
       <td style="color:${x.a?'var(--warn)':'inherit'};font-weight:${x.a?700:400}">${x.a}</td>
       <td style="color:${x.rj?'var(--danger)':'inherit'};font-weight:${x.rj?700:400}">${x.rj}</td>
       <td><b>${x.pct}%</b></td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--text-soft)">Sin datos todavía.</td></tr>'}
@@ -2923,7 +2923,7 @@ $('#userBtn').addEventListener('click',e=>{
   $('#notifPanel').classList.remove('on');
   const m=$('#userMenu');
   m.innerHTML=`
-    <div class="um-item" style="border-bottom:1px solid var(--border)">${avatarHTML(me())}<div><div style="font-weight:700">${esc(me().name)}</div><div style="font-size:11px;color:var(--text-soft)">${ROLES[me().role].label}</div></div></div>
+    <div class="um-item" style="border-bottom:1px solid var(--border)">${avatarHTML(me())}<div><div style="font-weight:700">${esc(me().name)}</div><div style="font-size:11px;color:var(--text-soft)">${roleInfo(me().role).label}</div></div></div>
     <button class="um-item" onclick="toggleTheme()">${svgIcon('theme')} Cambiar tema</button>
     <button class="um-item" onclick="exportData()">${svgIcon('save')} Respaldar datos</button>
     <button class="um-item" onclick="document.getElementById('importFile').click()">${svgIcon('down')} Restaurar respaldo</button>
@@ -2975,7 +2975,7 @@ function renderLogin(){
     .sort((a,b)=>ROLE_KEYS.indexOf(a.role)-ROLE_KEYS.indexOf(b.role)||a.name.localeCompare(b.name));
   area.innerHTML=`${sucs.length>1?`<button class="login-back" onclick="loginSuc=null;pickedUser=null;renderLogin()">${svgIcon('back','icon icon-sm')} Cambiar sucursal</button>`:''}
     <div class="login-label">¿Quién sos?${sucs.length>1?' · '+esc(sucName(loginSuc)):''}</div>
-    <div class="user-grid">${ppl.length?ppl.map(u=>`<button class="user-pick ${pickedUser===u.id?'sel':''}" data-id="${u.id}" onclick="pickUser('${u.id}')">${avatarHTML(u)}<div><div class="nm">${esc(u.name.split(' ')[0])}</div><div class="rl">${ROLES[u.role].short}</div></div></button>`).join(''):'<div style="color:var(--text-soft);font-size:13px;padding:8px">No hay personas en esta sucursal todavía.</div>'}</div>
+    <div class="user-grid">${ppl.length?ppl.map(u=>`<button class="user-pick ${pickedUser===u.id?'sel':''}" data-id="${u.id}" onclick="pickUser('${u.id}')">${avatarHTML(u)}<div><div class="nm">${esc((u.name||'').split(' ')[0])}</div><div class="rl">${roleInfo(u.role).short}</div></div></button>`).join(''):'<div style="color:var(--text-soft);font-size:13px;padding:8px">No hay personas en esta sucursal todavía.</div>'}</div>
     <div class="login-label">Tu PIN</div>
     <div class="pin-row"><input id="pinInput" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
     <button class="btn btn-primary" id="loginBtn" style="width:100%">Entrar</button>`;
@@ -2999,7 +2999,7 @@ function doLogin(){
   sessionStorage.setItem('saborTico_ses',u.id);
   $('#loginScreen').style.display='none';
   $('#app').classList.add('on');
-  toast('Bienvenido, '+u.name.split(' ')[0],'ok');
+  toast('Bienvenido, '+(u.name||'').split(' ')[0],'ok');
   render();
 }
 window.doLogin=doLogin;
