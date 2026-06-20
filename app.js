@@ -535,27 +535,31 @@ window.go = go;
    ===================================================================== */
 function render(){
   if(!me()){ return; }
+  try{
   checkShiftReminders();
   const ct=$('#cloudTag'); if(ct) ct.classList.toggle('hidden',!cloudOn);
   // topbar
-  const tbAv=$('#tbAv'); tbAv.style.background=ROLES[me().role].color; tbAv.textContent=initials(me().name);
-  $('#tbName').textContent = me().name;
-  $('#tbRole').textContent = ROLES[me().role].label;
+  const tbAv=$('#tbAv'); if(tbAv){ tbAv.style.background=roleInfo(me().role).color; tbAv.textContent=initials(me().name); }
+  if($('#tbName')) $('#tbName').textContent = me().name;
+  if($('#tbRole')) $('#tbRole').textContent = roleInfo(me().role).label;
   // sucursal switch (solo admin puede cambiar; otros fijo)
   const sucSel=$('#sucSelect');
-  if(isAdmin()){
-    sucSel.disabled=false;
-    sucSel.innerHTML = `<option value="all">Todas las sucursales</option>`+
-      DB.sucursales.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
-    sucSel.value=SES.sucFilter;
-  } else {
-    sucSel.disabled=true;
-    sucSel.innerHTML = `<option>${esc(sucName(me().sucursalId))}</option>`;
+  if(sucSel){
+    if(isAdmin()){
+      sucSel.disabled=false;
+      sucSel.innerHTML = `<option value="all">Todas las sucursales</option>`+
+        (DB.sucursales||[]).map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('');
+      sucSel.value=SES.sucFilter;
+    } else {
+      sucSel.disabled=true;
+      sucSel.innerHTML = `<option>${esc(sucName(me().sucursalId))}</option>`;
+    }
   }
   // badge
   const uc=unreadCount();
   const nb=$('#notifBadge');
-  if(uc){ nb.textContent=uc; nb.classList.remove('hidden'); } else nb.classList.add('hidden');
+  if(nb){ if(uc){ nb.textContent=uc; nb.classList.remove('hidden'); } else nb.classList.add('hidden'); }
+  }catch(e){ console.error('topbar', e); }
 
   try{ renderNav(); }catch(e){ console.error('renderNav', e); $('#sidebar').innerHTML=''; }
 
@@ -934,7 +938,7 @@ function pedidoDetail(id){
       <div class="detail-meta">
         <div class="dm"><div class="dl">Cantidad</div><div class="dv">${p.qty}</div></div>
         <div class="dm"><div class="dl">Área</div><div class="dv">${pedInfo(p.area).label}</div></div>
-        ${p.productId?(()=>{const pr=DB.inventory.find(x=>x.id===p.productId);return `<div class="dm"><div class="dl">Producto ligado</div><div class="dv">${pr?esc(pr.name)+' · stock '+pr.stock+' '+pr.unit:'(eliminado)'}</div></div>`;})():''}
+        ${p.productId?(()=>{const pr=DB.inventory.find(x=>x.id===p.productId);return `<div class="dm"><div class="dl">Producto ligado</div><div class="dv">${pr?esc(pr.name)+' · quedan '+pr.stock+' '+pr.unit:'(eliminado)'}</div></div>`;})():''}
         <div class="dm"><div class="dl">Pedido por</div><div class="dv">${from?esc(from.name):'—'}</div></div>
         <div class="dm"><div class="dl">Urgencia</div><div class="dv">${cap(p.urgencia)}</div></div>
         <div class="dm"><div class="dl">Sucursal</div><div class="dv">${esc(sucName(p.sucursalId))}</div></div>
@@ -965,7 +969,7 @@ function setPedStatus(id,status){
       p.log.push({at:now(),byId:SES.userId,text:`descontó ${p.qty} ${prod.unit} de inventario (${prod.name})`});
       audit('inventario',`-${p.qty} ${prod.unit} de "${prod.name}" por entrega de pedido`,prod.sucursalId);
       extra=` · -${p.qty} ${prod.unit} de inventario`;
-      if(lowStock(prod)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Stock bajo: ${prod.name} (${prod.stock} ${prod.unit})`, '⚠️', {view:'inventario'});
+      if(lowStock(prod)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Inventario bajo: ${prod.name} (${prod.stock} ${prod.unit})`, '⚠️', {view:'inventario'});
     }
   }
   notify([p.fromId], `${me().name.split(' ')[0]} ${status==='entregado'?'entregó':status==='rechazado'?'rechazó':'está atendiendo'} "${p.item}"`, '📦', {view:'pedidos'});
@@ -1782,7 +1786,7 @@ function rolePanel(){
   }
   if(r==='admin'){
     const low=invInScope().filter(lowStock).length;
-    return wrap('Gerencia · control total', `${low} alerta(s) de stock · vista de ${sucName(SES.sucFilter)}`,
+    return wrap('Gerencia · control total', `${low} alerta(s) de inventario · vista de ${sucName(SES.sucFilter)}`,
       b('Reportes',"go('reportes')")+b('Inventario',"go('inventario')")+b('Equipo',"go('equipo')")+b('Movimientos',"go('auditoria')"));
   }
   return '';
@@ -1811,8 +1815,8 @@ function viewInventario(){
     Es la <b>bodega del restaurante</b>. Cada producto tiene su stock, su mínimo y su costo.
     <ul style="margin:8px 0 0 18px">
       <li>Proveeduría registra <b>entradas</b> (compras) y <b>salidas</b> (uso, merma).</li>
-      <li>Cuando se entrega un <b>pedido ligado a un producto</b>, el stock se descuenta solo.</li>
-      <li>Si algo baja del mínimo, sale una <b>alerta</b> de stock bajo.</li>
+      <li>Cuando se entrega un <b>pedido ligado a un producto</b>, el inventario se descuenta solo.</li>
+      <li>Si algo baja del mínimo, sale una <b>alerta</b> de inventario bajo.</li>
     </ul>
     <div class="tip"><b>Tip:</b> ligá los pedidos a un producto para no tener que descontar a mano.</div>`);
 
@@ -1823,7 +1827,7 @@ function viewInventario(){
   html+=`<div class="kpi-row">
     <div class="kpi"><div class="label">Productos</div><div class="value">${scoped.length}</div><div class="sub">en ${sucName(visibleSuc())}</div></div>
     <div class="kpi ${low?'alert':'good'}"><div class="label">Bajo mínimo</div><div class="value">${low}</div><div class="sub">requieren compra</div></div>
-    <div class="kpi"><div class="label">Valor total</div><div class="value" style="font-size:22px">${money(value)}</div><div class="sub">stock × costo</div></div>
+    <div class="kpi"><div class="label">Valor total</div><div class="value" style="font-size:22px">${money(value)}</div><div class="sub">cantidad × costo</div></div>
     <div class="kpi"><div class="label">Categorías</div><div class="value">${new Set(scoped.map(p=>p.category)).size}</div><div class="sub">tipos de insumo</div></div>
   </div>`;
   html+=`<div class="toolbar">
@@ -1835,7 +1839,7 @@ function viewInventario(){
       <option value="todas" ${invCat==='todas'?'selected':''}>Todas las categorías</option>
       ${catsVisible().map(c=>`<option value="${esc(c)}" ${invCat===c?'selected':''}>${esc(c)}</option>`).join('')}
     </select>
-    <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">Solo bajo stock</button>
+    <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">Solo inventario bajo</button>
     ${editor?`<button class="chip" onclick="catManagerModal()">${svgIcon('edit','icon icon-sm')} Categorías</button>`:''}
   </div>`;
   html+= list.length? list.map(invRow).join('')
@@ -1895,7 +1899,7 @@ function applyInvMove(pid,type){
   p.stock = type==='entrada' ? +(p.stock+q).toFixed(2) : Math.max(0,+(p.stock-q).toFixed(2));
   DB.invMoves.unshift({id:uid(),productId:p.id,type,qty:q,byId:SES.userId,at:now(),note,refId:null,sucursalId:p.sucursalId});
   audit('inventario',`${type==='entrada'?'+':'-'}${q} ${p.unit} de "${p.name}"${note?' ('+note+')':''}`,p.sucursalId);
-  if(type==='salida'&&lowStock(p)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Stock bajo: ${p.name} (${p.stock} ${p.unit})`,'⚠️',{view:'inventario'});
+  if(type==='salida'&&lowStock(p)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Inventario bajo: ${p.name} (${p.stock} ${p.unit})`,'⚠️',{view:'inventario'});
   closeModal(); toast('Inventario actualizado','ok'); render();
 }
 function invNewModal(){ openModal(invForm('Nuevo producto',null)); }
@@ -1912,8 +1916,8 @@ function invForm(title,p){
       <div class="field"><label>Unidad</label><select class="select" id="ipUnit">${INV_UNITS.map(u=>`<option ${p&&p.unit===u?'selected':''}>${u}</option>`).join('')}</select></div>
     </div>
     <div class="row2">
-      <div class="field"><label>Stock actual</label><input class="input" id="ipStock" type="number" step="any" value="${p?p.stock:0}"></div>
-      <div class="field"><label>Stock mínimo</label><input class="input" id="ipMin" type="number" step="any" value="${p?p.minStock:0}"></div>
+      <div class="field"><label>Cantidad actual</label><input class="input" id="ipStock" type="number" step="any" value="${p?p.stock:0}"></div>
+      <div class="field"><label>Cantidad mínima</label><input class="input" id="ipMin" type="number" step="any" value="${p?p.minStock:0}"></div>
     </div>
     <div class="row2">
       <div class="field"><label>Costo por unidad (₡)</label><input class="input" id="ipCost" type="number" step="any" value="${p?p.cost:0}"></div>
@@ -1980,7 +1984,7 @@ function viewRecetas(){
     <ul style="margin:8px 0 0 18px">
       <li>El chef define el plato, su precio y sus ingredientes.</li>
       <li>Al <b>registrar una preparación</b>, se descuenta del inventario lo que se usó.</li>
-      <li>Ves cuántos platos <b>alcanzan</b> con el stock actual.</li>
+      <li>Ves cuántos platos <b>alcanzan</b> con el inventario actual.</li>
     </ul>
     <div class="tip"><b>Tip:</b> mantené los ingredientes al día para que el "rinde" sea real.</div>`);
   let html=`<div class="page-head"><div><div class="page-title">Recetas / Menú</div><div class="page-sub">${list.length} platos${editor?'':' · solo lectura'}</div></div>
@@ -2011,7 +2015,7 @@ function prepareModal(id){
   const n=makeable(r);
   openModal(`<div class="modal-head"><h3>Preparar · ${esc(r.name)}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
-      <div class="page-sub" style="margin-bottom:12px">Con el stock actual alcanzan <b style="color:var(--text)">${n}</b> porciones.</div>
+      <div class="page-sub" style="margin-bottom:12px">Con el inventario actual alcanzan <b style="color:var(--text)">${n}</b> porciones.</div>
       <div class="field"><label>¿Cuántas porciones preparaste?</label><input class="input" id="prepQty" type="number" min="1" step="1" value="1"></div>
       <div style="font-size:12.5px;color:var(--text-soft)">Se descontará del inventario: ${r.ingredients.map(i=>{const p=DB.inventory.find(x=>x.id===i.productId);return p?`${esc(p.name)} ${i.qty}${p.unit}/porción`:'';}).filter(Boolean).join(' · ')}</div>
     </div>
@@ -2025,7 +2029,7 @@ function prepareRecipe(id){
     const p=DB.inventory.find(x=>x.id===i.productId); if(!p) return;
     p.stock=Math.max(0,+(p.stock-i.qty*n).toFixed(2));
     DB.invMoves.unshift({id:uid(),productId:p.id,type:'salida',qty:+(i.qty*n).toFixed(2),byId:SES.userId,at:now(),note:`Preparación: ${r.name} ×${n}`,refId:r.id,sucursalId:p.sucursalId});
-    if(lowStock(p)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Stock bajo: ${p.name} (${p.stock} ${p.unit})`,'⚠️',{view:'inventario'});
+    if(lowStock(p)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Inventario bajo: ${p.name} (${p.stock} ${p.unit})`,'⚠️',{view:'inventario'});
   });
   audit('inventario',`preparó ${n}× "${r.name}" (descuento de insumos)`,r.sucursalId);
   closeModal(); toast(`Registrado: ${n}× ${r.name} ✅`,'ok'); render();
@@ -2730,7 +2734,7 @@ function souvProductosView(){
   let html=`<div class="kpi-row">
     <div class="kpi"><div class="label">Productos</div><div class="value">${list.length}</div><div class="sub">en catálogo</div></div>
     <div class="kpi"><div class="label">Unidades</div><div class="value">${stockTot}</div><div class="sub">en inventario</div></div>
-    <div class="kpi"><div class="label">Invertido</div><div class="value">${money(valCost)}</div><div class="sub">costo del stock</div></div>
+    <div class="kpi"><div class="label">Invertido</div><div class="value">${money(valCost)}</div><div class="sub">costo del inventario</div></div>
     <div class="kpi ${lowN?'warn':''}"><div class="label">Ganancia potencial</div><div class="value">${money(gananciaPot)}</div><div class="sub">${lowN?lowN+' por reabastecer':'si se vende todo'}</div></div>
   </div>`;
   if(!list.length) return html+emptyState('gift','Sin productos','Agregá tu primer souvenir con su costo y precio.','Nuevo producto','souvNewModal()');
@@ -2745,7 +2749,7 @@ function souvProductosView(){
     <td style="color:var(--ok,#3a9d6e);font-weight:700">${money(souvProfit(p))}</td>
     <td style="text-align:right;white-space:nowrap">
       <button class="btn btn-ghost" style="padding:6px 9px" onclick="souvSellModal('${p.id}')">Vender</button>
-      <button class="btn btn-ghost" style="padding:6px 9px" onclick="souvStockModal('${p.id}')">Stock</button>
+      <button class="btn btn-ghost" style="padding:6px 9px" onclick="souvStockModal('${p.id}')">Existencias</button>
       <button class="btn btn-ghost" style="padding:6px 9px" onclick="souvEditModal('${p.id}')">${svgIcon('edit','icon icon-sm')}</button>
     </td></tr>`).join('');
   html+=`</tbody></table></div></div>`;
