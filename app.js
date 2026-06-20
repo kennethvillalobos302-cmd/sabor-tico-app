@@ -108,7 +108,8 @@ async function cloudInit(){
       const v=snap.val(); if(!v || !v.data || v.client===CLIENT_ID) return;
       _applyingRemote=true;
       try{
-        DB=v.data; try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
+        DB=v.data; migrate(); // normalizar datos entrantes para que nunca falten colecciones
+        try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
         const modalOpen=$('#modalBg').classList.contains('on');
         if(me()){ if(!modalOpen) render(); } else { renderLogin(); }
       } finally { _applyingRemote=false; }
@@ -276,6 +277,11 @@ function seedSouvenirs(suc){
   ];
 }
 
+/* Garantiza que todas las colecciones existan como arreglos (defensa universal:
+   se llama en cada render por si entran datos incompletos desde la nube). */
+const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients','souvenirs','souvSales'];
+function ensureCollections(){ if(!DB||typeof DB!=='object') return; DB_COLLECTIONS.forEach(k=>{ if(!Array.isArray(DB[k])) DB[k]=[]; }); if(!DB.invCats||typeof DB.invCats!=='object') DB.invCats=JSON.parse(JSON.stringify(DEFAULT_CATS)); }
+
 /* ---------------- Migración de DBs existentes ---------------- */
 function migrate(){
   let ch=false;
@@ -352,7 +358,7 @@ const canReservEdit = () => hasRole('admin','gerencia_exp','jefe_salon','saloner
 const canSouvView = () => hasRole('admin','gerencia_exp','gerencia_data','jefe_salon','salonero');
 const canSouvMoney = () => hasRole('admin','gerencia_exp','gerencia_data'); // ve costo/precio/ganancia y administra
 const canSouvSell = () => hasRole('admin','gerencia_exp','jefe_salon','salonero');
-function sucName(id){ if(id==='all') return 'Todas'; const s=DB.sucursales.find(x=>x.id===id); return s?s.name:'—'; }
+function sucName(id){ if(id==='all') return 'Todas'; const s=(DB.sucursales||[]).find(x=>x.id===id); return s?s.name:'—'; }
 function lowStock(p){ return p.stock<=p.minStock; }
 function invInScope(){ const a=invAreasFor(); return (DB.inventory||[]).filter(p=>p&&inScope(p.sucursalId) && a.includes(p.area||'cocina')); }
 
@@ -382,7 +388,7 @@ function notify(userIds, text, ico, link){
     DB.notifs.unshift({id:uid(),userId:uId,text,ico:ico||'🔔',link:link||null,at:now(),read:false});
   });
 }
-const myNotifs = () => DB.notifs.filter(n=>n.userId===SES.userId);
+const myNotifs = () => (DB.notifs||[]).filter(n=>n&&n.userId===SES.userId);
 const unreadCount = () => myNotifs().filter(n=>!n.read).length;
 
 /* ---------------- Toasts ---------------- */
@@ -534,6 +540,7 @@ window.go = go;
    RENDER PRINCIPAL
    ===================================================================== */
 function render(){
+  ensureCollections();
   if(!me()){ return; }
   try{
   checkShiftReminders();
@@ -2962,6 +2969,7 @@ $('#sucSelect').addEventListener('change',e=>{ SES.sucFilter=e.target.value; ren
    ===================================================================== */
 let pickedUser=null, loginSuc=null;
 function renderLogin(){
+  ensureCollections();
   const area=$('#loginArea'); if(!area) return;
   const sucs=DB.sucursales||[];
   // Paso 1: elegir sucursal (si hay más de una)
