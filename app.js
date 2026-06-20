@@ -2985,7 +2985,7 @@ window.newClientModal=newClientModal; window.editClientModal=editClientModal; wi
 ===================================================================== */
 let souvTab='vender';
 const MGR_ROLES=['admin','gerencia_exp','gerencia_data'];
-let svPayCur='CRC', svSellId=null;
+let svPayCur='CRC', svSellId=null, svCur='CRC';
 function souvScoped(){ return (DB.souvenirs||[]).filter(p=>inScope(p.sucursalId)); }
 function souvById(id){ return (DB.souvenirs||[]).find(p=>p.id===id); }
 const souvProfit = p => (+p.price||0)-(+p.cost||0);
@@ -3181,34 +3181,60 @@ function souvSell(id){
 }
 
 /* ---- Alta / edición de producto (solo gerencia) ---- */
-function souvNewModal(){ if(!canSouvMoney())return; openModal(souvForm('Nuevo souvenir',null), true); }
-function souvEditModal(id){ if(!canSouvMoney())return; openModal(souvForm('Editar souvenir',souvById(id)), true); }
+function souvNewModal(){ if(!canSouvMoney())return; svCur='CRC'; openModal(souvForm('Nuevo souvenir',null), true); }
+function souvEditModal(id){ if(!canSouvMoney())return; svCur='CRC'; openModal(souvForm('Editar souvenir',souvById(id)), true); }
 function souvForm(title,p){
-  return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  const sym='₡';
+  return `<div class="modal-head"><h3>${svgIcon('gift','icon')} ${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
-    <div class="field"><label>Nombre del producto</label><input class="input" id="svName" value="${p?esc(p.name):''}" placeholder="Taza, camiseta, salsa…" autofocus></div>
+    <div class="field"><label>Nombre del producto</label><input class="input" id="svName" value="${p?esc(p.name):''}" placeholder="Taza, camiseta, salsa…" autofocus autocomplete="off"></div>
+    <div class="ip-sec">${svgIcon('gift','icon icon-sm')} Inventario</div>
     <div class="row2">
-      <div class="field"><label>Cantidad en inventario</label><input class="input" id="svStock" type="number" min="0" value="${p?(+p.stock||0):0}"></div>
+      <div class="field"><label>Cantidad en existencia</label><input class="input" id="svStock" type="number" min="0" value="${p?(+p.stock||0):0}"></div>
       <div class="field"><label>Avisarme cuando queden</label><input class="input" id="svMin" type="number" min="0" value="${p?(+p.minStock||0):5}"></div>
     </div>
+    <div class="ip-sec">${svgIcon('trend','icon icon-sm')} Precios y ganancia</div>
+    <div class="souv-paycur" style="margin:0 0 12px"><span>Ingresar montos en</span><div class="seg"><button type="button" class="seg-b on" id="svCurC" onclick="souvFormCur('CRC')">Colones ₡</button><button type="button" class="seg-b" id="svCurD" onclick="souvFormCur('USD')">Dólares $</button></div></div>
     <div class="row2">
-      <div class="field"><label>Costo por unidad (₡)</label><input class="input" id="svCost" type="number" min="0" step="any" value="${p?(+p.cost||0):0}" oninput="souvGanPrev()"></div>
-      <div class="field"><label>Precio de venta (₡)</label><input class="input" id="svPrice" type="number" min="0" step="any" value="${p?(+p.price||0):0}" oninput="souvGanPrev()"></div>
+      <div class="field"><label id="svCostLbl">Costo por unidad (${sym})</label><input class="input" id="svCost" type="number" min="0" step="any" value="${p?(+p.cost||0):0}" oninput="souvGanPrev()"></div>
+      <div class="field"><label id="svPriceLbl">Precio de venta (${sym})</label><input class="input" id="svPrice" type="number" min="0" step="any" value="${p?(+p.price||0):0}" oninput="souvGanPrev()"></div>
     </div>
-    <div class="souv-sell-info" id="svGanPrev"></div>
+    <div class="souv-ganbox" id="svGanPrev"></div>
     <div class="field"><label>Sucursal</label><select class="select" id="svSuc">${sucOptionsFor()}</select></div>
   </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveSouv('${p?p.id:''}')">Guardar</button></div>`;
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveSouv('${p?p.id:''}')">${svgIcon('check','icon icon-sm')} Guardar producto</button></div>`;
+}
+function souvFormCur(c){
+  if(c===svCur) return;
+  const fx=souvFx(), cE=$('#svCost'), pE=$('#svPrice');
+  const conv = v => c==='USD' ? +(((+v||0)/fx).toFixed(2)) : Math.round((+v||0)*fx);
+  if(cE) cE.value=conv(cE.value);
+  if(pE) pE.value=conv(pE.value);
+  svCur=c;
+  const a=$('#svCurC'), b=$('#svCurD'); if(a)a.classList.toggle('on',c==='CRC'); if(b)b.classList.toggle('on',c==='USD');
+  const sym=c==='USD'?'$':'₡';
+  if($('#svCostLbl')) $('#svCostLbl').textContent='Costo por unidad ('+sym+')';
+  if($('#svPriceLbl')) $('#svPriceLbl').textContent='Precio de venta ('+sym+')';
+  souvGanPrev();
+}
+function souvFormColones(){
+  const fx=souvFx();
+  let c=Math.max(0,+($('#svCost')?$('#svCost').value:0)||0), pr=Math.max(0,+($('#svPrice')?$('#svPrice').value:0)||0);
+  if(svCur==='USD'){ c=Math.round(c*fx); pr=Math.round(pr*fx); }
+  return {cost:c, price:pr};
 }
 function souvGanPrev(){
   const el=$('#svGanPrev'); if(!el) return;
-  const c=+($('#svCost')?$('#svCost').value:0)||0, pr=+($('#svPrice')?$('#svPrice').value:0)||0;
-  el.innerHTML=`Ganancia por unidad: <b style="color:var(--success)">${money(pr-c)}</b> (${usd(pr-c)}) · Precio ${usd(pr)} · Costo ${usd(c)}`;
+  const {cost,price}=souvFormColones(); const gan=price-cost;
+  el.innerHTML=`<div class="souv-ganbox-row"><span>Ganancia por unidad</span><b style="color:var(--success)">${money(gan)} <span class="cur-usd">${usd(gan)}</span></b></div>
+    <div class="souv-ganbox-row"><span>Precio de venta</span><b>${money(price)} <span class="cur-usd">${usd(price)}</span></b></div>
+    <div class="souv-ganbox-row"><span>Costo</span><b>${money(cost)} <span class="cur-usd">${usd(cost)}</span></b></div>`;
 }
 function saveSouv(id){
   const name=$('#svName').value.trim(); if(!name){ toast('Poné el nombre del producto','err'); return; }
+  const {cost,price}=souvFormColones();
   const data={ name, stock:Math.max(0,+$('#svStock').value||0), minStock:Math.max(0,+$('#svMin').value||0),
-    cost:Math.max(0,+$('#svCost').value||0), price:Math.max(0,+$('#svPrice').value||0), sucursalId:$('#svSuc').value };
+    cost, price, sucursalId:$('#svSuc').value };
   if(id){ const p=souvById(id); Object.assign(p,data); audit('souvenir',`editó souvenir ${name}`,data.sucursalId); }
   else { DB.souvenirs.push({id:uid(),...data,at:now()}); audit('souvenir',`agregó souvenir ${name}`,data.sucursalId); }
   closeModal(); toast('Producto guardado','ok'); save(); render();
@@ -3239,7 +3265,7 @@ async function delSouv(id){
 window.viewSouvenir=viewSouvenir; window.souvSellModal=souvSellModal; window.souvSell=souvSell;
 window.souvNewModal=souvNewModal; window.souvEditModal=souvEditModal; window.saveSouv=saveSouv;
 window.souvStockModal=souvStockModal; window.souvAddStock=souvAddStock; window.delSouv=delSouv;
-window.souvQtyStep=souvQtyStep; window.souvSetCur=souvSetCur; window.souvSellPreview=souvSellPreview; window.souvGanPrev=souvGanPrev;
+window.souvQtyStep=souvQtyStep; window.souvSetCur=souvSetCur; window.souvSellPreview=souvSellPreview; window.souvGanPrev=souvGanPrev; window.souvFormCur=souvFormCur;
 
 /* =====================================================================
    COMPONENTES COMUNES
