@@ -2006,7 +2006,12 @@ function invoiceForm(defArea){
   const date=today.toISOString().slice(0,10);
   return `<div class="modal-head"><h3>${svgIcon('truck','icon')} Registrar factura</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
-    <div class="ip-hint">Anotá lo que trae la factura. Al guardar, las cantidades se <b>suman al inventario</b> automáticamente (y los productos nuevos se crean).</div>
+    <div class="fac-scan">
+      <input type="file" id="facFile" accept="image/*" capture="environment" style="display:none" onchange="facPhotoChosen(this)">
+      <button type="button" class="fac-scan-btn" onclick="facPickPhoto()">${svgIcon('image','icon')}<div><div class="fac-scan-t">Subir foto de la factura</div><div class="fac-scan-s">La IA lee los productos y los llena por vos · luego revisás</div></div></button>
+      <div id="facScanStatus" class="fac-scan-status"></div>
+    </div>
+    <div class="ip-hint">O anotá los productos a mano. Al guardar, las cantidades se <b>suman al inventario</b> automáticamente (y los productos nuevos se crean).</div>
     <div class="row2">
       <div class="field"><label>Proveedor</label><input class="input" id="facSup" placeholder="Ej: Distribuidora La Cana" autocomplete="off"></div>
       <div class="field"><label>N.º de factura</label><input class="input" id="facNum" placeholder="Opcional" autocomplete="off"></div>
@@ -2108,6 +2113,58 @@ function invoicesModal(){
 }
 window.invoiceModal=invoiceModal; window.renderFacLines=renderFacLines; window.facSetProduct=facSetProduct;
 window.facAddLine=facAddLine; window.facDelLine=facDelLine; window.facUpdateTotal=facUpdateTotal; window.saveInvoice=saveInvoice; window.invoicesModal=invoicesModal;
+/* ---- Escaneo de factura con IA de visión (foto -> productos) ---- */
+function facPickPhoto(){ const f=$('#facFile'); if(f) f.click(); }
+function fileToScaledJpeg(file,maxDim){
+  return new Promise((resolve,reject)=>{
+    const img=new Image(); const url=URL.createObjectURL(file);
+    img.onload=()=>{ URL.revokeObjectURL(url);
+      let w=img.naturalWidth||img.width, h=img.naturalHeight||img.height;
+      const scale=Math.min(1, maxDim/Math.max(w,h)); w=Math.round(w*scale); h=Math.round(h*scale);
+      const c=document.createElement('canvas'); c.width=w; c.height=h;
+      c.getContext('2d').drawImage(img,0,0,w,h);
+      try{ resolve(c.toDataURL('image/jpeg',0.85).split(',')[1]); }catch(e){ reject(e); }
+    };
+    img.onerror=()=>{ URL.revokeObjectURL(url); reject(new Error('No se pudo abrir la imagen')); };
+    img.src=url;
+  });
+}
+async function facPhotoChosen(input){
+  const file=input&&input.files&&input.files[0]; if(input) input.value='';
+  if(!file) return;
+  const st=$('#facScanStatus');
+  if(st) st.innerHTML=`<span class="fac-spin"></span> Leyendo la factura… puede tardar unos segundos`;
+  try{
+    const data=await fileToScaledJpeg(file,1600);
+    const r=await fetch('/api/leer-factura',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({image:data,media_type:'image/jpeg'})});
+    let out; const txt=await r.text();
+    try{ out=JSON.parse(txt); }catch(_){ out=null; }
+    if(!r.ok){ throw new Error((out&&out.error)|| (r.status===404?'La función aún no está publicada en Vercel':('Error '+r.status))); }
+    applyFacturaAI(out);
+    const n=(out&&out.items?out.items.length:0);
+    if(st) st.innerHTML=`<span class="fac-ok">✓ Leí ${n} ${n===1?'producto':'productos'}. Revisalos abajo y corregí lo que haga falta antes de guardar.</span>`;
+  }catch(e){
+    if(st) st.innerHTML=`<span class="fac-err">No pude leer la factura: ${esc(String(e.message||e))}. Podés llenarla a mano.</span>`;
+  }
+}
+function applyFacturaAI(out){
+  if(!out) return;
+  const area=$('#facArea')?$('#facArea').value:'cocina';
+  if(out.proveedor && $('#facSup') && !$('#facSup').value) $('#facSup').value=out.proveedor;
+  if(out.numero && $('#facNum') && !$('#facNum').value) $('#facNum').value=out.numero;
+  if(out.fecha && /^\d{4}-\d{2}-\d{2}$/.test(out.fecha)) pickDate(out.fecha,'fac');
+  const prods=invInScope().filter(p=>(p.area||'cocina')===area);
+  const lines=(out.items||[]).filter(it=>it&&it.nombre).map(it=>{
+    const name=String(it.nombre).trim();
+    const lc=name.toLowerCase();
+    const match=prods.find(p=>p.name.toLowerCase()===lc) || (name.length>3?prods.find(p=>p.name.toLowerCase().includes(lc)||lc.includes(p.name.toLowerCase())):null);
+    let unit=String(it.unidad||'').toLowerCase().trim(); if(!INV_UNITS.includes(unit)) unit=match?match.unit:'unid';
+    return {productId:match?match.id:'', name:match?match.name:name, category:match?match.category:(catsForArea(area)[0]||''), unit, qty:+it.cantidad||1, cost:Math.round(+it.costo_unitario||0)};
+  });
+  facLines = lines.length?lines:facLines;
+  if(!facLines.length) facAddLine(); else renderFacLines();
+}
+window.facPickPhoto=facPickPhoto; window.facPhotoChosen=facPhotoChosen;
 
 /* =====================================================================
    VISTA: RECETAS / MENÚ  (Chef edita · Cocina consulta · descuenta inventario)

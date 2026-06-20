@@ -550,6 +550,19 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .fac-card-items>div{font-size:12.5px;color:var(--text-soft);display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
 .fac-card-items>div span{color:var(--text);font-weight:600}
 .fac-card-items>div b{color:var(--text)}
+/* escaneo de factura con foto */
+.fac-scan{margin-bottom:16px}
+.fac-scan-btn{display:flex;align-items:center;gap:13px;width:100%;text-align:left;padding:15px 16px;border:1.5px dashed var(--accent-line);border-radius:var(--r-md);background:var(--accent-soft);color:var(--text);transition:border-color var(--t-fast),background var(--t-fast)}
+.fac-scan-btn:hover{border-color:var(--accent);background:var(--accent-soft)}
+.fac-scan-btn .icon{width:26px;height:26px;color:var(--accent);flex:0 0 auto}
+.fac-scan-t{font-weight:700;font-size:14.5px}
+.fac-scan-s{font-size:12px;color:var(--text-soft);margin-top:2px}
+.fac-scan-status{font-size:12.5px;margin-top:9px;line-height:1.5;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fac-scan-status:empty{display:none}
+.fac-ok{color:var(--success);font-weight:600}
+.fac-err{color:var(--danger);font-weight:600}
+.fac-spin{width:15px;height:15px;border:2px solid var(--accent-soft);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:facspin .7s linear infinite;flex:0 0 auto}
+@keyframes facspin{to{transform:rotate(360deg)}}
 @media(max-width:780px){
   .inv-card{grid-template-columns:68px 1fr;gap:12px}
   .inv-actions{grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap;border-top:1px solid var(--border-soft);padding-top:10px}
