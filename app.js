@@ -3202,7 +3202,7 @@ function reservForm(title,r){
       <div class="field"><label>Fecha</label>${dateField(date,'rv')}</div>
       <div class="field"><label>Hora</label>${timePicker('rvTime', r?r.resTime:'19:00', '')}</div>
     </div>
-    <div class="row2">
+    <div class="row2 rv-pt">
       <div class="field"><label>Personas</label><div class="qty-step"><button type="button" onclick="rvPeopleStep(-1)">−</button><input id="rvPeople" type="number" min="1" value="${r?r.people:2}"><button type="button" onclick="rvPeopleStep(1)">+</button></div></div>
       <div class="field"><label>Teléfono de contacto</label><input class="input" id="rvPhone" value="${r?esc(r.phone||''):''}" placeholder="8888-8888" autocomplete="off"></div>
     </div>
