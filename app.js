@@ -1118,7 +1118,20 @@ const PED_PICK=[
 function pedAreaPick(sel){
   return `<input type="hidden" id="npArea" value="${sel}"><div class="ped-area-pick">`+PED_PICK.map(([k,l,s,ic])=>`<button type="button" class="ped-area-b ${sel===k?'on':''}" data-a="${k}" onclick="setNpArea('${k}')"><span class="ped-area-ic">${svgIcon(ic,'icon icon-sm')}</span><span class="ped-area-tx"><span class="ped-area-n">${l}</span><span class="ped-area-s">${s}</span></span></button>`).join('')+`</div>`;
 }
-function setNpArea(a){ const h=$('#npArea'); if(h)h.value=a; document.querySelectorAll('.ped-area-b').forEach(b=>b.classList.toggle('on',b.dataset.a===a)); const w=$('#npProdWrap'); if(w) w.style.display = a==='proveeduria'?'':'none'; }
+const PED_PH={
+  proveeduria:{item:'Ej: Caja de tomates', desc:'¿Para qué y para cuándo lo necesitás?'},
+  contabilidad:{item:'Ej: Pago a proveedor / reembolso', desc:'Monto, a quién y número de factura…'},
+  rrhh:{item:'Ej: Permiso el viernes / adelanto', desc:'Fechas, motivo o monto…'},
+};
+function pedPh(area){ return PED_PH[area]||PED_PH.proveeduria; }
+function setNpArea(a){
+  const h=$('#npArea'); if(h)h.value=a;
+  document.querySelectorAll('.ped-area-b').forEach(b=>b.classList.toggle('on',b.dataset.a===a));
+  const w=$('#npProdWrap'); if(w) w.style.display = a==='proveeduria'?'':'none';
+  const ph=pedPh(a);
+  const it=$('#npItem'); if(it) it.placeholder=ph.item;
+  const ds=$('#npDesc'); if(ds) ds.placeholder=ph.desc;
+}
 function pedUrgSeg(sel){
   const opts=[['alta','Alta','var(--danger)'],['media','Media','var(--warn)'],['baja','Baja','var(--text-dim)']];
   return `<input type="hidden" id="npUrg" value="${sel}"><div class="prio-seg">`+opts.map(([k,l,c])=>`<button type="button" class="prio-b ${sel===k?'on':''}" data-u="${k}" onclick="setNpUrg('${k}')"><span class="dot-prio" style="background:${c}"></span>${l}</button>`).join('')+`</div>`;
@@ -1130,7 +1143,7 @@ function pedidoFormBody(p){
   return `
     <div class="ip-sec">${svgIcon('box','icon icon-sm')} ¿A qué área se lo pedís?</div>
     ${pedAreaPick(area)}
-    <div class="field"><label>¿Qué necesitás?</label><input class="input" id="npItem" value="${p?esc(p.item):''}" placeholder="Ej: Caja de tomates" autocomplete="off"></div>
+    <div class="field"><label>¿Qué necesitás?</label><input class="input" id="npItem" value="${p?esc(p.item):''}" placeholder="${pedPh(area).item}" autocomplete="off"></div>
     <div class="field" id="npProdWrap" style="${area==='proveeduria'?'':'display:none'}"><label>Ligar a producto del inventario (opcional)</label>
       <select class="select" id="npProd" onchange="onPedProdPick()"><option value="">— Sin ligar —</option>
         ${invInScope().map(x=>`<option value="${x.id}" data-name="${esc(x.name)}" ${p&&p.productId===x.id?'selected':''}>${esc(x.name)} · ${esc(sucName(x.sucursalId))} · ${x.stock} ${x.unit}</option>`).join('')}
@@ -1143,7 +1156,7 @@ function pedidoFormBody(p){
       <div class="field"><label>Sucursal</label><select class="select" id="npSuc">${p?sucOptionsSel(p.sucursalId):sucOptionsFor()}</select></div>
     </div>
     <div class="field"><label>Urgencia</label>${pedUrgSeg(p?p.urgencia:'media')}</div>
-    <div class="field"><label>Detalle</label><textarea class="textarea" id="npDesc" placeholder="¿Para qué? ¿Para cuándo?">${p?esc(p.desc||''):''}</textarea></div>`;
+    <div class="field"><label>Detalle</label><textarea class="textarea" id="npDesc" placeholder="${pedPh(area).desc}">${p?esc(p.desc||''):''}</textarea></div>`;
 }
 function newPedidoModal(){
   openModal(`
