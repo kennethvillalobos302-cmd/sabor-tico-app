@@ -520,11 +520,43 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .ibtn .icon{color:var(--text-soft)}
 .ibtn.ok .icon{color:var(--success)}
 .ibtn.danger .icon{color:var(--danger)}
+/* ---- modal de producto: secciones + vista previa ---- */
+.row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.ip-sec{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);margin:6px 0 12px;padding-top:6px}
+.ip-sec .icon{color:var(--accent)}
+.ip-sec:not(:first-child){border-top:1px solid var(--border-soft);margin-top:4px;padding-top:16px}
+.ip-hint{font-size:13px;color:var(--text-soft);background:var(--bg-soft);border:1px solid var(--border-soft);border-radius:var(--r-md);padding:11px 13px;margin-bottom:16px;line-height:1.5}
+.ip-prev{background:var(--bg-soft);border:1px solid var(--border-soft);border-radius:var(--r-md);padding:6px 14px;margin-bottom:16px}
+.ip-prev-row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;font-size:13px;color:var(--text-soft)}
+.ip-prev-row+.ip-prev-row{border-top:1px solid var(--border-soft)}
+.ip-prev-row b{color:var(--text);font-size:14.5px}
+/* ---- factura ---- */
+.fac-line{background:var(--bg-soft);border:1px solid var(--border-soft);border-radius:var(--r-md);padding:12px;margin-bottom:10px}
+.fac-line-top{display:flex;gap:8px;align-items:center}
+.fac-prod{flex:1;min-width:0}
+.fac-del{width:40px;height:40px;flex:0 0 auto;border:1px solid var(--border)}
+.fac-del:hover{border-color:var(--danger)}.fac-del:hover .icon{color:var(--danger)}
+.fac-new{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px;margin-top:9px}
+.fac-line-nums{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end;margin-top:9px}
+.fac-num label{display:block;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-soft);margin-bottom:5px}
+.fac-line-total{font-weight:800;font-size:15px;white-space:nowrap;padding-bottom:11px;min-width:64px;text-align:right;font-variant-numeric:tabular-nums}
+.fac-total{display:flex;justify-content:space-between;align-items:center;margin-top:14px;padding:14px 16px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:var(--r-md);font-size:13px;font-weight:700;color:var(--text-soft)}
+.fac-total b{font-size:20px;font-weight:800;color:var(--text)}
+.fac-card{background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--r-lg);padding:15px 16px;margin-bottom:11px;box-shadow:var(--e1)}
+.fac-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.fac-card-sup{font-weight:700;font-size:14.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.fac-card-total{font-weight:800;font-size:17px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.fac-card-items{margin-top:11px;border-top:1px solid var(--border-soft);padding-top:11px;display:flex;flex-direction:column;gap:5px}
+.fac-card-items>div{font-size:12.5px;color:var(--text-soft);display:flex;flex-wrap:wrap;gap:6px;align-items:baseline}
+.fac-card-items>div span{color:var(--text);font-weight:600}
+.fac-card-items>div b{color:var(--text)}
 @media(max-width:780px){
   .inv-card{grid-template-columns:68px 1fr;gap:12px}
   .inv-actions{grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap;border-top:1px solid var(--border-soft);padding-top:10px}
   .ibtn span{display:none}
   .ibtn{padding:10px 12px}
+  .row3{grid-template-columns:1fr 1fr}
+  .fac-new{grid-template-columns:1fr 1fr}
 }
 /* pizarra infinita (lienzo) */
 .canvas-wrap{position:relative;overflow:auto;border:1px solid var(--border-soft);border-radius:var(--r-lg);background-color:var(--bg-elev);background-image:radial-gradient(var(--border) 1px,transparent 1px);background-size:24px 24px;height:calc(100vh - 330px);min-height:480px}

@@ -279,7 +279,7 @@ function seedSouvenirs(suc){
 
 /* Garantiza que todas las colecciones existan como arreglos (defensa universal:
    se llama en cada render por si entran datos incompletos desde la nube). */
-const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients','souvenirs','souvSales'];
+const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','invoices','recipes','shifts','reservations','clients','souvenirs','souvSales'];
 function ensureCollections(){ if(!DB||typeof DB!=='object') return; DB_COLLECTIONS.forEach(k=>{ if(!Array.isArray(DB[k])) DB[k]=[]; }); if(!DB.invCats||typeof DB.invCats!=='object') DB.invCats=JSON.parse(JSON.stringify(DEFAULT_CATS)); }
 
 /* ---------------- Migración de DBs existentes ---------------- */
@@ -1831,7 +1831,7 @@ function viewInventario(){
 
   let html=`<div class="page-head"><div><div class="page-title">Inventario · ${areaName}</div><div class="page-sub">${scoped.length} productos · valor ${money(value)}${editor?'':' · solo lectura'}</div></div>
     <div class="ph-spacer"></div>
-    ${editor?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button><button class="btn btn-primary" style="flex:0 0 auto" onclick="invNewModal()">${svgIcon('plus','icon icon-sm')} Producto</button>`:''}</div>`;
+    ${editor?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="invoicesModal()">${svgIcon('clipboard','icon icon-sm')} Facturas</button><button class="btn btn-ghost" style="flex:0 0 auto" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button><button class="btn btn-ghost" style="flex:0 0 auto" onclick="invNewModal()">${svgIcon('plus','icon icon-sm')} Producto</button><button class="btn btn-primary" style="flex:0 0 auto" onclick="invoiceModal()">${svgIcon('truck','icon icon-sm')} Registrar factura</button>`:''}</div>`;
   html+=guide;
   html+=`<div class="kpi-row">
     <div class="kpi"><div class="label">Productos</div><div class="value">${scoped.length}</div><div class="sub">en ${sucName(visibleSuc())}</div></div>
@@ -1911,31 +1911,45 @@ function applyInvMove(pid,type){
   if(type==='salida'&&lowStock(p)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Inventario bajo: ${p.name} (${p.stock} ${p.unit})`,'⚠️',{view:'inventario'});
   closeModal(); toast('Inventario actualizado','ok'); render();
 }
-function invNewModal(){ openModal(invForm('Nuevo producto',null)); }
-function invEditModal(id){ openModal(invForm('Editar producto',DB.inventory.find(x=>x.id===id))); }
+function invNewModal(){ openModal(invForm('Nuevo producto',null), true); }
+function invEditModal(id){ openModal(invForm('Editar producto',DB.inventory.find(x=>x.id===id)), true); }
 function invForm(title,p){
   const editable=invAreasFor().filter(canInvEditArea);
   const defArea=(p&&p.area)||(editable.includes(invArea)?invArea:editable[0])||'cocina';
   return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
-    <div class="field"><label>Nombre del producto</label><input class="input" id="ipName" value="${p?esc(p.name):''}" placeholder="Ej: Tomate"></div>
-    <div class="field"><label>Bodega / área</label><select class="select" id="ipArea" onchange="fillCatOptions()">${editable.map(a=>`<option value="${a}" ${a===defArea?'selected':''}>${INV_AREA_LABEL[a]}</option>`).join('')}</select></div>
+    <div class="ip-sec">${svgIcon('box','icon icon-sm')} Información</div>
+    <div class="field"><label>Nombre del producto</label><input class="input" id="ipName" value="${p?esc(p.name):''}" placeholder="Ej: Tomate" autocomplete="off"></div>
     <div class="row2">
+      <div class="field"><label>Bodega / área</label><select class="select" id="ipArea" onchange="fillCatOptions()">${editable.map(a=>`<option value="${a}" ${a===defArea?'selected':''}>${INV_AREA_LABEL[a]}</option>`).join('')}</select></div>
       <div class="field"><label>Categoría</label><select class="select" id="ipCat">${(()=>{const cats=catsForArea(defArea);const list=(p&&p.category&&!cats.includes(p.category))?[p.category,...cats]:cats;return list.map(c=>`<option ${p&&p.category===c?'selected':''}>${esc(c)}</option>`).join('');})()}</select></div>
+    </div>
+    <div class="ip-sec">${svgIcon('chart','icon icon-sm')} Existencias</div>
+    <div class="row3">
       <div class="field"><label>Unidad</label><select class="select" id="ipUnit">${INV_UNITS.map(u=>`<option ${p&&p.unit===u?'selected':''}>${u}</option>`).join('')}</select></div>
+      <div class="field"><label>Cantidad actual</label><input class="input" id="ipStock" type="number" step="any" min="0" value="${p?p.stock:0}" oninput="ipPreview()"></div>
+      <div class="field"><label>Mínimo (alerta)</label><input class="input" id="ipMin" type="number" step="any" min="0" value="${p?p.minStock:0}" oninput="ipPreview()"></div>
     </div>
+    <div class="ip-sec">${svgIcon('truck','icon icon-sm')} Costo y proveedor</div>
     <div class="row2">
-      <div class="field"><label>Cantidad actual</label><input class="input" id="ipStock" type="number" step="any" value="${p?p.stock:0}"></div>
-      <div class="field"><label>Cantidad mínima</label><input class="input" id="ipMin" type="number" step="any" value="${p?p.minStock:0}"></div>
+      <div class="field"><label>Costo por unidad (₡)</label><input class="input" id="ipCost" type="number" step="any" min="0" value="${p?p.cost:0}" oninput="ipPreview()"></div>
+      <div class="field"><label>Proveedor</label><input class="input" id="ipSup" value="${p?esc(p.supplier||''):''}" placeholder="Opcional" autocomplete="off"></div>
     </div>
-    <div class="row2">
-      <div class="field"><label>Costo por unidad (₡)</label><input class="input" id="ipCost" type="number" step="any" value="${p?p.cost:0}"></div>
-      <div class="field"><label>Proveedor</label><input class="input" id="ipSup" value="${p?esc(p.supplier||''):''}" placeholder="Opcional"></div>
-    </div>
+    <div class="ip-prev" id="ipPrev"></div>
     <div class="field"><label>Sucursal</label><select class="select" id="ipSuc">${sucOptionsFor()}</select></div>
   </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveProduct('${p?p.id:''}')">Guardar</button></div>`;
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveProduct('${p?p.id:''}')">${svgIcon('save','icon icon-sm')} Guardar producto</button></div>`;
 }
+function ipPreview(){
+  const el=$('#ipPrev'); if(!el) return;
+  const stock=+($('#ipStock')?$('#ipStock').value:0)||0, cost=+($('#ipCost')?$('#ipCost').value:0)||0, min=+($('#ipMin')?$('#ipMin').value:0)||0;
+  const unit=$('#ipUnit')?$('#ipUnit').value:'';
+  const low=stock<=min;
+  el.innerHTML=`<div class="ip-prev-row"><span>Valor en bodega</span><b>${money(stock*cost)}</b></div>
+    <div class="ip-prev-row"><span>Existencia</span><b>${+stock.toFixed(2)} ${esc(unit)}</b></div>
+    <div class="ip-prev-row"><span>Estado</span><b style="color:${low?'var(--danger)':'var(--success)'}">${low?'Bajo el mínimo — reponer':'En buen nivel'}</b></div>`;
+}
+window.ipPreview=ipPreview;
 function saveProduct(id){
   const name=$('#ipName').value.trim(); if(!name){ toast('Ponele nombre','err'); return; }
   const data={name,area:($('#ipArea')?$('#ipArea').value:'cocina'),category:$('#ipCat').value,unit:$('#ipUnit').value,stock:+$('#ipStock').value||0,
@@ -1977,6 +1991,123 @@ function catManagerModal(){
 function addCat(a){ const el=$('#newcat_'+a); const v=el?el.value.trim():''; if(!v){ toast('Escribí un nombre','err'); return; } DB.invCats[a]=DB.invCats[a]||[]; if(DB.invCats[a].includes(v)){ toast('Esa categoría ya existe','err'); return; } DB.invCats[a].push(v); audit('inventario',`agregó categoría "${v}" a ${INV_AREA_LABEL[a]}`); save(); catManagerModal(); }
 function delCat(a,i){ const c=(DB.invCats[a]||[])[i]; if(c===undefined) return; if(DB.inventory.some(p=>(p.area||'cocina')===a && p.category===c)){ toast('No se puede borrar: hay productos en esa categoría','err'); return; } DB.invCats[a].splice(i,1); audit('inventario',`quitó categoría "${c}" de ${INV_AREA_LABEL[a]}`); save(); catManagerModal(); }
 window.fillCatOptions=fillCatOptions; window.catManagerModal=catManagerModal; window.addCat=addCat; window.delCat=delCat;
+
+/* ---------------- Facturas (entrada de mercadería al inventario) ---------------- */
+let facLines=[];
+function invoiceModal(){
+  const area=invAreasFor().filter(canInvEditArea);
+  const defArea=area.includes(invArea)?invArea:area[0]||'cocina';
+  facLines=[{productId:'',name:'',category:catsForArea(defArea)[0]||'',unit:'unid',qty:1,cost:0}];
+  openModal(invoiceForm(defArea), true);
+}
+function invoiceForm(defArea){
+  const editable=invAreasFor().filter(canInvEditArea);
+  const today=new Date(); today.setMinutes(today.getMinutes()-today.getTimezoneOffset());
+  const date=today.toISOString().slice(0,10);
+  return `<div class="modal-head"><h3>${svgIcon('truck','icon')} Registrar factura</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  <div class="modal-body">
+    <div class="ip-hint">Anotá lo que trae la factura. Al guardar, las cantidades se <b>suman al inventario</b> automáticamente (y los productos nuevos se crean).</div>
+    <div class="row2">
+      <div class="field"><label>Proveedor</label><input class="input" id="facSup" placeholder="Ej: Distribuidora La Cana" autocomplete="off"></div>
+      <div class="field"><label>N.º de factura</label><input class="input" id="facNum" placeholder="Opcional" autocomplete="off"></div>
+    </div>
+    <div class="row2">
+      <div class="field"><label>Fecha</label>${dateField(date,'fac')}</div>
+      <div class="field"><label>Sucursal</label><select class="select" id="facSuc">${sucOptionsFor()}</select></div>
+    </div>
+    <div class="field"><label>Bodega para productos nuevos</label><select class="select" id="facArea" onchange="renderFacLines()">${editable.map(a=>`<option value="${a}" ${a===defArea?'selected':''}>${INV_AREA_LABEL[a]}</option>`).join('')}</select></div>
+    <div class="ip-sec">${svgIcon('list','icon icon-sm')} Productos de la factura</div>
+    <div id="facLines"></div>
+    <button class="add-break" onclick="facAddLine()">${svgIcon('plus','icon icon-sm')} Agregar producto</button>
+    <div class="fac-total" id="facTotal"></div>
+    <div class="field" style="margin-top:14px"><label>Nota (opcional)</label><input class="input" id="facNote" placeholder="Ej: pago a 30 días" autocomplete="off"></div>
+  </div>
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveInvoice()">${svgIcon('check','icon icon-sm')} Guardar y sumar al inventario</button></div>`;
+}
+function renderFacLines(){
+  const c=$('#facLines'); if(!c) return;
+  const area=$('#facArea')?$('#facArea').value:'cocina';
+  const prods=invInScope().filter(p=>(p.area||'cocina')===area).sort((a,b)=>a.name.localeCompare(b.name));
+  c.innerHTML=facLines.map((l,i)=>{
+    const isNew=!l.productId;
+    const opts=`<option value="">＋ Producto nuevo…</option>`+prods.map(p=>`<option value="${p.id}" ${l.productId===p.id?'selected':''}>${esc(p.name)} (${esc(p.unit)})</option>`).join('');
+    const unit=isNew?l.unit:(DB.inventory.find(x=>x.id===l.productId)||{}).unit||l.unit;
+    return `<div class="fac-line">
+      <div class="fac-line-top">
+        <select class="select fac-prod" onchange="facSetProduct(${i},this.value)">${opts}</select>
+        <button class="icon-btn fac-del" title="Quitar" onclick="facDelLine(${i})">${svgIcon('trash','icon icon-sm')}</button>
+      </div>
+      ${isNew?`<div class="fac-new">
+        <input class="input" placeholder="Nombre del producto" value="${esc(l.name)}" oninput="facLines[${i}].name=this.value" autocomplete="off">
+        <select class="select" onchange="facLines[${i}].category=this.value">${catsForArea(area).map(c=>`<option ${l.category===c?'selected':''}>${esc(c)}</option>`).join('')}</select>
+        <select class="select" onchange="facLines[${i}].unit=this.value">${INV_UNITS.map(u=>`<option ${l.unit===u?'selected':''}>${u}</option>`).join('')}</select>
+      </div>`:''}
+      <div class="fac-line-nums">
+        <div class="fac-num"><label>Cantidad (${esc(unit)})</label><input class="input" type="number" min="0" step="any" value="${l.qty}" oninput="facLines[${i}].qty=+this.value||0;facUpdateTotal()"></div>
+        <div class="fac-num"><label>Costo unitario (₡)</label><input class="input" type="number" min="0" step="any" value="${l.cost}" oninput="facLines[${i}].cost=+this.value||0;facUpdateTotal()"></div>
+        <div class="fac-line-total" id="facLT${i}">${money(l.qty*l.cost)}</div>
+      </div>
+    </div>`;
+  }).join('');
+  facUpdateTotal();
+}
+function facSetProduct(idx,pid){
+  const l=facLines[idx]; if(!l) return; l.productId=pid;
+  if(pid){ const p=DB.inventory.find(x=>x.id===pid); if(p){ l.name=p.name; l.category=p.category; l.unit=p.unit; if(!l.cost) l.cost=p.cost; } }
+  renderFacLines();
+}
+function facAddLine(){ const area=$('#facArea')?$('#facArea').value:'cocina'; facLines.push({productId:'',name:'',category:catsForArea(area)[0]||'',unit:'unid',qty:1,cost:0}); renderFacLines(); }
+function facDelLine(i){ facLines.splice(i,1); if(!facLines.length) facAddLine(); else renderFacLines(); }
+function facUpdateTotal(){
+  let t=0; facLines.forEach((l,i)=>{ const lt=(+l.qty||0)*(+l.cost||0); t+=lt; const e=$('#facLT'+i); if(e) e.textContent=money(lt); });
+  const el=$('#facTotal'); if(el) el.innerHTML=`<span>Total de la factura</span><b>${money(t)}</b>`;
+}
+function saveInvoice(){
+  const supplier=$('#facSup').value.trim();
+  const number=$('#facNum').value.trim();
+  const date=$('#facDate')?$('#facDate').value:'';
+  const sucursalId=$('#facSuc').value;
+  const area=$('#facArea').value;
+  const note=$('#facNote').value.trim();
+  const lines=facLines.filter(l=>(l.productId||(l.name||'').trim()) && (+l.qty>0));
+  if(!lines.length){ toast('Agregá al menos un producto con cantidad','err'); return; }
+  const invId=uid(); let total=0; const items=[];
+  lines.forEach(l=>{
+    const qty=+l.qty||0, cost=+l.cost||0, lt=qty*cost; total+=lt;
+    let p=l.productId?DB.inventory.find(x=>x.id===l.productId):null, pid=l.productId;
+    if(!p){
+      p={id:uid(),name:(l.name||'Producto').trim(),area,category:l.category||catsForArea(area)[0]||'General',unit:l.unit||'unid',stock:0,minStock:0,cost,supplier,sucursalId};
+      DB.inventory.push(p); pid=p.id;
+    }
+    p.stock=+(p.stock+qty).toFixed(2);
+    if(cost>0) p.cost=cost;
+    if(supplier && !p.supplier) p.supplier=supplier;
+    DB.invMoves.unshift({id:uid(),productId:pid,type:'entrada',qty,byId:SES.userId,at:now(),note:'Factura'+(number?' #'+number:'')+(supplier?' · '+supplier:''),refId:invId,sucursalId:p.sucursalId});
+    items.push({productId:pid,name:p.name,category:p.category,unit:p.unit,qty,cost,total:lt});
+  });
+  DB.invoices.unshift({id:invId,supplier,number,date,sucursalId,area,items,total,note,byId:SES.userId,at:now()});
+  audit('inventario',`registró factura${number?' #'+number:''}${supplier?' de '+supplier:''} · ${items.length} productos · ${money(total)}`,sucursalId);
+  closeModal(); toast(`Factura registrada · ${items.length} productos sumados`,'ok'); render();
+}
+function invoicesModal(){
+  const list=(DB.invoices||[]).filter(f=>inScope(f.sucursalId)).slice(0,60);
+  const rows=list.map(f=>{
+    const d=f.date?new Date(f.date+'T00:00').toLocaleDateString('es-CR',{day:'2-digit',month:'short',year:'numeric'}):fmtDateTime(f.at);
+    return `<div class="fac-card">
+      <div class="fac-card-head">
+        <div><div class="fac-card-sup">${f.supplier?esc(f.supplier):'Proveedor sin nombre'}${f.number?` <span class="inv-area">#${esc(f.number)}</span>`:''}</div>
+        <div class="page-sub" style="margin:3px 0 0">${d} · ${f.items.length} ${f.items.length===1?'producto':'productos'} · ${esc(sucName(f.sucursalId))}</div></div>
+        <div class="fac-card-total">${money(f.total)}</div>
+      </div>
+      <div class="fac-card-items">${f.items.map(it=>`<div><span>${esc(it.name)}</span><b>×${it.qty} ${esc(it.unit)}</b> · ${money(it.cost)}/u</div>`).join('')}</div>
+      ${f.note?`<div class="page-sub" style="margin-top:8px">📝 ${esc(f.note)}</div>`:''}
+    </div>`;
+  }).join('');
+  openModal(`<div class="modal-head"><h3>Facturas registradas</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">${list.length?rows:emptyState('🧾','Sin facturas','Registrá una factura para sumar productos al inventario de una sola vez.')}</div>`,true);
+}
+window.invoiceModal=invoiceModal; window.renderFacLines=renderFacLines; window.facSetProduct=facSetProduct;
+window.facAddLine=facAddLine; window.facDelLine=facDelLine; window.facUpdateTotal=facUpdateTotal; window.saveInvoice=saveInvoice; window.invoicesModal=invoicesModal;
 
 /* =====================================================================
    VISTA: RECETAS / MENÚ  (Chef edita · Cocina consulta · descuenta inventario)
@@ -2082,7 +2213,7 @@ window.prepareModal=prepareModal; window.prepareRecipe=prepareRecipe; window.rec
 window.recipeEditModal=recipeEditModal; window.saveRecipe=saveRecipe; window.addIngRow=addIngRow; window.renderIngRows=renderIngRows;
 // render ingredient rows after recipe modal opens
 const _openModal=openModal;
-openModal=function(html,wide){ _openModal(html,wide); if($('#rcIngs')) renderIngRows(); if($('#shBreaks')){ shPresetEdit=false; renderBreakRows(); if($('#shPresetArea')) renderPresetArea(); updateShiftPreview(); } };
+openModal=function(html,wide){ _openModal(html,wide); if($('#rcIngs')) renderIngRows(); if($('#facLines')) renderFacLines(); if($('#ipPrev')) ipPreview(); if($('#shBreaks')){ shPresetEdit=false; renderBreakRows(); if($('#shPresetArea')) renderPresetArea(); updateShiftPreview(); } };
 
 /* =====================================================================
    VISTA: HORARIOS / TURNOS
