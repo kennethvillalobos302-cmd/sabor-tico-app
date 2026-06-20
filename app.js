@@ -3127,7 +3127,7 @@ function souvVentasView(){
   html+=souvCharts(list);
   if(!list.length) return html+emptyState('gift','Sin ventas todavía','Cuando se venda un souvenir, la venta y tu ganancia aparecen acá.');
   html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl"><thead><tr>
-    <th>Fecha</th><th>Producto</th><th>Cant.</th><th>Total</th><th>Ganancia</th><th>Pago</th><th>Vendió</th></tr></thead><tbody>`;
+    <th>Fecha</th><th>Producto</th><th>Cant.</th><th>Total</th><th>Ganancia</th><th>Pago</th><th>Vendió</th><th></th></tr></thead><tbody>`;
   html+=list.map(v=>{const u=userById(v.byId); const tot=(+v.price||0)*(+v.qty||0); const gan=((+v.price||0)-(+v.cost||0))*(+v.qty||0);
     return `<tr>
       <td>${fmtDateTime(v.at)}</td>
@@ -3137,6 +3137,10 @@ function souvVentasView(){
       <td style="color:var(--success);font-weight:700">${money(gan)}</td>
       <td>${v.payCur==='USD'?'Dólares':'Colones'}</td>
       <td>${esc(u?u.name:'—')}</td>
+      <td style="text-align:right;white-space:nowrap">
+        <button class="icon-btn" style="width:32px;height:32px" title="Corregir venta" onclick="souvSaleEditModal('${v.id}')">${svgIcon('edit','icon icon-sm')}</button>
+        <button class="icon-btn" style="width:32px;height:32px" title="Anular venta" onclick="souvDelSale('${v.id}')">${svgIcon('trash','icon icon-sm')}</button>
+      </td>
     </tr>`;}).join('');
   html+=`</tbody></table></div></div>`;
   return html;
@@ -3190,6 +3194,49 @@ function souvSell(id){
   closeModal();
   toast(canSouvMoney()?`Venta registrada · ganancia ${money(ganancia)}`:`Vendiste ${qty} · quedan ${p.stock}`,'ok');
   save(); render();
+}
+
+/* ---- Corregir / anular ventas (solo gerencia) ---- */
+function souvSaleById(id){ return (DB.souvSales||[]).find(v=>v.id===id); }
+function souvSaleEditModal(id){
+  if(!canSouvMoney()) return;
+  const v=souvSaleById(id); if(!v) return;
+  const p=souvById(v.productId);
+  const maxQty=(p?(+p.stock||0):0)+(+v.qty||0);
+  openModal(`<div class="modal-head"><h3>${svgIcon('edit','icon')} Corregir venta</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="souv-sellhead"><span class="souv-ic">${svgIcon('gift','icon')}</span><div><div class="souv-sellhead-n">${esc(v.name)}</div><div class="page-sub" style="margin:2px 0 0">${fmtDateTime(v.at)}${p?` · quedan ${+p.stock||0} en inventario`:' · producto eliminado'}</div></div></div>
+      <div class="row2">
+        <div class="field"><label>Cantidad vendida</label><input class="input" id="seQty" type="number" min="1" max="${maxQty}" value="${+v.qty||0}"></div>
+        <div class="field"><label>Precio unitario (₡)</label><input class="input" id="sePrice" type="number" min="0" step="any" value="${+v.price||0}"></div>
+      </div>
+      <div class="souv-sell-note">Al corregir la cantidad se ajusta el inventario automáticamente.</div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="souvSaleSave('${v.id}')">${svgIcon('check','icon icon-sm')} Guardar cambios</button></div>`, true);
+}
+function souvSaleSave(id){
+  const v=souvSaleById(id); if(!v) return;
+  let newQty=parseInt($('#seQty').value,10); if(isNaN(newQty)||newQty<1)newQty=1;
+  const newPrice=Math.max(0,+$('#sePrice').value||0);
+  const p=souvById(v.productId);
+  if(p){
+    const diff=newQty-(+v.qty||0); // >0 vende más → descuenta del stock
+    if(diff>0 && diff>(+p.stock||0)){ toast('No hay suficiente inventario para aumentar la cantidad','err'); return; }
+    p.stock=Math.max(0,(+p.stock||0)-diff);
+  }
+  v.qty=newQty; v.price=newPrice;
+  audit('souvenir',`corrigió venta de ${v.name} → ${newQty}× a ${money(newPrice)}`,v.sucursalId);
+  closeModal(); toast('Venta corregida','ok'); save(); render();
+}
+async function souvDelSale(id){
+  if(!canSouvMoney()) return;
+  const v=souvSaleById(id); if(!v) return;
+  if(!await confirmDialog(`Se anula la venta de ${(+v.qty||0)}× ${v.name} y se devuelve el inventario.`,{title:'¿Anular esta venta?',okText:'Sí, anular'})) return;
+  const p=souvById(v.productId);
+  if(p) p.stock=(+p.stock||0)+(+v.qty||0);
+  DB.souvSales=DB.souvSales.filter(x=>x.id!==id);
+  audit('souvenir',`anuló venta de ${(+v.qty||0)}× ${v.name}`,v.sucursalId);
+  toast('Venta anulada · inventario devuelto','ok'); save(); render();
 }
 
 /* ---- Alta / edición de producto (solo gerencia) ---- */
@@ -3278,6 +3325,7 @@ window.viewSouvenir=viewSouvenir; window.souvSellModal=souvSellModal; window.sou
 window.souvNewModal=souvNewModal; window.souvEditModal=souvEditModal; window.saveSouv=saveSouv;
 window.souvStockModal=souvStockModal; window.souvAddStock=souvAddStock; window.delSouv=delSouv;
 window.souvQtyStep=souvQtyStep; window.souvSetCur=souvSetCur; window.souvSellPreview=souvSellPreview; window.souvGanPrev=souvGanPrev; window.souvFormCur=souvFormCur;
+window.souvSaleEditModal=souvSaleEditModal; window.souvSaleSave=souvSaleSave; window.souvDelSale=souvDelSale;
 
 /* =====================================================================
    COMPONENTES COMUNES
