@@ -398,13 +398,27 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .sh-preset:hover{border-color:var(--accent-line)}
 .sh-preset.on{border-color:var(--accent);background:var(--accent-soft)}
 .sh-preset.on,.sh-preset.on span{color:var(--accent)}
+/* cabecera/edición de turnos rápidos */
+.sh-presetbox{margin-bottom:12px}
+.pe-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}
+.pe-head>span{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--text-soft)}
+.pe-link{display:inline-flex;align-items:center;gap:5px;font-size:13px;font-weight:700;color:var(--accent);background:transparent;padding:5px 9px;border-radius:var(--r-sm);transition:background var(--t-fast)}
+.pe-link:hover{background:var(--accent-soft)}
+.pe-row{display:flex;align-items:center;gap:10px;margin-bottom:9px}
+.pe-name{flex:0 0 112px;font-weight:700;padding:11px 12px}
+.pe-times{flex:1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);padding:5px 12px;min-width:0}
+.pe-lbl{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;color:var(--text-soft)}
+.pe-times .tp{background:transparent;border:none;border-radius:0;padding:3px 0;flex-wrap:nowrap}
+.pe-times .tp:focus-within{box-shadow:none}
+.pe-times .tp-num{font-size:18px}
 /* bloque de horas Entra/Sale */
 .sh-block{background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden}
-.sh-block .sh-row{display:flex;align-items:center;gap:10px;padding:5px 14px}
+.sh-block .sh-row{display:flex;align-items:center;gap:10px;padding:8px 16px;min-height:58px}
 .sh-block .sh-row+.sh-row{border-top:1px solid var(--border-soft)}
-.sh-block .sh-row>label{flex:0 0 48px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);margin:0}
-.sh-block .tp{flex:1;background:transparent;border:none;border-radius:0;justify-content:flex-end;padding:7px 0;flex-wrap:nowrap}
+.sh-block .sh-row>label{flex:0 0 54px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--text-soft);margin:0}
+.sh-block .tp{flex:1;background:transparent;border:none;border-radius:0;justify-content:flex-end;padding:4px 0;flex-wrap:nowrap;gap:2px 6px}
 .sh-block .tp:focus-within{box-shadow:none}
+.sh-block .tp-ampm{margin-left:8px}
 .sh-preview{margin:2px 0 4px}
 .ap.shpreset{padding:9px 13px;font-weight:600}
 .ap.shpreset.on{border-color:var(--accent);background:var(--accent-soft);color:var(--accent)}

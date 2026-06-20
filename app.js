@@ -2082,7 +2082,7 @@ window.prepareModal=prepareModal; window.prepareRecipe=prepareRecipe; window.rec
 window.recipeEditModal=recipeEditModal; window.saveRecipe=saveRecipe; window.addIngRow=addIngRow; window.renderIngRows=renderIngRows;
 // render ingredient rows after recipe modal opens
 const _openModal=openModal;
-openModal=function(html,wide){ _openModal(html,wide); if($('#rcIngs')) renderIngRows(); if($('#shBreaks')){ renderBreakRows(); updateShiftPreview(); } };
+openModal=function(html,wide){ _openModal(html,wide); if($('#rcIngs')) renderIngRows(); if($('#shBreaks')){ shPresetEdit=false; renderBreakRows(); if($('#shPresetArea')) renderPresetArea(); updateShiftPreview(); } };
 
 /* =====================================================================
    VISTA: HORARIOS / TURNOS
@@ -2110,7 +2110,7 @@ function shiftPreviewHTML(start,end,breaks){
     const left=Math.max(0,(bs-s)/gross*100), w=Math.min(100-left,(be-bs)/gross*100);
     return `<div style="position:absolute;top:0;bottom:0;left:${left}%;width:${w}%;background:var(--bg);opacity:.6;border-left:1px dashed #fff;border-right:1px dashed #fff"></div>`;
   }).join('');
-  return `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-soft);margin-bottom:5px"><span>${start}</span><span>${end}</span></div>
+  return `<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text-soft);margin-bottom:5px"><span>${fmt12(start)}</span><span>${fmt12(end)}</span></div>
     <div style="position:relative;height:34px;border-radius:9px;background:var(--grad-accent);overflow:hidden">${segs}<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12.5px;font-weight:700;color:#fff">${fmtDur(net)} efectivas</div></div>
     <div style="font-size:11.5px;color:var(--text-soft);margin-top:6px">${fmtDur(gross)} de turno${bmin?` · ${fmtDur(bmin)} en quiebres`:' · sin quiebres'}</div>`;
 }
@@ -2313,8 +2313,31 @@ function horTimeline(days){
   const summary=`<div class="tl-summary"><span class="tl-sum-num">${work.length}</span> ${work.length===1?'persona en turno':'personas en turno'}${offCount?` · ${offCount} libre${offCount>1?'s':''}`:''}</div>`;
   return html+summary+`<div class="card tl-wrap"><div class="tl" style="--tl-step:${stepPct}%"><div class="tl-axis">${axis}</div>${body}</div></div>`;
 }
-function shiftPresetChips(){
-  return SHIFT_PRESETS.map((p,i)=>`<button type="button" class="sh-preset" data-s="${p.start}" data-e="${p.end}" onclick="applyShiftPreset(${i})">${p.label}<span>${fmt12(p.start)} – ${fmt12(p.end)}</span></button>`).join('');
+let shPresetEdit=false;
+function getShiftPresets(){
+  if(!Array.isArray(DB.shiftPresets)||!DB.shiftPresets.length)
+    DB.shiftPresets=SHIFT_PRESETS.map(p=>({label:p.label,start:p.start,end:p.end,breaks:(p.breaks||[]).map(b=>({...b}))}));
+  return DB.shiftPresets;
+}
+function renderPresetArea(){
+  const c=$('#shPresetArea'); if(!c) return;
+  const ps=getShiftPresets();
+  if(shPresetEdit){
+    c.innerHTML=`<div class="pe-head"><span>Editá los turnos rápidos</span><button type="button" class="pe-link" onclick="savePresets()">${svgIcon('check','icon icon-sm')} Listo</button></div>
+      ${ps.map((p,i)=>`<div class="pe-row">
+        <input class="input pe-name" id="peName${i}" value="${esc(p.label)}" maxlength="14" placeholder="Nombre">
+        <div class="pe-times"><span class="pe-lbl">Entra</span>${timePicker('pe'+i+'S',p.start,'')}<span class="pe-lbl">Sale</span>${timePicker('pe'+i+'E',p.end,'')}</div>
+      </div>`).join('')}`;
+  } else {
+    c.innerHTML=`<div class="pe-head"><span>Turnos rápidos</span><button type="button" class="pe-link" onclick="shPresetEdit=true;renderPresetArea()">${svgIcon('edit','icon icon-sm')} Editar</button></div>
+      <div class="sh-presets">${ps.map((p,i)=>`<button type="button" class="sh-preset" data-s="${p.start}" data-e="${p.end}" onclick="applyShiftPreset(${i})">${esc(p.label)}<span>${fmt12(p.start)} – ${fmt12(p.end)}</span></button>`).join('')}</div>`;
+    updateShiftPreview();
+  }
+}
+function savePresets(){
+  const ps=getShiftPresets();
+  ps.forEach((p,i)=>{ const n=$('#peName'+i); p.label=(n&&n.value.trim())||p.label; p.start=readTP('pe'+i+'S'); p.end=readTP('pe'+i+'E'); });
+  save(); shPresetEdit=false; renderPresetArea(); toast('Turnos rápidos guardados','ok');
 }
 function setTP(prefix,value){
   const {h,m,ap}=to12(value);
@@ -2323,14 +2346,14 @@ function setTP(prefix,value){
   setAP(prefix,ap);
 }
 function applyShiftPreset(i){
-  const p=SHIFT_PRESETS[i]; if(!p) return;
+  const p=getShiftPresets()[i]; if(!p) return;
   setTP('shStart',p.start); setTP('shEnd',p.end);
   shBreaks=(p.breaks||[]).map(b=>({...b}));
   renderBreakRows(); updateShiftPreview();
 }
-window.applyShiftPreset=applyShiftPreset;
-function shiftNewModal(){ shBreaks=[]; openModal(shiftForm('Asignar turno',null)); }
-function shiftEditModal(id){ const s=DB.shifts.find(x=>x.id===id); shBreaks=s?(s.breaks||[]).map(b=>({...b})):[]; openModal(shiftForm('Editar turno',s)); }
+window.applyShiftPreset=applyShiftPreset; window.savePresets=savePresets; window.renderPresetArea=renderPresetArea;
+function shiftNewModal(){ shBreaks=[]; shPresetEdit=false; openModal(shiftForm('Asignar turno',null), true); }
+function shiftEditModal(id){ const s=DB.shifts.find(x=>x.id===id); shBreaks=s?(s.breaks||[]).map(b=>({...b})):[]; shPresetEdit=false; openModal(shiftForm('Editar turno',s), true); }
 function shiftForm(title,s){
   const people=DB.users.filter(u=>u.active);
   const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
@@ -2341,7 +2364,7 @@ function shiftForm(title,s){
     <div class="field"><label>¿A quién?</label><select class="select" id="shUser">${people.map(u=>`<option value="${u.id}" ${s&&s.userId===u.id?'selected':''}>${esc(u.name)} — ${roleInfo(u.role).short}</option>`).join('')}</select></div>
     <div class="field"><label>Fecha</label>${dateField(date)}</div>
     <div class="field"><label>Horario</label>
-      <div class="sh-presets">${shiftPresetChips()}</div>
+      <div id="shPresetArea" class="sh-presetbox"></div>
       <div class="sh-block">
         <div class="sh-row"><label>Entra</label>${timePicker('shStart',st,'updateShiftPreview()')}</div>
         <div class="sh-row"><label>Sale</label>${timePicker('shEnd',en,'updateShiftPreview()')}</div>
