@@ -41,7 +41,7 @@ function byDept(a,b){ return (deptRank(a.role)-deptRank(b.role)) || ((a.name||''
 /* Áreas de pedidos (a quién va dirigida una solicitud). Una misma persona
    (Melanie · contarh) atiende tanto Contabilidad como Recursos. */
 const PED_AREAS = {
-  proveeduria:  { label:'Proveeduría — insumos / productos', short:'Proveeduría', color:'#5c5650', roles:['proveeduria'] },
+  proveeduria:  { label:'Proveeduría — insumos / productos', short:'Proveeduría', color:'#5c5650', roles:['proveeduria','contarh'] },
   contabilidad: { label:'Contabilidad — pagos / facturas',   short:'Contabilidad', color:'#7a6a62', roles:['contarh'] },
   rrhh:         { label:'Recursos — permisos / adelantos',   short:'Recursos',     color:'#3f3a3a', roles:['contarh'] },
 };
@@ -353,7 +353,7 @@ function invAreasFor(){
 }
 function canInvEditArea(area){
   if(isAdmin()) return true;
-  if(area==='cocina') return hasRole('proveeduria','chef');
+  if(area==='cocina') return hasRole('proveeduria','chef','contarh');
   if(area==='bar') return hasRole('bartender','jefe_salon');
   return false;
 }
