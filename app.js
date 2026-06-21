@@ -1273,13 +1273,21 @@ function viewProyectos(){
     </div>
   </div>`;
 
-  html+=`<div class="toolbar">
+  html+=`<div class="board-tools">
+    <div class="bt-group">
+      <button class="bt-tool ${boardTool==='move'?'on':''}" data-t="move" onclick="setBoardTool('move')" title="Mover y seleccionar">${svgIcon('back','icon icon-sm')} Mover</button>
+      ${canEdit?`<button class="bt-tool ${boardTool==='draw'?'on':''}" data-t="draw" onclick="setBoardTool('draw')" title="Dibujar a mano">${svgIcon('edit','icon icon-sm')} Dibujar</button>
+      <button class="bt-tool ${boardTool==='erase'?'on':''}" data-t="erase" onclick="setBoardTool('erase')" title="Borrar trazos">${svgIcon('x','icon icon-sm')} Borrar</button>`:''}
+    </div>
+    ${canEdit?`<div class="bt-pens">${PEN_COLORS.map(c=>`<button class="pen-sw ${c===penColor?'on':''}" data-c="${c}" style="background:${c}" onclick="setPen('${c}')"></button>`).join('')}
+      <span class="bt-widths">${[3,6,10].map(w=>`<button class="pen-w ${w===penWidth?'on':''}" data-w="${w}" onclick="setPenW(${w})"><span style="width:${Math.min(14,w+2)}px;height:${Math.min(14,w+2)}px"></span></button>`).join('')}</span>
+    </div>`:''}
+    <div class="ph-spacer"></div>
     ${canEdit?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','title')">${svgIcon('clipboard','icon icon-sm')} Título</button>
     <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','text')">${svgIcon('edit','icon icon-sm')} Nota</button>
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','image')">${svgIcon('image','icon icon-sm')} Imagen</button>`:''}
-    <div class="ph-spacer"></div>
-    <span class="board-hint" style="font-size:12px;color:var(--text-soft);align-self:center">Arrastrá tarjetas o el fondo para moverte</span>
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="toggleBoardFull()">${svgIcon('chart','icon icon-sm')} Pantalla completa</button>
+    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','image')">${svgIcon('image','icon icon-sm')} Imagen</button>
+    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="clearDrawings('${proj.id}')" title="Borrar todos los trazos">${svgIcon('trash','icon icon-sm')}</button>`:''}
+    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="toggleBoardFull()" title="Pantalla completa">${svgIcon('chart','icon icon-sm')} Pantalla completa</button>
   </div>`;
 
   // En celular: alternar entre Pizarra y Chat (cada uno a pantalla completa)
@@ -1291,12 +1299,49 @@ function viewProyectos(){
   const cards=proj.cards;
   const {cw,chh}=boardDims(proj);
   const links=boardLinks(cards);
-  const board = cards.length
-    ? `<div class="canvas-wrap" id="canvasWrap" onwheel="boardWheel(event)"><div class="canvas-zoom" id="canvasZoom" style="width:${cw*boardZoom}px;height:${chh*boardZoom}px"><div class="canvas" id="boardCanvas" style="width:${cw}px;height:${chh}px;transform:scale(${boardZoom});transform-origin:0 0" onpointerdown="canvasPanDown(event)"><svg class="canvas-links" width="${cw}" height="${chh}">${links}</svg>${cards.map(c=>boardCard(proj.id,c)).join('')}</div></div></div>`
-    : `<div class="card" style="flex:1">${emptyState('','Pizarra vacía','Agregá un título, una nota o una imagen. Movés todo libremente y respondés en cada una.', canEdit?'Agregar nota':'', canEdit?`addCardModal('${proj.id}','text')`:'')}</div>`;
+  const isEmpty=!cards.length && !(proj.drawings&&proj.drawings.length);
+  const board = `<div class="canvas-wrap ${boardTool!=='move'?'drawing':''}" id="canvasWrap" onwheel="boardWheel(event)"><div class="canvas-zoom" id="canvasZoom" style="width:${cw*boardZoom}px;height:${chh*boardZoom}px"><div class="canvas" id="boardCanvas" style="width:${cw}px;height:${chh}px;transform:scale(${boardZoom});transform-origin:0 0" onpointerdown="canvasPanDown(event)"><svg class="canvas-links" width="${cw}" height="${chh}">${links}</svg><svg class="canvas-draw" id="boardDraw" width="${cw}" height="${chh}">${drawPaths(proj)}</svg>${cards.map(c=>boardCard(proj.id,c)).join('')}${isEmpty?`<div class="board-empty">${svgIcon('clipboard','icon')}<div>Pizarra vacía — agregá una nota, una imagen o empezá a <b>dibujar</b>.</div></div>`:''}</div></div></div>`;
   html+=`<div class="proj-work ${boardFull?'faux-full':''} ${projMobileView==='chat'?'pm-chat':''}" id="projWork">${boardFull?`<button class="btn btn-ghost board-exit" onclick="toggleBoardFull()">${svgIcon('x','icon icon-sm')} Salir de pantalla completa</button>`:''}${board}${projSide(proj)}</div>`;
   return html;
 }
+const PEN_COLORS=['#e0566f','#f4b740','#5aa777','#7fa9b8','#f4efed','#1a1413'];
+let boardTool='move', penColor='#e0566f', penWidth=6, _draw=null;
+function setBoardTool(t){ boardTool=t; const w=$('#canvasWrap'); if(w) w.classList.toggle('drawing', t!=='move'); document.querySelectorAll('.bt-tool').forEach(b=>b.classList.toggle('on',b.dataset.t===t)); }
+function setPen(c){ penColor=c; if(boardTool!=='draw') setBoardTool('draw'); document.querySelectorAll('.pen-sw').forEach(s=>s.classList.toggle('on',s.dataset.c===c)); }
+function setPenW(w){ penWidth=w; if(boardTool!=='draw') setBoardTool('draw'); document.querySelectorAll('.pen-w').forEach(b=>b.classList.toggle('on',+b.dataset.w===w)); }
+window.setBoardTool=setBoardTool; window.setPen=setPen; window.setPenW=setPenW;
+function drawPaths(p){ return (p.drawings||[]).map(s=>{ if(!s.points||s.points.length<2) return ''; const d='M'+s.points.map(q=>`${q.x} ${q.y}`).join(' L'); return `<path d="${d}" stroke="${s.color}" stroke-width="${s.width||6}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`; }).join(''); }
+function boardPoint(e){ const bc=$('#boardCanvas'); const r=bc.getBoundingClientRect(); return {x:Math.round((e.clientX-r.left)/boardZoom), y:Math.round((e.clientY-r.top)/boardZoom)}; }
+function drawStart(e){
+  const svg=$('#boardDraw'); if(!svg) return; e.preventDefault();
+  const pt=boardPoint(e);
+  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('stroke',penColor); path.setAttribute('stroke-width',penWidth); path.setAttribute('fill','none');
+  path.setAttribute('stroke-linecap','round'); path.setAttribute('stroke-linejoin','round'); path.setAttribute('d',`M${pt.x} ${pt.y}`);
+  svg.appendChild(path);
+  _draw={points:[pt],path};
+  document.addEventListener('pointermove',drawMove); document.addEventListener('pointerup',drawEnd);
+}
+function drawMove(e){ if(!_draw)return; const pt=boardPoint(e); _draw.points.push(pt); _draw.path.setAttribute('d',_draw.path.getAttribute('d')+` L${pt.x} ${pt.y}`); }
+function drawEnd(){
+  document.removeEventListener('pointermove',drawMove); document.removeEventListener('pointerup',drawEnd);
+  if(!_draw)return; const pts=_draw.points; _draw=null; if(pts.length<2) return;
+  const p=DB.projects.find(x=>x.id===activeProj); if(!p) return;
+  p.drawings=p.drawings||[]; p.drawings.push({id:uid(),color:penColor,width:penWidth,points:pts,byId:SES.userId,at:now()});
+  save();
+}
+function eraseAt(e){
+  const p=DB.projects.find(x=>x.id===activeProj); if(!p||!(p.drawings&&p.drawings.length)) return;
+  const pt=boardPoint(e); let best=-1,bestD=16;
+  p.drawings.forEach((s,idx)=>{ (s.points||[]).forEach(q=>{ const d=Math.hypot(q.x-pt.x,q.y-pt.y); if(d<bestD){bestD=d;best=idx;} }); });
+  if(best>=0){ p.drawings.splice(best,1); save(); const svg=$('#boardDraw'); if(svg) svg.innerHTML=drawPaths(p); }
+}
+async function clearDrawings(projId){
+  const p=DB.projects.find(x=>x.id===projId); if(!p||!(p.drawings&&p.drawings.length)){ toast('No hay trazos para borrar','ok'); return; }
+  if(!await confirmDialog('Se borran todos los trazos dibujados en la pizarra (las notas e imágenes se mantienen).',{title:'¿Borrar dibujos?',okText:'Sí, borrar'})) return;
+  p.drawings=[]; audit('proyecto',`borró los dibujos de "${p.name}"`,p.sucursalId); save(); render();
+}
+window.clearDrawings=clearDrawings;
 let boardZoom=1, boardFull=false;
 function boardDims(p){ let maxX=1800,maxY=1100; p.cards.forEach(c=>{maxX=Math.max(maxX,(c.x||0)+260);maxY=Math.max(maxY,(c.y||0)+260);}); return {cw:maxX+900,chh:maxY+800}; }
 function boardLinks(cards){ return cards.filter(c=>c.parentId&&cards.find(x=>x.id===c.parentId)).map(c=>{const par=cards.find(x=>x.id===c.parentId);return `<line x1="${(par.x||0)+115}" y1="${(par.y||0)+34}" x2="${(c.x||0)+115}" y2="${(c.y||0)+16}" stroke="var(--accent-line)" stroke-width="2" stroke-dasharray="5 4"/>`;}).join(''); }
@@ -1314,6 +1359,7 @@ function refreshBoard(projId){
   bc.style.width=cw+'px'; bc.style.height=chh+'px';
   const cz=$('#canvasZoom'); if(cz){ cz.style.width=(cw*boardZoom)+'px'; cz.style.height=(chh*boardZoom)+'px'; }
   const svg=bc.querySelector('.canvas-links'); if(svg){ svg.setAttribute('width',cw); svg.setAttribute('height',chh); svg.innerHTML=boardLinks(p.cards); }
+  const dsvg=bc.querySelector('.canvas-draw'); if(dsvg){ dsvg.setAttribute('width',cw); dsvg.setAttribute('height',chh); }
 }
 function toggleBoardFull(){
   boardFull=!boardFull;
@@ -1516,6 +1562,8 @@ window.delProjMsg=delProjMsg;
 let _pan=null;
 function canvasPanDown(e){
   if(e.target.closest('.bcard')) return;
+  if(boardTool==='draw'){ drawStart(e); return; }
+  if(boardTool==='erase'){ eraseAt(e); return; }
   const wrap=$('#canvasWrap'); if(!wrap) return;
   _pan={sx:e.clientX,sy:e.clientY,sl:wrap.scrollLeft,st:wrap.scrollTop}; wrap.classList.add('panning');
   document.addEventListener('pointermove',canvasPanMove); document.addEventListener('pointerup',canvasPanUp);

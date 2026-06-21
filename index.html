@@ -772,6 +772,24 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .proj-work .canvas-wrap{flex:1;height:calc(100vh - 300px);min-height:600px}
 .canvas-wrap.panning{cursor:grabbing}
 .canvas-links{position:absolute;top:0;left:0;pointer-events:none;z-index:0}
+.canvas-draw{position:absolute;top:0;left:0;pointer-events:none;z-index:0}
+.canvas-wrap.drawing{cursor:crosshair}
+.canvas-wrap.drawing .bcard{pointer-events:none}
+.board-empty{position:absolute;top:40px;left:40px;display:flex;align-items:center;gap:11px;color:var(--text-soft);font-size:14px;max-width:380px;line-height:1.5;pointer-events:none}
+.board-empty .icon{width:26px;height:26px;color:var(--text-dim);flex:0 0 auto}
+/* barra de herramientas de la pizarra */
+.board-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.bt-group{display:inline-flex;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;flex:0 0 auto}
+.bt-tool{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;background:var(--bg-soft);color:var(--text-soft);font-size:13px;font-weight:700;border:none;transition:background var(--t-fast),color var(--t-fast)}
+.bt-tool+.bt-tool{border-left:1px solid var(--border)}
+.bt-tool.on{background:var(--accent);color:#fff}
+.bt-pens{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;padding:0 4px}
+.pen-sw{width:24px;height:24px;border-radius:50%;border:2px solid var(--border);transition:transform var(--t-fast),border-color var(--t-fast)}
+.pen-sw.on{border-color:var(--text);transform:scale(1.12)}
+.bt-widths{display:inline-flex;gap:4px;margin-left:2px}
+.pen-w{width:30px;height:30px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg-soft);display:inline-flex;align-items:center;justify-content:center}
+.pen-w.on{border-color:var(--accent);background:var(--accent-soft)}
+.pen-w span{display:block;border-radius:50%;background:var(--text)}
 .canvas-zoom{position:relative}
 .board-exit{position:absolute;top:12px;right:12px;z-index:95;flex:0 0 auto;box-shadow:var(--e2)}
 .bcard{z-index:1}
