@@ -27,6 +27,9 @@ Tiempo: ~5 minutos, una sola vez.
 ## Listo
 Abrí la app en **Inventario → Registrar factura → Subir foto de la factura**, tomá o elegí la foto, y en unos segundos verás los productos llenos para revisar. Corregí lo que haga falta y tocá **Guardar y sumar al inventario**.
 
+## Paso 4 — Poné un tope de gasto (recomendado)
+En **https://platform.openai.com → Settings → Limits**, configurá un **límite de gasto mensual** (por ej. $10). Es el freno seguro: aunque alguien intentara abusar de la lectura de facturas, nunca te puede generar un cobro mayor a ese tope. La función ya tiene además un límite de tamaño de archivo y un control de cantidad de solicitudes.
+
 ## Notas
 - **La foto se procesa solo para leerla**; no se guarda en ningún lado aparte de tu factura registrada.
 - Si querés **bajar el costo** por factura, en el archivo `api/leer-factura.js` podés cambiar el modelo a `gpt-4o-mini` (mucho más barato) — es suficiente para leer la mayoría de facturas.

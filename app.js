@@ -55,9 +55,20 @@ const roleInfo = r => ROLES[r] || {label:r,short:r,color:'#777'};
 
 /* ---------------- Helpers ---------------- */
 const $ = s => document.querySelector(s);
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,7);
+function uid(){ try{ if(self.crypto && crypto.randomUUID) return crypto.randomUUID(); }catch(_){} return Date.now().toString(36)+Math.random().toString(36).slice(2,12); }
 const now = () => Date.now();
-const esc = s => (s||'').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+// Escape para HTML. Incluye comilla simple y backtick: así también es seguro dentro de
+// atributos con comilla simple y de los onclick="...('...')" que usa la app. (de() NO escapa: solo quita emojis)
+const esc = s => (s==null?'':String(s)).replace(/[&<>"'`]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c]));
+// Solo se permiten data: URIs reales de imagen/video (base64 limpio) dentro de src="".
+// Bloquea inyección por atributo (p.ej. valores con comillas/onerror) en medios guardados en la DB.
+const safeImg = s => (typeof s==='string' && /^data:image\/(png|jpe?g|gif|webp|bmp);base64,[A-Za-z0-9+/=\s]+$/i.test(s)) ? s : '';
+const safeVid = s => (typeof s==='string' && /^data:video\/(mp4|webm|ogg|quicktime|x-matroska);base64,[A-Za-z0-9+/=\s]+$/i.test(s)) ? s : '';
+// Recortar texto y acotar números: evita que un campo enorme infle el estado compartido (DoS) o se metan valores inválidos
+const clip = (s,n=300) => String(s==null?'':s).trim().slice(0,n);
+const numClamp = (v,min,max) => { let x=Number(v); if(!isFinite(x)) x=0; return Math.max(min, Math.min(max, x)); };
+// Tope de tamaño para un archivo adjunto (en bytes)
+function fileTooBig(f, mb){ if(f && f.size > mb*1024*1024){ toast('El archivo supera los '+mb+' MB','err'); return true; } return false; }
 /* sin emojis: filtro global aplicado en vistas, modales, toasts y notificaciones */
 const EMOJI_RE=/[⌀-➿☀-⛿⬀-⯿️‍]|[\u{1F000}-\u{1FAFF}]|[\u{1F1E6}-\u{1F1FF}]/gu;
 const de = s => (s==null?'':String(s)).replace(EMOJI_RE,'');
@@ -75,7 +86,7 @@ function timeAgo(ts){
 function initials(name){ return String(name||'?').trim().split(/\s+/).map(w=>w[0]||'').slice(0,2).join('').toUpperCase()||'?'; }
 function avatarHTML(u, cls=''){
   if(!u) return `<div class="av ${cls}" style="background:#888">?</div>`;
-  return `<div class="av ${cls}" style="background:${roleInfo(u.role).color}">${initials(u.name)}</div>`;
+  return `<div class="av ${cls}" style="background:${roleInfo(u.role).color}">${esc(initials(u.name))}</div>`;
 }
 
 /* ---------------- Estado ---------------- */
@@ -94,19 +105,36 @@ function load(){
   save();
 }
 /* ---------------- Sincronización en la nube (Firebase Realtime Database) ---------------- */
+let _sizeWarned=false;
 async function cloudPush(){
   if(!cloudOn || !fbdb) return;
-  try{ await fbdb.ref('state').set({ data:DB, client:CLIENT_ID, at:Date.now() }); }
+  try{
+    const payload={ data:DB, client:CLIENT_ID, at:Date.now() };
+    // Aviso suave: si el estado compartido crece demasiado (muchos adjuntos), conviene depurar
+    if(!_sizeWarned){ try{ if(JSON.stringify(payload).length > 8*1024*1024){ _sizeWarned=true; if(typeof toast==='function') toast('Los datos están muy pesados (muchos adjuntos). Conviene depurar.','err'); } }catch(_){} }
+    await fbdb.ref('state').set(payload);
+  }
   catch(e){ console.warn('cloud push', e); }
 }
 async function cloudInit(){
   if(!FB || !FB.databaseURL) return false;
   if(!window.firebase){ console.warn('SDK de Firebase no cargó'); return false; }
   try{ firebase.initializeApp(FB); }catch(e){ /* ya inicializado */ }
+  // Iniciar sesión anónima ANTES de tocar la base: así las reglas seguras (auth != null)
+  // dejan leer/escribir sin cambiar el login con PIN. Si la autenticación anónima aún no está
+  // activada en Firebase, no bloqueamos: seguimos (compatibilidad mientras se publica el cambio).
+  try{ if(firebase.auth){ await firebase.auth().signInAnonymously(); } }
+  catch(e){ console.warn('auth anónima no disponible todavía', e && e.code); }
   fbdb = firebase.database();
   let val=null;
   try{ const snap=await fbdb.ref('state').get(); val = snap && snap.exists() ? snap.val() : null; }
-  catch(e){ console.warn('cloud load', e); }
+  catch(e){
+    console.warn('cloud load', e);
+    // Permiso denegado = reglas cerradas pero falta activar el inicio anónimo en Firebase.
+    if(e && (e.code==='PERMISSION_DENIED' || /permission/i.test(String(e.message||e)))){
+      setTimeout(()=>{ try{ toast('Sin conexión a la nube: activá el inicio anónimo en Firebase (ver SEGURIDAD.md).','err'); }catch(_){} }, 1500);
+    }
+  }
   if(val && val.data){ DB=val.data; }
   else { const raw=localStorage.getItem(DB_KEY); try{ DB = raw?JSON.parse(raw):seed(); }catch(_){ DB=seed(); } }
   migrate();
@@ -116,6 +144,8 @@ async function cloudInit(){
   try{
     fbdb.ref('state').on('value', (snap)=>{
       const v=snap.val(); if(!v || !v.data || v.client===CLIENT_ID) return;
+      // Defensa: nunca dejar que un estado vacío o corrupto (sin usuarios) borre todo en cada dispositivo
+      if(!Array.isArray(v.data.users) || v.data.users.length===0){ console.warn('estado remoto inválido, ignorado'); return; }
       _applyingRemote=true;
       try{
         DB=v.data; migrate(); // normalizar datos entrantes para que nunca falten colecciones
@@ -130,7 +160,8 @@ async function cloudInit(){
 
 function seed(){
   const s1=uid(), s2=uid();
-  const U = (name,role,suc,phone='',pin='1234')=>({id:uid(),name,role,pin,sucursalId:suc,phone,active:true});
+  // PIN temporal 1234 solo para el primer arranque: cada quien define el suyo al entrar (mustChangePin)
+  const U = (name,role,suc,phone='',pin='1234')=>({id:uid(),name,role,pin,sucursalId:suc,phone,active:true,mustChangePin:true});
   const users = [
     U('Kenneth Villalobos','admin','all','8302-1145'),
     U('Marco Jiménez','chef',s1,'8711-2390'),
@@ -344,6 +375,51 @@ const me = () => (DB.users||[]).find(u=>u.id===SES.userId);
 const userById = id => (DB.users||[]).find(u=>u.id===id);
 const isAdmin = () => me() && me().role==='admin';
 const hasRole = (...rs) => me() && rs.includes(me().role);
+
+/* ---------------- PIN seguro (hash con sal, nunca texto plano) ----------------
+   El PIN ya no se guarda en texto: se guarda pinSalt + pinHash (SHA-256). Así, aunque
+   alguien vea los datos, no obtiene el PIN. Compatible hacia atrás: si un usuario todavía
+   tiene "pin" viejo en texto, el login funciona y lo actualiza a hash al entrar. */
+function genSalt(){
+  try{ const a=new Uint8Array(16); crypto.getRandomValues(a); return Array.from(a,b=>b.toString(16).padStart(2,'0')).join(''); }
+  catch(_){ return Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2); }
+}
+async function hashPin(pin, salt){
+  try{
+    if(self.crypto && crypto.subtle){
+      const data=new TextEncoder().encode('saborTico|'+salt+'|'+String(pin));
+      const buf=await crypto.subtle.digest('SHA-256', data);
+      return Array.from(new Uint8Array(buf),b=>b.toString(16).padStart(2,'0')).join('');
+    }
+  }catch(_){}
+  return null; // sin Web Crypto (contexto no seguro): se usa respaldo en texto
+}
+async function setUserPin(u, pin){
+  const salt=genSalt(); const h=await hashPin(pin,salt);
+  if(h){ u.pinSalt=salt; u.pinHash=h; delete u.pin; }
+  else { u.pin=String(pin); delete u.pinHash; delete u.pinSalt; }
+}
+async function verifyPin(u, pin){
+  if(!u) return false;
+  if(u.pinHash && u.pinSalt){
+    const h=await hashPin(pin,u.pinSalt);
+    if(h===null){ toast('Este dispositivo no puede verificar el PIN de forma segura. Abrí la app por HTTPS.','err'); return false; }
+    return h===u.pinHash;
+  }
+  return String(pin)===String(u.pin||''); // PIN viejo en texto (compatibilidad)
+}
+async function migratePins(){
+  if(!Array.isArray(DB.users) || !(self.crypto && crypto.subtle)) return;
+  let changed=false;
+  for(const u of DB.users){ if(u && u.pin && !u.pinHash){ await setUserPin(u, u.pin); changed=true; } }
+  if(changed){ try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(_){} if(cloudOn && !_applyingRemote) cloudPush(); }
+}
+/* Bloqueo tras varios intentos fallidos (por dispositivo) */
+const LFK='saborTico_loginfail';
+function loginFailState(){ try{ return JSON.parse(localStorage.getItem(LFK)||'{}'); }catch(_){ return {}; } }
+function loginLockedUntil(){ return loginFailState().until||0; }
+function registerLoginFail(){ const s=loginFailState(); s.n=(s.n||0)+1; if(s.n>=5){ s.until=now()+15*60*1000; s.n=0; } try{ localStorage.setItem(LFK,JSON.stringify(s)); }catch(_){} }
+function clearLoginFails(){ try{ localStorage.removeItem(LFK); }catch(_){} }
 // Inventario por área: Cocina (Proveeduría/Chef) y Bar (Bartender/Jefe de Salón)
 function invAreasFor(){
   if(hasRole('admin','contarh','gerencia_data')) return ['cocina','bar'];
@@ -511,6 +587,15 @@ function readImages(fileList){
     rd.readAsDataURL(f);
   })));
 }
+// Abre una imagen a pantalla completa leyendo el src ya validado del elemento (sin document.write ni datos en el onclick)
+function openImgFromEl(el){
+  const s=safeImg(el && el.getAttribute && el.getAttribute('src')); if(!s) return;
+  const w=window.open('','_blank'); if(!w) return;
+  try{ w.document.title='Imagen'; w.document.body.style.margin='0'; w.document.body.style.background='#000';
+    const i=w.document.createElement('img'); i.src=s; i.style.maxWidth='100%'; i.style.display='block'; i.style.margin='0 auto';
+    w.document.body.appendChild(i); }catch(_){}
+}
+window.openImgFromEl=openImgFromEl;
 
 /* =====================================================================
    NAVEGACIÓN
@@ -811,7 +896,7 @@ function taskDetail(id){
   const amResp = t.toIds.includes(SES.userId);
   const canManage = amResp || t.fromId===SES.userId || isAdmin();
 
-  const imgs = (t.images||[]).map(s=>`<img src="${s}" onclick="window.open().document.write('<img src=\\'${s}\\' style=max-width:100%>')">`).join('');
+  const imgs = (t.images||[]).map(s=>safeImg(s)).filter(Boolean).map(s=>`<img src="${s}" style="cursor:zoom-in" onclick="openImgFromEl(this)">`).join('');
   const logHtml = [...t.log].reverse().map(l=>{
     const u=userById(l.byId);
     return `<div class="log-item"><b>${u?esc((u.name||'').split(' ')[0]):'—'}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`;
@@ -980,7 +1065,7 @@ window.editTaskModal=editTaskModal;
 
 async function pickImgs(input){
   newImgs = await readImages(input.files);
-  $('#ntImgPrev').innerHTML = newImgs.map(s=>`<img src="${s}">`).join('');
+  $('#ntImgPrev').innerHTML = newImgs.map(s=>`<img src="${safeImg(s)}">`).join('');
 }
 window.pickImgs=pickImgs;
 
@@ -1517,14 +1602,14 @@ document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElemen
 window.toggleBoardFull=toggleBoardFull;
 function projSide(proj){
   const msgs=(proj.chat||[]).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
-    const media=m.media?(m.media.type==='video'?`<video src="${m.media.data}" controls></video>`:m.media.type==='image'?`<img src="${m.media.data}">`:`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
+    const media=m.media?(m.media.type==='video'?`<video src="${safeVid(m.media.data)}" controls></video>`:m.media.type==='image'?`<img src="${safeImg(m.media.data)}">`:`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
     return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
   const inCall=proj.call&&proj.call.active;
   return `<div class="proj-side">
     <div class="proj-side-head"><span style="font-weight:700;font-size:13px">Chat del grupo</span><div class="ph-spacer"></div>
       <button class="btn ${inCall?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 11px" onclick="openCall('${proj.id}')">${svgIcon('video','icon icon-sm')} ${inCall?'En llamada · '+proj.call.participants.length:'Llamada'}</button></div>
     <div class="proj-chat" id="projChatMsgs">${msgs||'<div style="margin:auto;color:var(--text-soft);font-size:13px;text-align:center;padding:24px">Escribí acá para coordinar mientras trabajan la pizarra.</div>'}</div>
-    ${projPending?`<div class="chat-pending">${projPending.type==='video'?`<video src="${projPending.data}"></video>`:projPending.type==='image'?`<img src="${projPending.data}">`:`<span class="chat-file-ic">${svgIcon(fileIconFor(projPending.mime,projPending.filename),'icon icon-sm')}</span>`}<span>${projPending.type==='file'?esc(projPending.filename):(projPending.type==='video'?'Video':'Foto')+' listo'}</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="projPending=null;render()">Quitar</button></div>`:''}
+    ${projPending?`<div class="chat-pending">${projPending.type==='video'?`<video src="${safeVid(projPending.data)}"></video>`:projPending.type==='image'?`<img src="${safeImg(projPending.data)}">`:`<span class="chat-file-ic">${svgIcon(fileIconFor(projPending.mime,projPending.filename),'icon icon-sm')}</span>`}<span>${projPending.type==='file'?esc(projPending.filename):(projPending.type==='video'?'Video':'Foto')+' listo'}</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="projPending=null;render()">Quitar</button></div>`:''}
     <div class="chat-input">
       <input type="file" id="projFile" accept="image/*,video/*,.pdf,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" style="display:none" onchange="projAttachPick('${proj.id}')">
       <button class="chat-attach" title="Adjuntar foto o video" onclick="document.getElementById('projFile').click()">${svgIcon('clip')}</button>
@@ -1560,7 +1645,7 @@ function boardCard(projId,c){
   return `<div class="bcard note${c.parentId?' reply':''}" style="left:${c.x||20}px;top:${c.y||20}px;${c.color?`background:${c.color}`:''}" onpointerdown="bcardDown(event,'${projId}','${c.id}')">
     ${canEdit?`<button class="bc-btn bc-del" title="Quitar" onclick="delCard('${projId}','${c.id}')">${svgIcon('x','icon icon-sm')}</button>`:''}
     ${c.parentId?'<div class="reply-tag">↳ respuesta</div>':''}
-    ${c.img?`<img src="${c.img}" draggable="false">`:''}
+    ${c.img?`<img src="${safeImg(c.img)}" draggable="false">`:''}
     ${c.text?`<div class="bc-text">${esc(c.text)}</div>`:''}
     <div class="bc-foot"><span class="bc-meta">${u?esc((u.name||'').split(' ')[0]):'—'} · ${timeAgo(c.at)}</span>
       <button class="bc-btn bc-reply" title="Responder con una nota" onclick="replyModal('${projId}','${c.id}')">${svgIcon('message','icon icon-sm')} Responder</button></div>
@@ -1600,7 +1685,7 @@ function cardDetailModal(projId,cardId){
     <div class="modal-body">
       ${c.type==='file'?`<div class="fc-detail"><span class="fc-card-ic">${svgIcon(fileIconFor(f.mime,f.filename),'icon')}</span><div class="fc-card-tx"><div class="fc-card-name">${esc(c.text||f.filename||'Archivo')}</div><div class="fc-card-sub">${esc(f.filename||'')}${f.size?' · '+fmtFileSize(f.size):''}</div></div></div>
         <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap"><button class="btn btn-primary" style="flex:1 1 140px" onclick="openProjFile('${projId}','${cardId}')">${svgIcon('search','icon icon-sm')} Abrir</button><button class="btn btn-ghost" style="flex:1 1 140px" onclick="downloadProjFile('${projId}','${cardId}')">${svgIcon('save','icon icon-sm')} Descargar</button></div>`:''}
-      ${c.img?`<img src="${c.img}" style="width:100%;border-radius:var(--r-md);margin-bottom:12px">`:''}
+      ${c.img?`<img src="${safeImg(c.img)}" style="width:100%;border-radius:var(--r-md);margin-bottom:12px">`:''}
       ${c.text&&c.type!=='file'?`<div style="font-size:${c.type==='title'?'20px;font-weight:800':'14px'};line-height:1.6;white-space:pre-wrap">${esc(c.text)}</div>`:''}
       <div class="page-sub" style="margin:10px 0 2px">${u?esc(u.name):'—'} · ${fmtDateTime(c.at)}${kids.length?' · '+kids.length+' respuesta(s)':''}</div>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
@@ -1676,7 +1761,7 @@ function addCardModal(projId,type){
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="addCard('${projId}','${type}')">Agregar a la pizarra</button></div>`);
 }
 window.addCardModal=addCardModal;
-async function pickCardImg(input){ const a=await readImages(input.files); cardImg=a[0]||null; $('#cardImgPrev').innerHTML=cardImg?`<img src="${cardImg}">`:''; }
+async function pickCardImg(input){ const a=await readImages(input.files); cardImg=a[0]||null; $('#cardImgPrev').innerHTML=cardImg?`<img src="${safeImg(cardImg)}">`:''; }
 window.pickCardImg=pickCardImg;
 function addCard(projId,type){
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
@@ -1878,7 +1963,7 @@ function viewChat(){
     const name=c.type==='group'?c.name:(u?u.name:'Chat');
     const ur=chatUnread(c);
     return `<div class="chat-li ${sel===c.id?'sel':''}" onclick="openChat('${c.id}')">
-      ${c.type==='group'?`<div class="av" style="background:var(--accent)">${(c.name||'#')[0]}</div>`:avatarHTML(u)}
+      ${c.type==='group'?`<div class="av" style="background:var(--accent)">${esc((c.name||'#')[0])}</div>`:avatarHTML(u)}
       <div style="min-width:0"><div class="cn">${esc(name)} ${c.type==='group'?'<span style="font-size:10px;color:var(--text-soft)">grupo</span>':''}</div>
       <div class="cp">${last?esc(((userById(last.byId)?.name||'').split(' ')[0]||'')+': '+(last.text||'')):'Sin mensajes'}</div></div>
       ${ur?`<span class="cbadge">${ur}</span>`:''}</div>`;
@@ -1893,7 +1978,7 @@ function viewChat(){
     const visibleMsgs=(cur.msgs||[]).filter(m=> !((m.hiddenFor||[]).includes(SES.userId)));
     const msgsHtml = visibleMsgs.map(m=>{
       const u=userById(m.byId); const mine=m.byId===SES.userId;
-      const media = m.media ? (m.media.type==='video' ? `<video src="${m.media.data}" controls></video>` : `<img src="${m.media.data}">`) : '';
+      const media = m.media ? (m.media.type==='video' ? `<video src="${safeVid(m.media.data)}" controls></video>` : `<img src="${safeImg(m.media.data)}">`) : '';
       return `<div class="msg ${mine?'mine':''}">${(!mine&&cur.type==='group')?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})} <button class="msg-del" title="Eliminar" onclick="delMsgMenu('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button></div></div>`;
     }).join('');
     paneHtml=`<div class="chat-pane" id="chatPane">
@@ -1909,7 +1994,7 @@ function viewChat(){
       </div>
       <div class="chat-msgs" id="chatMsgs">${msgsHtml||'<div style="margin:auto;color:var(--text-soft);font-size:13px">Escribí el primer mensaje 👋</div>'}</div>
       ${curMem.includes(SES.userId)?`
-        ${chatPending?`<div class="chat-pending">${chatPending.type==='video'?`<video src="${chatPending.data}"></video>`:`<img src="${chatPending.data}">`}<span>${chatPending.type==='video'?'Video':'Foto'} listo para enviar</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="chatPending=null;render()">Quitar</button></div>`:''}
+        ${chatPending?`<div class="chat-pending">${chatPending.type==='video'?`<video src="${safeVid(chatPending.data)}"></video>`:`<img src="${safeImg(chatPending.data)}">`}<span>${chatPending.type==='video'?'Video':'Foto'} listo para enviar</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="chatPending=null;render()">Quitar</button></div>`:''}
         <div class="chat-input">
           <input type="file" id="chatFile" accept="image/*,video/*" style="display:none" onchange="chatAttachPick('${cur.id}')">
           <button class="chat-attach" title="Adjuntar foto o video" onclick="document.getElementById('chatFile').click()">${svgIcon('clip')}</button>
@@ -2126,7 +2211,7 @@ function viewEquipo(){
     if(!people.length){ html+=`<div class="card" style="color:var(--text-soft);font-size:13px">Sin personas en esta sucursal.</div>`; return; }
     html+=`<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Teléfono</th><th>Estado</th><th></th></tr></thead><tbody>`;
     html+=people.map(u=>`<tr>
-      <td><div style="display:flex;align-items:center;gap:10px">${avatarHTML(u)}<div><div style="font-weight:600">${esc(u.name)}</div><div style="font-size:11px;color:var(--text-soft)">PIN ${u.pin}</div></div></div></td>
+      <td><div style="display:flex;align-items:center;gap:10px">${avatarHTML(u)}<div><div style="font-weight:600">${esc(u.name)}</div><div style="font-size:11px;color:var(--text-soft)">${u.mustChangePin?'PIN temporal · sin definir':'PIN ••••'}</div></div></div></td>
       <td><span class="role-badge">${roleInfo(u.role).label}</span></td>
       <td>${esc(u.phone||'—')}</td>
       <td>${u.active?'<span class="pill hecha">Activo</span>':'<span class="pill rechazada">Inactivo</span>'}</td>
@@ -2148,7 +2233,7 @@ function userForm(title,u){
     <div class="field"><label>Nombre completo</label><input class="input" id="uName" value="${u?esc(u.name):''}" placeholder="Nombre y apellido"></div>
     <div class="row2">
       <div class="field"><label>Puesto</label><select class="select" id="uRole">${ROLE_KEYS.map(r=>`<option value="${r}" ${u&&u.role===r?'selected':''}>${ROLES[r].label}</option>`).join('')}</select></div>
-      <div class="field"><label>PIN (4 dígitos)</label><input class="input" id="uPin" maxlength="4" value="${u?u.pin:'1234'}"></div>
+      <div class="field"><label>PIN (4 dígitos)</label><input class="input" id="uPin" type="password" inputmode="numeric" maxlength="4" value="" placeholder="${u?'Dejar en blanco = no cambiar':'4 dígitos'}"></div>
     </div>
     <div class="row2">
       <div class="field"><label>Sucursal</label><select class="select" id="uSuc"><option value="all" ${u&&u.sucursalId==='all'?'selected':''}>Todas (global)</option>${DB.sucursales.map(s=>`<option value="${s.id}" ${u&&u.sucursalId===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
@@ -2158,11 +2243,22 @@ function userForm(title,u){
   </div>
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveUser('${u?u.id:''}')">Guardar</button></div>`;
 }
-function saveUser(id){
+async function saveUser(id){
   const name=$('#uName').value.trim(); if(!name){ toast('Ponele nombre','err'); return; }
-  const data={name,role:$('#uRole').value,pin:$('#uPin').value||'1234',sucursalId:$('#uSuc').value,phone:($('#uPhone')?$('#uPhone').value.trim():'')};
-  if(id){ const u=userById(id); Object.assign(u,data); u.active=$('#uActive').value==='1'; audit('equipo',`editó al usuario ${name}`); }
-  else { DB.users.push({id:uid(),...data,active:true}); audit('equipo',`agregó al usuario ${name} (${roleInfo(data.role).short})`); }
+  const role=$('#uRole').value, sucursalId=$('#uSuc').value, phone=($('#uPhone')?$('#uPhone').value.trim():'');
+  const pinRaw=($('#uPin')?$('#uPin').value.trim():'');
+  if(id){
+    const u=userById(id); if(!u) return;
+    u.name=name; u.role=role; u.sucursalId=sucursalId; u.phone=phone; u.active=$('#uActive').value==='1';
+    if(pinRaw){ if(!/^\d{4}$/.test(pinRaw)){ toast('El PIN debe ser de 4 dígitos','err'); return; } await setUserPin(u,pinRaw); u.mustChangePin=false; }
+    audit('equipo',`editó al usuario ${name}`);
+  } else {
+    if(!/^\d{4}$/.test(pinRaw)){ toast('Poné un PIN de 4 dígitos para el nuevo usuario','err'); return; }
+    const u={id:uid(),name,role,sucursalId,phone,active:true,mustChangePin:true};
+    await setUserPin(u,pinRaw);
+    DB.users.push(u);
+    audit('equipo',`agregó al usuario ${name} (${roleInfo(role).short})`);
+  }
   closeModal(); toast('Usuario guardado','ok'); render();
 }
 window.saveUser=saveUser;
@@ -2187,7 +2283,7 @@ function viewAuditoria(){
   const guide=sectionGuide('auditoria','¿Qué son los Movimientos?',`
     Es el <b>registro de todo lo que pasa</b> en la app: quién creó, cambió o entregó algo, y cuándo.
     <ul style="margin:8px 0 0 18px">
-      <li>No se puede borrar ni editar — es a prueba de trampas.</li>
+      <li>Solo se agrega: las acciones quedan registradas con quién y cuándo.</li>
       <li>Sirve para saber <b>quién cumple y quién no</b>, y detectar movimientos raros.</li>
     </ul>
     <div class="tip"><b>Importante:</b> esta es tu herramienta de control total. Revisala seguido.</div>`);
@@ -2420,9 +2516,9 @@ function ipPreview(){
 }
 window.ipPreview=ipPreview;
 function saveProduct(id){
-  const name=$('#ipName').value.trim(); if(!name){ toast('Ponele nombre','err'); return; }
-  const data={name,area:($('#ipArea')?$('#ipArea').value:'cocina'),category:$('#ipCat').value,unit:$('#ipUnit').value,stock:+$('#ipStock').value||0,
-    minStock:+$('#ipMin').value||0,cost:+$('#ipCost').value||0,supplier:$('#ipSup').value.trim(),sucursalId:$('#ipSuc').value};
+  const name=clip($('#ipName').value,80); if(!name){ toast('Ponele nombre','err'); return; }
+  const data={name,area:($('#ipArea')?$('#ipArea').value:'cocina'),category:$('#ipCat').value,unit:$('#ipUnit').value,stock:numClamp($('#ipStock').value,0,1e7),
+    minStock:numClamp($('#ipMin').value,0,1e7),cost:numClamp($('#ipCost').value,0,1e9),supplier:clip($('#ipSup').value,80),sucursalId:$('#ipSuc').value};
   if(id){ const p=DB.inventory.find(x=>x.id===id); Object.assign(p,data); audit('inventario',`editó el producto "${name}"`,p.sucursalId); }
   else { DB.inventory.push({id:uid(),...data}); audit('inventario',`agregó el producto "${name}"`,data.sucursalId); }
   closeModal(); toast('Producto guardado','ok'); render();
@@ -2552,20 +2648,20 @@ function facUpdateTotal(){
   el.innerHTML = facLines.length ? `<span>Total · ${facLines.length} ${facLines.length===1?'producto':'productos'}</span><b>${money(t)}</b>` : '';
 }
 function saveInvoice(){
-  const supplier=$('#facSup').value.trim();
-  const number=$('#facNum').value.trim();
+  const supplier=clip($('#facSup').value,80);
+  const number=clip($('#facNum').value,40);
   const date=$('#facDate')?$('#facDate').value:'';
   const sucursalId=$('#facSuc').value;
   const area=$('#facArea').value;
-  const note=$('#facNote').value.trim();
+  const note=clip($('#facNote').value,500);
   const lines=facLines.filter(l=>(l.productId||(l.name||'').trim()) && (+l.qty>0));
   if(!lines.length){ toast('Agregá al menos un producto con cantidad','err'); return; }
   const invId=uid(); let total=0; const items=[];
   lines.forEach(l=>{
-    const qty=+l.qty||0, cost=+l.cost||0, lt=qty*cost; total+=lt;
+    const qty=numClamp(l.qty,0,1e7), cost=numClamp(l.cost,0,1e9), lt=qty*cost; total+=lt;
     let p=l.productId?DB.inventory.find(x=>x.id===l.productId):null, pid=l.productId;
     if(!p){
-      p={id:uid(),name:(l.name||'Producto').trim(),area,category:l.category||catsForArea(area)[0]||'General',unit:l.unit||'unid',stock:0,minStock:0,cost,supplier,sucursalId};
+      p={id:uid(),name:clip(l.name||'Producto',80),area,category:l.category||catsForArea(area)[0]||'General',unit:l.unit||'unid',stock:0,minStock:0,cost,supplier,sucursalId};
       DB.inventory.push(p); pid=p.id;
     }
     p.stock=+(p.stock+qty).toFixed(2);
@@ -4124,7 +4220,7 @@ function renderLogin(){
   if(!loginSuc && sucs.length>1){
     area.innerHTML=`<div class="login-label">Elegí la sucursal</div>
       <div class="suc-pick">${sucs.map(s=>`<button class="suc-card" onclick="pickSuc('${s.id}')">${svgIcon('pin')} ${esc(s.name)}</button>`).join('')}</div>
-      <div class="login-hint">Cada quien entra con su nombre y su PIN. Para la demo el PIN es <b>1234</b> (cambialo en Equipo).</div>`;
+      <div class="login-hint">Cada quien entra con su nombre y su PIN personal. No compartás tu PIN.</div>`;
     return;
   }
   if(!loginSuc && sucs.length===1) loginSuc=sucs[0].id;
@@ -4150,11 +4246,18 @@ function pickUser(id){
   const pi=$('#pinInput'); if(pi) pi.focus();
 }
 window.pickUser=pickUser;
-function doLogin(){
+async function doLogin(){
   if(!pickedUser){ toast('Elegí quién sos','err'); return; }
   const u=userById(pickedUser);
   if(!u){ toast('Elegí quién sos','err'); return; }
-  if($('#pinInput').value!==u.pin){ toast('PIN incorrecto','err'); return; }
+  const lockMs=loginLockedUntil()-now();
+  if(lockMs>0){ toast('Demasiados intentos. Esperá '+Math.ceil(lockMs/60000)+' min.','err'); return; }
+  const pin=($('#pinInput')?$('#pinInput').value:'')||'';
+  const okPin=await verifyPin(u,pin);
+  if(!okPin){ registerLoginFail(); toast('PIN incorrecto','err'); return; }
+  clearLoginFails();
+  // Subir PIN viejo en texto a hash de forma transparente
+  if(!u.pinHash && (self.crypto&&crypto.subtle)){ try{ await setUserPin(u,pin); save(); }catch(_){} }
   SES.userId=u.id; SES.sucFilter='all'; SES.view='inicio';
   const keep = $('#rememberMe') ? $('#rememberMe').checked : loginRemember;
   loginRemember = keep;
@@ -4167,8 +4270,31 @@ function doLogin(){
   $('#app').classList.add('on');
   toast('Bienvenido, '+(u.name||'').split(' ')[0],'ok');
   render();
+  maybeForcePinChange();
 }
 window.doLogin=doLogin;
+
+/* Si el admin creó al usuario con PIN temporal, lo obligamos a definir el suyo al entrar */
+function maybeForcePinChange(){
+  const u=me(); if(!u || !u.mustChangePin) return;
+  openModal(`<div class="modal-head"><h3>Definí tu PIN</h3></div>
+    <div class="modal-body">
+      <p class="page-sub" style="margin-top:0">Por seguridad, elegí un PIN nuevo de 4 dígitos. No lo compartás con nadie.</p>
+      <div class="field"><label>Nuevo PIN (4 dígitos)</label><input class="input" id="fpcPin" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+      <div class="field"><label>Repetir PIN</label><input class="input" id="fpcPin2" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" style="width:100%" onclick="saveForcedPin()">Guardar mi PIN</button></div>`);
+}
+async function saveForcedPin(){
+  const p=($('#fpcPin')?$('#fpcPin').value:'')||'', p2=($('#fpcPin2')?$('#fpcPin2').value:'')||'';
+  if(!/^\d{4}$/.test(p)){ toast('El PIN debe ser de 4 dígitos','err'); return; }
+  if(p!==p2){ toast('Los PIN no coinciden','err'); return; }
+  if(p==='1234'||p==='0000'||p==='1111'){ toast('Elegí un PIN menos obvio','err'); return; }
+  const u=me(); if(!u) return;
+  await setUserPin(u,p); delete u.mustChangePin; save();
+  closeModal(); toast('PIN actualizado','ok'); render();
+}
+window.saveForcedPin=saveForcedPin;
 
 function logout(){
   SES.userId=null; sessionStorage.removeItem('saborTico_ses'); localStorage.removeItem('saborTico_ses');
@@ -4181,9 +4307,14 @@ window.logout=logout;
 const impInput=document.createElement('input'); impInput.type='file'; impInput.id='importFile'; impInput.accept='.json'; impInput.style.display='none';
 document.body.appendChild(impInput);
 impInput.addEventListener('change',async e=>{
-  const f=e.target.files[0]; if(!f) return;
-  try{ const d=JSON.parse(await f.text()); DB=d; save(); toast('Respaldo restaurado','ok'); render(); }
-  catch(err){ toast('Ese archivo no me sirve','err'); }
+  const f=e.target.files[0]; e.target.value=''; if(!f) return;          // permitir re-importar el mismo archivo
+  if(!isAdmin()){ toast('Solo Gerencia puede restaurar respaldos','err'); return; }
+  if(f.size>15*1024*1024){ toast('El archivo es demasiado grande','err'); return; }
+  let d; try{ d=JSON.parse(await f.text()); }catch(_){ toast('Ese archivo no me sirve','err'); return; }
+  if(!d || typeof d!=='object' || !Array.isArray(d.users) || d.users.length===0){ toast('Ese respaldo no tiene el formato correcto','err'); return; }
+  if(!await confirmDialog('Esto REEMPLAZA todos los datos actuales (en todos los dispositivos) por los del archivo "'+(f.name||'respaldo')+'". No se puede deshacer.',{title:'¿Restaurar respaldo?',okText:'Sí, restaurar'})) return;
+  try{ localStorage.setItem(DB_KEY+'_prevbackup', JSON.stringify(DB)); }catch(_){}  // copia de seguridad por si acaso
+  DB=d; ensureCollections(); migrate(); save(); toast('Respaldo restaurado','ok'); render();
 });
 
 /* =====================================================================
@@ -4193,9 +4324,10 @@ impInput.addEventListener('change',async e=>{
   const t=localStorage.getItem('saborTico_theme'); if(t) document.documentElement.setAttribute('data-theme',t);
   let ok=false; try{ ok=await cloudInit(); }catch(e){ console.warn('cloud init', e); }
   if(!ok) load();
+  try{ await migratePins(); }catch(_){}   // pasar PIN viejos en texto a hash, una sola vez
   renderLogin();
   const ses=localStorage.getItem('saborTico_ses')||sessionStorage.getItem('saborTico_ses');
-  if(ses && userById(ses)){ SES.userId=ses; notifBaseline(); $('#loginScreen').style.display='none'; $('#app').classList.add('on'); render(); }
+  if(ses && userById(ses)){ SES.userId=ses; notifBaseline(); $('#loginScreen').style.display='none'; $('#app').classList.add('on'); render(); maybeForcePinChange(); }
   requestAnimationFrame(()=>requestAnimationFrame(()=>document.body.classList.remove('app-loading')));
 })();
 /* Sabor Tico App — fin */
