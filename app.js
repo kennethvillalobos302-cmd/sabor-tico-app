@@ -378,6 +378,9 @@ function inScope(sucId){
 /* ---------------- Auditoría (anti-fraude, solo se agrega) ---------------- */
 function audit(action, detail, sucId){
   DB.audit.unshift({id:uid(),byId:SES.userId,action,detail,sucursalId:sucId||(me()?me().sucursalId:'all'),at:now()});
+  // Toda acción auditada es un cambio real de datos: persistir y sincronizar a la nube
+  // (así lo creado por un perfil — tareas, pedidos, etc. — llega a los demás).
+  save();
 }
 
 /* ---------------- Notificaciones ---------------- */
@@ -653,7 +656,7 @@ function horaSaludo(){ const h=new Date().getHours(); return h<12?'Buenos días'
    ===================================================================== */
 let taskFilter='todas', taskSearch='';
 function viewTareas(){
-  const all = (DB.tasks||[]).filter(t=>t&&inScope(t.sucursalId)).filter(visibleTask);
+  const all = (DB.tasks||[]).filter(t=> t && visibleTask(t) && (inScope(t.sucursalId) || (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId));
   refreshOverdue();
   let list=[...all];
   if(taskFilter==='mias') list=list.filter(t=>(t.toIds||[]).includes(SES.userId));
@@ -931,7 +934,7 @@ function createTask(){
   DB.tasks.unshift(t);
   audit('tarea',`creó "${d.title}" → ${d.toIds.map(i=>userById(i)?.name.split(' ')[0]).join(', ')}`,t.sucursalId);
   notify(d.toIds, `${me().name.split(' ')[0]} te asignó: "${d.title}"`, '✅', {view:'tareas'});
-  closeModal(); toast('Tarea creada y notificada ✅','ok'); render();
+  closeModal(); toast('Tarea creada y notificada ✅','ok'); save(); render();
 }
 window.createTask=createTask;
 function saveTaskEdit(id){
@@ -962,7 +965,7 @@ function sucOptionsFor(){
    ===================================================================== */
 let pedFilter='activos', pedSearch='';
 function viewPedidos(){
-  const all=DB.pedidos.filter(p=>inScope(p.sucursalId)).filter(visiblePedido);
+  const all=(DB.pedidos||[]).filter(p=> p && visiblePedido(p) && (inScope(p.sucursalId) || p.fromId===SES.userId || pedAreaMine(p.area)));
   let list=[...all];
   if(pedFilter==='activos') list=list.filter(p=>p.status==='pendiente'||p.status==='proceso');
   else if(pedFilter==='mios') list=list.filter(p=>p.fromId===SES.userId);
@@ -1200,7 +1203,7 @@ function createPedido(){
   audit('pedido',`pidió "${d.item}" a ${info.short}`,p.sucursalId);
   const targets=DB.users.filter(u=>(info.roles||[]).includes(u.role)).map(u=>u.id);
   notify(targets, `${me().name.split(' ')[0]} pidió: "${d.item}" (${info.short})`, 'pedido', {view:'pedidos'});
-  closeModal(); toast('Pedido enviado','ok'); render();
+  closeModal(); toast('Pedido enviado','ok'); save(); render();
 }
 window.createPedido=createPedido;
 function savePedidoEdit(id){
@@ -1902,7 +1905,7 @@ function newDMModal(){
 window.newDMModal=newDMModal;
 function startDM(otherId){
   let c=DB.chats.find(x=>x.type==='dm'&&x.memberIds.length===2&&x.memberIds.includes(SES.userId)&&x.memberIds.includes(otherId));
-  if(!c){ c={id:uid(),type:'dm',name:'',memberIds:[SES.userId,otherId],sucursalId:me().sucursalId,createdById:SES.userId,createdAt:now(),msgs:[]}; DB.chats.unshift(c); }
+  if(!c){ c={id:uid(),type:'dm',name:'',memberIds:[SES.userId,otherId],sucursalId:me().sucursalId,createdById:SES.userId,createdAt:now(),msgs:[]}; DB.chats.unshift(c); save(); }
   closeModal(); SES.activeChat=c.id; SES.view='chat'; render();
 }
 window.startDM=startDM;
