@@ -121,7 +121,7 @@ async function cloudInit(){
         DB=v.data; migrate(); // normalizar datos entrantes para que nunca falten colecciones
         try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
         const modalOpen=$('#modalBg').classList.contains('on');
-        if(me()){ if(!modalOpen) render(); } else { renderLogin(); }
+        if(me()){ if(!modalOpen) render(); try{ checkNotifPops(); }catch(_){} } else { renderLogin(); }
       } finally { _applyingRemote=false; }
     });
   }catch(e){ console.warn('cloud realtime', e); }
@@ -404,6 +404,63 @@ function notify(userIds, text, ico, link){
 const myNotifs = () => (DB.notifs||[]).filter(n=>n&&n.userId===SES.userId);
 const unreadCount = () => myNotifs().filter(n=>!n.read).length;
 
+/* ---- Aviso de notificaciones que llegan (popup + sonido + vibración) ---- */
+let _notifSeenAt = 0;            // marca de tiempo: solo avisamos lo que llega después
+function notifBaseline(){        // al entrar, no avisar el historial viejo
+  const mine = myNotifs();
+  _notifSeenAt = mine.length ? Math.max.apply(null, mine.map(n=>n.at||0)) : now();
+}
+// AudioContext compartido; se "desbloquea" con el primer toque (requisito de celulares)
+let _audioCtx=null;
+function unlockAudio(){
+  try{
+    if(!_audioCtx){ const AC=window.AudioContext||window.webkitAudioContext; if(AC) _audioCtx=new AC(); }
+    if(_audioCtx && _audioCtx.state==='suspended') _audioCtx.resume();
+  }catch(_){}
+}
+function playNotifSound(){
+  try{
+    unlockAudio();
+    if(!_audioCtx) return;
+    const ctx=_audioCtx, t0=ctx.currentTime;
+    [{f:784,t:0},{f:1175,t:0.12}].forEach(no=>{   // dos tonos: un "ding" agradable
+      const o=ctx.createOscillator(), g=ctx.createGain(), s=t0+no.t;
+      o.type='sine'; o.frequency.value=no.f;
+      g.gain.setValueAtTime(0,s);
+      g.gain.linearRampToValueAtTime(0.2,s+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,s+0.30);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(s); o.stop(s+0.32);
+    });
+  }catch(_){}
+}
+function notifToast(n){
+  const w=$('#toastWrap'); if(!w) return;
+  const iv = ({tareas:'check',pedidos:'box',inventario:'chart',horarios:'calendar',chat:'message',proyectos:'clipboard',reportes:'trend'})[(n.link&&n.link.view)]||'bell';
+  const t=document.createElement('div'); t.className='toast toast-notif';
+  t.innerHTML=`<span class="tn-ico">${svgIcon(iv)}</span>`+
+    `<div class="tn-body"><div class="tn-title">Nueva notificación</div><div class="tn-text">${esc(n.text)}</div></div>`+
+    `<button class="tn-close" aria-label="Cerrar">✕</button>`;
+  let gone=false;
+  const dismiss=()=>{ if(gone)return; gone=true; t.classList.remove('show'); setTimeout(()=>t.remove(),300); };
+  t.querySelector('.tn-close').onclick=e=>{ e.stopPropagation(); dismiss(); };
+  t.onclick=()=>{ dismiss(); openNotif(n.id); };
+  w.appendChild(t);
+  requestAnimationFrame(()=>t.classList.add('show'));
+  setTimeout(dismiss,6000);
+}
+function checkNotifPops(){
+  if(!SES.userId) return;
+  const fresh = myNotifs().filter(n=>n && (n.at||0) > _notifSeenAt);
+  if(!fresh.length) return;
+  _notifSeenAt = Math.max.apply(null,[_notifSeenAt].concat(fresh.map(n=>n.at||0)));
+  fresh.sort((a,b)=>(a.at||0)-(b.at||0)).slice(-3).forEach(notifToast);  // máx. 3 popups, más nuevo arriba
+  playNotifSound();
+  if(navigator.vibrate){ try{ navigator.vibrate([45,60,45]); }catch(_){} }
+}
+// Desbloquear el audio en el primer gesto del usuario (móvil exige interacción)
+['pointerdown','touchstart','keydown'].forEach(ev=>document.addEventListener(ev,unlockAudio,{passive:true}));
+
 /* ---------------- Toasts ---------------- */
 function toast(text, kind=''){
   const w=$('#toastWrap'); const t=document.createElement('div');
@@ -557,6 +614,7 @@ function render(){
   if(!me()){ return; }
   try{
   checkShiftReminders();
+  try{ checkNotifPops(); }catch(_){}   // avisar (popup+sonido) lo nuevo, p.ej. recordatorios de turno
   const ct=$('#cloudTag'); if(ct) ct.classList.toggle('hidden',!cloudOn);
   // topbar
   const tbAv=$('#tbAv'); if(tbAv){ tbAv.style.background=roleInfo(me().role).color; tbAv.textContent=initials(me().name); }
@@ -4056,6 +4114,8 @@ document.addEventListener('click',e=>{ const sw=$('#sucSwitch'); if(sw && sw.cla
    LOGIN
    ===================================================================== */
 let pickedUser=null, loginSuc=null;
+// "Recordarme": por defecto activo; recuerda la última preferencia del usuario
+let loginRemember = localStorage.getItem('saborTico_remember')!=='0';
 function renderLogin(){
   ensureCollections();
   const area=$('#loginArea'); if(!area) return;
@@ -4076,6 +4136,8 @@ function renderLogin(){
     <div class="user-grid">${ppl.length?ppl.map(u=>`<button class="user-pick ${pickedUser===u.id?'sel':''}" data-id="${u.id}" onclick="pickUser('${u.id}')">${avatarHTML(u)}<div><div class="nm">${esc((u.name||'').split(' ')[0])}</div><div class="rl">${roleInfo(u.role).short}</div></div></button>`).join(''):'<div style="color:var(--text-soft);font-size:13px;padding:8px">No hay personas en esta sucursal todavía.</div>'}</div>
     <div class="login-label">Tu PIN</div>
     <div class="pin-row"><input id="pinInput" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
+    <label class="login-remember"><input type="checkbox" id="rememberMe" ${loginRemember?'checked':''}>
+      <span class="lr-txt"><span class="lr-t">Mantener sesión iniciada</span><span class="lr-d">No tener que poner el PIN cada vez. Desmarcá en equipos compartidos.</span></span></label>
     <button class="btn btn-primary" id="loginBtn" style="width:100%">Entrar</button>`;
   const lb=$('#loginBtn'); if(lb) lb.onclick=doLogin;
   const pi=$('#pinInput'); if(pi) pi.onkeydown=e=>{ if(e.key==='Enter') doLogin(); };
@@ -4094,7 +4156,13 @@ function doLogin(){
   if(!u){ toast('Elegí quién sos','err'); return; }
   if($('#pinInput').value!==u.pin){ toast('PIN incorrecto','err'); return; }
   SES.userId=u.id; SES.sucFilter='all'; SES.view='inicio';
-  sessionStorage.setItem('saborTico_ses',u.id);
+  const keep = $('#rememberMe') ? $('#rememberMe').checked : loginRemember;
+  loginRemember = keep;
+  localStorage.setItem('saborTico_remember', keep?'1':'0');
+  if(keep){ localStorage.setItem('saborTico_ses',u.id); sessionStorage.removeItem('saborTico_ses'); }
+  else { sessionStorage.setItem('saborTico_ses',u.id); localStorage.removeItem('saborTico_ses'); }
+  unlockAudio();              // habilitar el sonido de notificaciones con este gesto
+  notifBaseline();           // no avisar el historial viejo, solo lo nuevo
   $('#loginScreen').style.display='none';
   $('#app').classList.add('on');
   toast('Bienvenido, '+(u.name||'').split(' ')[0],'ok');
@@ -4103,7 +4171,7 @@ function doLogin(){
 window.doLogin=doLogin;
 
 function logout(){
-  SES.userId=null; sessionStorage.removeItem('saborTico_ses');
+  SES.userId=null; sessionStorage.removeItem('saborTico_ses'); localStorage.removeItem('saborTico_ses');
   $('#app').classList.remove('on'); $('#loginScreen').style.display='flex';
   pickedUser=null; loginSuc=null; renderLogin();
 }
@@ -4126,8 +4194,8 @@ impInput.addEventListener('change',async e=>{
   let ok=false; try{ ok=await cloudInit(); }catch(e){ console.warn('cloud init', e); }
   if(!ok) load();
   renderLogin();
-  const ses=sessionStorage.getItem('saborTico_ses');
-  if(ses && userById(ses)){ SES.userId=ses; $('#loginScreen').style.display='none'; $('#app').classList.add('on'); render(); }
+  const ses=localStorage.getItem('saborTico_ses')||sessionStorage.getItem('saborTico_ses');
+  if(ses && userById(ses)){ SES.userId=ses; notifBaseline(); $('#loginScreen').style.display='none'; $('#app').classList.add('on'); render(); }
   requestAnimationFrame(()=>requestAnimationFrame(()=>document.body.classList.remove('app-loading')));
 })();
 /* Sabor Tico App — fin */
