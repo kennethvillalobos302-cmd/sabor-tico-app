@@ -2460,50 +2460,113 @@ function makeable(r){
   if(!r.ingredients.length) return 0;
   return Math.floor(Math.min(...r.ingredients.map(i=>{const p=DB.inventory.find(x=>x.id===i.productId);return (p&&i.qty>0)?p.stock/i.qty:0;})));
 }
+function recipeCost(r){ return (r.ingredients||[]).reduce((s,i)=>{const p=DB.inventory.find(x=>x.id===i.productId);return s+(p?(+p.cost||0)*(+i.qty||0):0);},0); }
+function recipeProfit(r){ return (+r.price||0)-recipeCost(r); }
+function rindeCls(n){ return n<=0?'rechazada':n<5?'atrasada':'hecha'; }
+let recSearch='', recCat='todas';
 function viewRecetas(){
-  const list=DB.recipes.filter(r=>inScope(r.sucursalId));
+  const all=DB.recipes.filter(r=>inScope(r.sucursalId));
   const editor=canRecipeEdit();
+  let list=[...all];
+  if(recCat!=='todas') list=list.filter(r=>(r.category||'General')===recCat);
+  if(recSearch){ const q=recSearch.toLowerCase(); list=list.filter(r=>(r.name||'').toLowerCase().includes(q)||(r.category||'').toLowerCase().includes(q)); }
+  list.sort((a,b)=>(a.category||'').localeCompare(b.category||'')||a.name.localeCompare(b.name));
+  const cats=[...new Set(all.map(r=>r.category||'General'))].sort();
+  const lowN=all.filter(r=>makeable(r)<5).length;
+  const avgGan=all.length?Math.round(all.reduce((s,r)=>s+recipeProfit(r),0)/all.length):0;
   const guide=sectionGuide('recetas','¿Para qué sirven las Recetas?',`
     Son los <b>platos del menú</b> y los insumos que llevan. Conectan la cocina con el inventario.
     <ul style="margin:8px 0 0 18px">
-      <li>El chef define el plato, su precio y sus ingredientes.</li>
-      <li>Al <b>registrar una preparación</b>, se descuenta del inventario lo que se usó.</li>
-      <li>Ves cuántos platos <b>alcanzan</b> con el inventario actual.</li>
-    </ul>
-    <div class="tip"><b>Tip:</b> mantené los ingredientes al día para que el "rinde" sea real.</div>`);
-  let html=`<div class="page-head"><div><div class="page-title">Recetas / Menú</div><div class="page-sub">${list.length} platos${editor?'':' · solo lectura'}</div></div>
-    <div class="ph-spacer"></div>${editor?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="recipeNewModal()">+ Nueva receta</button>`:''}</div>`;
+      <li>El chef define el plato, su precio y sus ingredientes; el sistema calcula <b>costo y ganancia</b>.</li>
+      <li>Al <b>registrar una preparación</b> se descuenta del inventario lo que se usó.</li>
+      <li>El <b>"rinde"</b> muestra cuántas porciones alcanzan con el inventario actual.</li>
+    </ul>`);
+  let html=`<div class="page-head"><div><div class="page-title">Recetas / Menú</div><div class="page-sub">${all.length} platos${editor?'':' · solo lectura'}</div></div>
+    <div class="ph-spacer"></div>${editor?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="recipeNewModal()">${svgIcon('plus','icon icon-sm')} Nueva receta</button>`:''}</div>`;
   html+=guide;
-  html+= list.length? list.map(recipeRow).join('')
-    : emptyState('🍳','Sin recetas','Agregá los platos de tu menú y sus ingredientes.', editor?'+ Nueva receta':'', editor?'recipeNewModal()':'');
+  html+=`<div class="kpi-row">
+    <div class="kpi"><div class="label">Platos</div><div class="value">${all.length}</div><div class="sub">en el menú</div></div>
+    <div class="kpi"><div class="label">Categorías</div><div class="value">${cats.length}</div><div class="sub">tipos de plato</div></div>
+    <div class="kpi ${lowN?'alert':''}"><div class="label">Bajo rinde</div><div class="value">${lowN}</div><div class="sub">revisar inventario</div></div>
+    ${editor?`<div class="kpi ok"><div class="label">Ganancia prom.</div><div class="value" style="font-size:22px">${money(avgGan)}</div><div class="sub">por plato</div></div>`:`<div class="kpi"><div class="label">Precio prom.</div><div class="value" style="font-size:22px">${money(all.length?Math.round(all.reduce((s,r)=>s+(+r.price||0),0)/all.length):0)}</div><div class="sub">por plato</div></div>`}
+  </div>`;
+  html+=`<div class="toolbar"><input class="input search" placeholder="Buscar plato…" value="${esc(recSearch)}" oninput="recSearch=this.value;clearTimeout(window._rcs);window._rcs=setTimeout(render,250)">
+    ${['todas',...cats].map(k=>`<button class="chip ${recCat===k?'on':''}" data-c="${esc(k)}" onclick="recCat=this.dataset.c;render()">${k==='todas'?'Todas':esc(k)}</button>`).join('')}</div>`;
+  html+= list.length? `<div class="rec-grid">`+list.map(recipeCard).join('')+`</div>`
+    : emptyState('🍳','Sin recetas', recSearch||recCat!=='todas'?'No hay platos que coincidan.':'Agregá los platos de tu menú y sus ingredientes.', editor?'+ Nueva receta':'', editor?'recipeNewModal()':'');
   return html;
 }
-function recipeRow(r){
-  const editor=canRecipeEdit(); const n=makeable(r);
-  const ings=r.ingredients.map(i=>{const p=DB.inventory.find(x=>x.id===i.productId);return p?`${esc(p.name)} (${i.qty}${p.unit})`:'';}).filter(Boolean).join(' · ');
-  return `<div class="tk" style="cursor:default">
-    <div class="av" style="background:var(--accent-2)">${svgIcon('utensils')}</div>
-    <div class="tk-main">
-      <div class="tk-title">${esc(r.name)} <span style="color:var(--text-soft);font-weight:500">${money(r.price)}</span> ${n<5?`<span class="pill atrasada">rinde ${n}</span>`:`<span class="pill hecha">rinde ${n}</span>`}</div>
-      <div class="tk-meta"><span>${esc(r.category)}</span><span>${r.ingredients.length} ingredientes</span></div>
-      <div class="tk-desc">${esc(ings)}</div>
+function recipeCard(r){
+  const editor=canRecipeEdit(); const n=makeable(r); const cook=hasRole('admin','chef','cocinero');
+  const ings=r.ingredients.map(i=>{const p=DB.inventory.find(x=>x.id===i.productId);return p?esc(p.name):'';}).filter(Boolean).slice(0,4).join(' · ');
+  return `<div class="rec-card" onclick="recetaDetail('${r.id}')">
+    <div class="rec-head">
+      <div class="rec-ic">${svgIcon('utensils','icon')}</div>
+      <div class="rec-hmain"><div class="rec-name">${esc(r.name)}</div><div class="rec-cat">${esc(r.category||'General')}</div></div>
+      <span class="pill ${rindeCls(n)}">Rinde ${n}</span>
     </div>
-    <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-      ${hasRole('admin','chef','cocinero')?`<button class="btn btn-ghost" style="padding:7px 11px" onclick="prepareModal('${r.id}')">Preparar</button>`:''}
-      ${editor?`<button class="btn btn-ghost" style="padding:7px 11px" onclick="recipeEditModal('${r.id}')">Editar</button>`:''}
+    <div class="rec-figs">
+      <div class="rec-fig"><span class="rec-fig-l">Precio</span><span class="rec-fig-v">${money(r.price)}</span></div>
+      ${editor?`<div class="rec-fig"><span class="rec-fig-l">Costo</span><span class="rec-fig-v">${money(recipeCost(r))}</span></div>
+      <div class="rec-fig"><span class="rec-fig-l">Ganancia</span><span class="rec-fig-v" style="color:var(--success)">${money(recipeProfit(r))}</span></div>`:''}
     </div>
+    <div class="rec-ings">${svgIcon('box','icon icon-sm')} ${ings||'Sin ingredientes'}${r.ingredients.length>4?' …':''}</div>
+    ${cook?`<div class="rec-cardfoot" onclick="event.stopPropagation()"><button class="btn btn-primary" onclick="prepareModal('${r.id}')">${svgIcon('utensils','icon icon-sm')} Preparar</button></div>`:''}
   </div>`;
 }
+function recetaDetail(id){
+  const r=DB.recipes.find(x=>x.id===id); if(!r) return;
+  const editor=canRecipeEdit(); const cook=hasRole('admin','chef','cocinero'); const n=makeable(r);
+  const cost=recipeCost(r), prof=recipeProfit(r);
+  const ingRows=(r.ingredients||[]).map(i=>{const p=DB.inventory.find(x=>x.id===i.productId);
+    if(!p) return `<div class="rec-ing"><div class="rec-ing-main"><div class="rec-ing-n">Producto eliminado</div></div></div>`;
+    const ok=(+p.stock||0)>=(+i.qty||0);
+    return `<div class="rec-ing"><div class="rec-ing-main"><div class="rec-ing-n">${esc(p.name)}</div><div class="rec-ing-s">${i.qty} ${esc(p.unit)} por porción${editor?` · ${money((+p.cost||0)*(+i.qty||0))}`:''}</div></div><span class="rec-ing-stock ${ok?'ok':'no'}">${+p.stock||0} ${esc(p.unit)}</span></div>`;
+  }).join('') || '<div class="td-empty">Sin ingredientes cargados.</div>';
+  openModal(`<div class="modal-head"><h3>${svgIcon('utensils','icon')} ${esc(r.name)}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="td-top">
+        <span class="pill ${rindeCls(n)}">Rinde ${n} porciones</span>
+        <span class="td-badge">${esc(r.category||'General')}</span>
+        <span class="td-badge">${money(r.price)}</span>
+        ${editor?`<span class="td-badge" style="color:var(--success)">Ganancia ${money(prof)}</span>`:''}
+      </div>
+      ${r.desc?`<div class="td-desc">${esc(r.desc)}</div>`:''}
+      <div class="ip-sec">${svgIcon('box','icon icon-sm')} Ingredientes por porción</div>
+      <div class="rec-inglist">${ingRows}</div>
+      ${editor?`<div class="rec-cost"><div class="rec-cost-row"><span>Costo por porción</span><b>${money(cost)}</b></div><div class="rec-cost-row"><span>Precio de venta</span><b>${money(r.price)}</b></div><div class="rec-cost-row"><span>Ganancia</span><b style="color:var(--success)">${money(prof)}</b></div></div>`:''}
+      <div class="td-actions">
+        ${cook?`<button class="btn btn-primary" onclick="prepareModal('${r.id}')">${svgIcon('utensils','icon icon-sm')} Preparar</button>`:''}
+        ${editor?`<button class="btn btn-ghost" onclick="recipeEditModal('${r.id}')">${svgIcon('edit','icon icon-sm')} Editar</button>`:''}
+        ${editor?`<button class="btn btn-danger" onclick="delRecipe('${r.id}')">${svgIcon('trash','icon icon-sm')} Eliminar</button>`:''}
+      </div>
+    </div>`,true);
+}
+window.recetaDetail=recetaDetail;
+async function delRecipe(id){
+  if(!canRecipeEdit()) return;
+  const r=DB.recipes.find(x=>x.id===id); if(!r) return;
+  if(!await confirmDialog(`Se elimina la receta "${r.name}" del menú. No se puede deshacer.`,{title:'¿Eliminar receta?',okText:'Sí, eliminar'})) return;
+  DB.recipes=DB.recipes.filter(x=>x.id!==id);
+  audit('inventario',`eliminó la receta "${r.name}"`,r.sucursalId);
+  closeModal(); toast('Receta eliminada','ok'); save(); render();
+}
+window.delRecipe=delRecipe;
+function prepStep(d){ const el=$('#prepQty'); if(!el)return; let v=(parseInt(el.value,10)||1)+d; v=Math.max(1,v); el.value=v; }
+window.prepStep=prepStep;
 function prepareModal(id){
   const r=DB.recipes.find(x=>x.id===id); if(!r) return;
   const n=makeable(r);
-  openModal(`<div class="modal-head"><h3>Preparar · ${esc(r.name)}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+  openModal(`<div class="modal-head"><h3>${svgIcon('utensils','icon')} Preparar · ${esc(r.name)}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
-      <div class="page-sub" style="margin-bottom:12px">Con el inventario actual alcanzan <b style="color:var(--text)">${n}</b> porciones.</div>
-      <div class="field"><label>¿Cuántas porciones preparaste?</label><input class="input" id="prepQty" type="number" min="1" step="1" value="1"></div>
-      <div style="font-size:12.5px;color:var(--text-soft)">Se descontará del inventario: ${r.ingredients.map(i=>{const p=DB.inventory.find(x=>x.id===i.productId);return p?`${esc(p.name)} ${i.qty}${p.unit}/porción`:'';}).filter(Boolean).join(' · ')}</div>
+      <div class="rec-prep-rinde">Con el inventario actual alcanzan <b>${n}</b> porciones.</div>
+      <div class="field"><label>¿Cuántas porciones preparaste?</label>
+        <div class="qty-step"><button type="button" onclick="prepStep(-1)">−</button><input id="prepQty" type="number" min="1" step="1" value="1"><button type="button" onclick="prepStep(1)">+</button></div>
+      </div>
+      <div class="ip-sec">${svgIcon('down','icon icon-sm')} Se descontará del inventario</div>
+      <div class="rec-inglist">${r.ingredients.map(i=>{const p=DB.inventory.find(x=>x.id===i.productId);return p?`<div class="rec-ing"><div class="rec-ing-main"><div class="rec-ing-n">${esc(p.name)}</div><div class="rec-ing-s">${i.qty} ${esc(p.unit)} por porción</div></div><span class="rec-ing-stock ${(+p.stock||0)>=(+i.qty||0)?'ok':'no'}">${+p.stock||0} ${esc(p.unit)}</span></div>`:'';}).filter(Boolean).join('')||'<div class="td-empty">Sin ingredientes.</div>'}</div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="prepareRecipe('${id}')">Registrar y descontar</button></div>`);
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="prepareRecipe('${id}')">${svgIcon('check','icon icon-sm')} Registrar y descontar</button></div>`, true);
 }
 function prepareRecipe(id){
   const r=DB.recipes.find(x=>x.id===id); if(!r) return;
@@ -2516,42 +2579,60 @@ function prepareRecipe(id){
     if(lowStock(p)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Inventario bajo: ${p.name} (${p.stock} ${p.unit})`,'⚠️',{view:'inventario'});
   });
   audit('inventario',`preparó ${n}× "${r.name}" (descuento de insumos)`,r.sucursalId);
-  closeModal(); toast(`Registrado: ${n}× ${r.name} ✅`,'ok'); render();
+  closeModal(); toast(`Registrado: ${n}× ${r.name} ✅`,'ok'); save(); render();
 }
 let recIngs=[];
-function recipeNewModal(){ recIngs=[]; openModal(recipeForm('Nueva receta',null)); }
-function recipeEditModal(id){ const r=DB.recipes.find(x=>x.id===id); recIngs=r?r.ingredients.map(i=>({...i})):[]; openModal(recipeForm('Editar receta',r)); }
+function recipeNewModal(){ recIngs=[]; openModal(recipeForm('Nueva receta',null), true); }
+function recipeEditModal(id){ const r=DB.recipes.find(x=>x.id===id); recIngs=r?r.ingredients.map(i=>({...i})):[]; openModal(recipeForm('Editar receta',r), true); }
 function recipeForm(title,r){
-  return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
+  const cats=[...new Set(DB.recipes.map(x=>x.category||'General'))].sort();
+  return `<div class="modal-head"><h3>${svgIcon('utensils','icon')} ${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
-    <div class="field"><label>Nombre del plato</label><input class="input" id="rcName" value="${r?esc(r.name):''}" placeholder="Ej: Casado con pollo"></div>
+    <div class="ip-sec">${svgIcon('utensils','icon icon-sm')} Plato</div>
+    <div class="field"><label>Nombre del plato</label><input class="input" id="rcName" value="${r?esc(r.name):''}" placeholder="Ej: Casado con pollo" autocomplete="off"></div>
     <div class="row2">
-      <div class="field"><label>Categoría</label><input class="input" id="rcCat" value="${r?esc(r.category):''}" placeholder="Ej: Platos fuertes"></div>
-      <div class="field"><label>Precio (₡)</label><input class="input" id="rcPrice" type="number" step="any" value="${r?r.price:0}"></div>
+      <div class="field"><label>Categoría</label><input class="input" id="rcCat" list="rcCatList" value="${r?esc(r.category||''):''}" placeholder="Ej: Platos fuertes" autocomplete="off"><datalist id="rcCatList">${cats.map(c=>`<option value="${esc(c)}"></option>`).join('')}</datalist></div>
+      <div class="field"><label>Precio de venta (₡)</label><input class="input" id="rcPrice" type="number" step="any" min="0" value="${r?r.price:0}" oninput="recCostPrev()"></div>
     </div>
-    <div class="field"><label>Ingredientes (del inventario)</label><div id="rcIngs"></div>
-      <button class="btn btn-ghost" style="margin-top:8px" onclick="addIngRow()">+ Agregar ingrediente</button></div>
-    <div class="field"><label>Sucursal</label><select class="select" id="rcSuc">${sucOptionsFor()}</select></div>
+    <div class="ip-sec">${svgIcon('box','icon icon-sm')} Ingredientes (del inventario)</div>
+    <div id="rcIngs"></div>
+    <button class="add-break" onclick="addIngRow()">${svgIcon('plus','icon icon-sm')} Agregar ingrediente</button>
+    <div class="rec-cost" id="rcCostPrev"></div>
+    <div class="ip-sec">${svgIcon('clipboard','icon icon-sm')} Preparación (opcional)</div>
+    <div class="field"><textarea class="textarea" id="rcDesc" placeholder="Pasos o notas de preparación…">${r?esc(r.desc||''):''}</textarea></div>
+    <div class="field"><label>Sucursal</label><select class="select" id="rcSuc">${r?sucOptionsSel(r.sucursalId):sucOptionsFor()}</select></div>
   </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveRecipe('${r?r.id:''}')">Guardar</button></div>`;
+  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveRecipe('${r?r.id:''}')">${svgIcon('check','icon icon-sm')} Guardar receta</button></div>`;
 }
-function ingOptions(sel){ return invInScope().map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)} (${p.unit})</option>`).join(''); }
+function ingOptions(sel){ return invInScope().map(p=>`<option value="${p.id}" ${sel===p.id?'selected':''}>${esc(p.name)} (${esc(p.unit)})</option>`).join(''); }
 function renderIngRows(){
   const c=$('#rcIngs'); if(!c) return;
-  c.innerHTML = recIngs.map((i,idx)=>`<div style="display:flex;gap:8px;margin-bottom:8px;align-items:center">
-    <select class="select" style="flex:2" onchange="recIngs[${idx}].productId=this.value">${ingOptions(i.productId)}</select>
-    <input class="input" style="flex:1" type="number" step="any" min="0" value="${i.qty}" placeholder="cant." oninput="recIngs[${idx}].qty=+this.value">
-    <button class="btn btn-ghost" style="padding:8px 11px;flex:0 0 auto" onclick="recIngs.splice(${idx},1);renderIngRows()">×</button>
-  </div>`).join('') || '<div style="font-size:12.5px;color:var(--text-soft)">Sin ingredientes. Agregá al menos uno.</div>';
+  c.innerHTML = recIngs.map((i,idx)=>{
+    const p=DB.inventory.find(x=>x.id===i.productId);
+    return `<div class="rec-ing-row">
+      <select class="select rec-ing-prod" onchange="recIngs[${idx}].productId=this.value;renderIngRows()">${ingOptions(i.productId)}</select>
+      <input class="input rec-ing-qty" type="number" step="any" min="0" value="${i.qty}" placeholder="cant." oninput="recIngs[${idx}].qty=+this.value||0;recCostPrev()">
+      <span class="rec-ing-unit">${p?esc(p.unit):''}</span>
+      <button class="icon-btn rec-ing-del" type="button" title="Quitar" onclick="recIngs.splice(${idx},1);renderIngRows()">${svgIcon('x','icon icon-sm')}</button>
+    </div>`;
+  }).join('') || '<div class="td-empty">Sin ingredientes. Agregá al menos uno.</div>';
+  recCostPrev();
 }
+function recCostPrev(){
+  const el=$('#rcCostPrev'); if(!el) return;
+  const cost=recIngs.reduce((s,i)=>{const p=DB.inventory.find(x=>x.id===i.productId);return s+(p?(+p.cost||0)*(+i.qty||0):0);},0);
+  const price=+($('#rcPrice')?$('#rcPrice').value:0)||0;
+  el.innerHTML=`<div class="rec-cost-row"><span>Costo por porción</span><b>${money(cost)}</b></div><div class="rec-cost-row"><span>Precio</span><b>${money(price)}</b></div><div class="rec-cost-row"><span>Ganancia</span><b style="color:var(--success)">${money(price-cost)}</b></div>`;
+}
+window.recCostPrev=recCostPrev;
 function addIngRow(){ const first=invInScope()[0]; recIngs.push({productId:first?first.id:'',qty:0.1}); renderIngRows(); }
 function saveRecipe(id){
   const name=$('#rcName').value.trim(); if(!name){ toast('Ponele nombre al plato','err'); return; }
   const ings=recIngs.filter(i=>i.productId && i.qty>0);
-  const data={name,category:$('#rcCat').value.trim()||'General',price:+$('#rcPrice').value||0,ingredients:ings,sucursalId:$('#rcSuc').value};
+  const data={name,category:$('#rcCat').value.trim()||'General',price:+$('#rcPrice').value||0,ingredients:ings,desc:($('#rcDesc')?$('#rcDesc').value.trim():''),sucursalId:$('#rcSuc').value};
   if(id){ const r=DB.recipes.find(x=>x.id===id); Object.assign(r,data); audit('inventario',`editó la receta "${name}"`,r.sucursalId); }
   else { DB.recipes.push({id:uid(),...data,byId:SES.userId,at:now()}); audit('inventario',`creó la receta "${name}"`,data.sucursalId); }
-  closeModal(); toast('Receta guardada','ok'); render();
+  closeModal(); toast('Receta guardada','ok'); save(); render();
 }
 window.prepareModal=prepareModal; window.prepareRecipe=prepareRecipe; window.recipeNewModal=recipeNewModal;
 window.recipeEditModal=recipeEditModal; window.saveRecipe=saveRecipe; window.addIngRow=addIngRow; window.renderIngRows=renderIngRows;

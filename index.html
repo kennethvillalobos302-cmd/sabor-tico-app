@@ -363,6 +363,46 @@ select option,select optgroup{background:var(--bg-elev);color:var(--text)}
 .rv-st-b{display:inline-flex;align-items:center;gap:6px;padding:9px 13px;border:1px solid var(--border);border-radius:var(--r-pill);background:var(--bg-soft);font-weight:700;font-size:12.5px;color:var(--text-soft);transition:border-color var(--t-fast),background var(--t-fast),color var(--t-fast)}
 .rv-st-b:hover{border-color:var(--accent-line)}
 .rv-st-b.on{border-color:var(--accent);background:var(--accent-soft);color:var(--text)}
+/* recetas / menú */
+.rec-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px}
+.rec-card{background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--r-lg);padding:15px 16px;box-shadow:var(--e1);cursor:pointer;transition:transform var(--t-fast),border-color var(--t-fast),box-shadow var(--t-fast)}
+.rec-card:hover{transform:translateY(-2px);border-color:var(--accent-line);box-shadow:var(--e2)}
+.rec-head{display:flex;align-items:center;gap:11px}
+.rec-ic{width:42px;height:42px;flex:0 0 auto;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--grad-accent);color:#fff}
+.rec-ic .icon{width:21px;height:21px}
+.rec-hmain{flex:1;min-width:0}
+.rec-name{font-weight:750;font-size:15px;line-height:1.2;letter-spacing:-.1px}
+.rec-cat{font-size:12px;color:var(--text-soft);margin-top:2px}
+.rec-figs{display:flex;gap:8px;margin:13px 0 11px}
+.rec-fig{flex:1;background:var(--bg-soft);border-radius:var(--r-md);padding:8px 10px;text-align:center}
+.rec-fig-l{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:var(--text-soft);font-weight:700}
+.rec-fig-v{display:block;font-size:14.5px;font-weight:800;margin-top:3px}
+.rec-ings{font-size:12px;color:var(--text-soft);line-height:1.5;display:flex;align-items:flex-start;gap:5px}
+.rec-ings .icon{flex:0 0 auto;margin-top:1px;color:var(--text-dim)}
+.rec-cardfoot{margin-top:13px}
+.rec-cardfoot .btn{width:100%}
+/* detalle de receta: ingredientes + costo */
+.rec-inglist{display:flex;flex-direction:column;gap:7px;margin-bottom:12px}
+.rec-ing{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;background:var(--bg-soft);border:1px solid var(--border-soft);border-radius:var(--r-md)}
+.rec-ing-main{min-width:0}
+.rec-ing-n{font-weight:650;font-size:13.5px}
+.rec-ing-s{font-size:12px;color:var(--text-soft);margin-top:2px}
+.rec-ing-stock{flex:0 0 auto;font-size:12px;font-weight:700;padding:3px 9px;border-radius:var(--r-pill)}
+.rec-ing-stock.ok{background:var(--success-bg);color:var(--success)}
+.rec-ing-stock.no{background:var(--danger-bg);color:var(--danger)}
+.rec-cost{background:var(--bg-soft);border:1px solid var(--border-soft);border-radius:var(--r-md);padding:4px 14px;margin:6px 0 16px}
+.rec-cost-row{display:flex;justify-content:space-between;align-items:center;padding:9px 0;font-size:13px;color:var(--text-soft)}
+.rec-cost-row+.rec-cost-row{border-top:1px solid var(--border-soft)}
+.rec-cost-row b{color:var(--text);font-size:14.5px}
+.rec-prep-rinde{font-size:14px;background:var(--accent-soft);border:1px solid var(--accent-line);border-radius:var(--r-md);padding:12px 14px;margin-bottom:16px}
+/* fila de ingrediente en el formulario */
+.rec-ing-row{display:flex;gap:8px;align-items:center;margin-bottom:8px}
+.rec-ing-prod{flex:1;min-width:0}
+.rec-ing-qty{flex:0 0 90px;text-align:center}
+.rec-ing-unit{flex:0 0 auto;font-size:12px;color:var(--text-soft);min-width:30px}
+.rec-ing-del{width:38px;height:38px;flex:0 0 auto;border:1px solid var(--border)}
+.rec-ing-del:hover{border-color:var(--danger)}.rec-ing-del:hover .icon{color:var(--danger)}
+@media(max-width:640px){ .rec-grid{grid-template-columns:1fr} }
 /* clientes: ranking + perfil */
 .cl-rank{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--bg-soft);color:var(--text-soft);font-size:11.5px;font-weight:800}
 .cl-rank.top{background:var(--grad-accent);color:#fff}
