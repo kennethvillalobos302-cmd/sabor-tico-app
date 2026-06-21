@@ -1286,6 +1286,7 @@ function viewProyectos(){
     ${canEdit?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','title')">${svgIcon('clipboard','icon icon-sm')} Título</button>
     <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','text')">${svgIcon('edit','icon icon-sm')} Nota</button>
     <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','image')">${svgIcon('image','icon icon-sm')} Imagen</button>
+    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addFileCardModal('${proj.id}')">${svgIcon('clip','icon icon-sm')} Archivo / PDF</button>
     <button class="btn btn-ghost" style="flex:0 0 auto" onclick="clearDrawings('${proj.id}')" title="Borrar todos los trazos">${svgIcon('trash','icon icon-sm')}</button>`:''}
     <button class="btn btn-ghost" style="flex:0 0 auto" onclick="toggleBoardFull()" title="Pantalla completa">${svgIcon('chart','icon icon-sm')} Pantalla completa</button>
   </div>`;
@@ -1342,6 +1343,49 @@ async function clearDrawings(projId){
   p.drawings=[]; audit('proyecto',`borró los dibujos de "${p.name}"`,p.sucursalId); save(); render();
 }
 window.clearDrawings=clearDrawings;
+/* ---- Archivos / PDF en proyectos (subir, abrir, descargar) ---- */
+function fmtFileSize(b){ b=+b||0; return b>=1048576?(b/1048576).toFixed(1)+' MB':b>=1024?Math.round(b/1024)+' KB':b+' B'; }
+function fileIconFor(mime,name){ const n=(name||'').toLowerCase(); if((mime||'').includes('pdf')||n.endsWith('.pdf'))return 'clipboard'; if((mime||'').startsWith('image'))return 'image'; return 'clip'; }
+function blobUrlFromData(data,mime){ const b64=(data||'').split(',')[1]||''; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); return URL.createObjectURL(new Blob([arr],{type:mime||'application/octet-stream'})); }
+function openFileData(f){ if(!f||!f.data){ toast('Archivo no disponible','err'); return; } try{ const url=blobUrlFromData(f.data,f.mime); window.open(url,'_blank'); setTimeout(()=>URL.revokeObjectURL(url),60000); }catch(e){ window.open(f.data,'_blank'); } }
+function downloadFileData(f){ if(!f||!f.data){ toast('Archivo no disponible','err'); return; } try{ const url=blobUrlFromData(f.data,f.mime); const a=document.createElement('a'); a.href=url; a.download=f.filename||'archivo'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000); }catch(e){ const a=document.createElement('a'); a.href=f.data; a.download=f.filename||'archivo'; a.click(); } }
+function projCardFile(projId,cardId){ const p=DB.projects.find(x=>x.id===projId); const c=p&&p.cards.find(x=>x.id===cardId); return c?c.file:null; }
+function openProjFile(projId,cardId){ openFileData(projCardFile(projId,cardId)); }
+function downloadProjFile(projId,cardId){ downloadFileData(projCardFile(projId,cardId)); }
+window.openProjFile=openProjFile; window.downloadProjFile=downloadProjFile;
+let fileCardPending=null;
+function addFileCardModal(projId){
+  fileCardPending=null;
+  openModal(`<div class="modal-head"><h3>${svgIcon('clip','icon')} Subir archivo / PDF</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Archivo (PDF, documento, hoja de cálculo, imagen…)</label>
+        <input type="file" id="fcFile" accept=".pdf,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,image/*" onchange="pickFileCard(this)">
+        <div id="fcInfo" style="margin-top:9px"></div>
+        <div class="ped-hint">Hasta 8 MB. Queda en la pizarra para abrir o descargar cuando quieras.</div>
+      </div>
+      <div class="field"><label>Título (opcional)</label><input class="input" id="fcTitle" placeholder="Ej: Presupuesto remodelación" autocomplete="off"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="addFileCard('${projId}')">${svgIcon('check','icon icon-sm')} Agregar a la pizarra</button></div>`);
+}
+async function pickFileCard(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  if(f.size>8*1024*1024){ toast('El archivo es muy grande (máx 8 MB)','err'); input.value=''; return; }
+  const data=await fileToData(f);
+  fileCardPending={data,filename:f.name,mime:f.type||'application/octet-stream',size:f.size};
+  const info=$('#fcInfo'); if(info) info.innerHTML=`<div class="fc-chip">${svgIcon(fileIconFor(f.type,f.name),'icon icon-sm')} ${esc(f.name)} · ${fmtFileSize(f.size)}</div>`;
+  const t=$('#fcTitle'); if(t && !t.value) t.value=f.name.replace(/\.[^.]+$/,'');
+}
+window.pickFileCard=pickFileCard;
+function addFileCard(projId){
+  const p=DB.projects.find(x=>x.id===projId); if(!p) return;
+  if(!fileCardPending){ toast('Elegí un archivo','err'); return; }
+  const i=p.cards.length;
+  p.cards.push({id:uid(),type:'file',text:($('#fcTitle')?$('#fcTitle').value.trim():'')||fileCardPending.filename,file:fileCardPending,byId:SES.userId,at:now(),x:40+(i%5)*250,y:40+Math.floor(i/5)*215});
+  audit('proyecto',`subió el archivo "${fileCardPending.filename}" a "${p.name}"`,p.sucursalId);
+  notify(p.memberIds.filter(x=>x!==SES.userId), `${me().name.split(' ')[0]} subió un archivo a "${p.name}"`,'clipboard',{view:'proyectos'});
+  fileCardPending=null; closeModal(); toast('Archivo agregado a la pizarra','ok'); save(); render();
+}
+window.addFileCardModal=addFileCardModal; window.addFileCard=addFileCard;
 let boardZoom=1, boardFull=false;
 function boardDims(p){ let maxX=1800,maxY=1100; p.cards.forEach(c=>{maxX=Math.max(maxX,(c.x||0)+260);maxY=Math.max(maxY,(c.y||0)+260);}); return {cw:maxX+900,chh:maxY+800}; }
 function boardLinks(cards){ return cards.filter(c=>c.parentId&&cards.find(x=>x.id===c.parentId)).map(c=>{const par=cards.find(x=>x.id===c.parentId);return `<line x1="${(par.x||0)+115}" y1="${(par.y||0)+34}" x2="${(c.x||0)+115}" y2="${(c.y||0)+16}" stroke="var(--accent-line)" stroke-width="2" stroke-dasharray="5 4"/>`;}).join(''); }
@@ -1373,16 +1417,16 @@ document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElemen
 window.toggleBoardFull=toggleBoardFull;
 function projSide(proj){
   const msgs=(proj.chat||[]).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
-    const media=m.media?(m.media.type==='video'?`<video src="${m.media.data}" controls></video>`:`<img src="${m.media.data}">`):'';
+    const media=m.media?(m.media.type==='video'?`<video src="${m.media.data}" controls></video>`:m.media.type==='image'?`<img src="${m.media.data}">`:`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
     return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
   const inCall=proj.call&&proj.call.active;
   return `<div class="proj-side">
     <div class="proj-side-head"><span style="font-weight:700;font-size:13px">Chat del grupo</span><div class="ph-spacer"></div>
       <button class="btn ${inCall?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 11px" onclick="openCall('${proj.id}')">${svgIcon('video','icon icon-sm')} ${inCall?'En llamada · '+proj.call.participants.length:'Llamada'}</button></div>
     <div class="proj-chat" id="projChatMsgs">${msgs||'<div style="margin:auto;color:var(--text-soft);font-size:13px;text-align:center;padding:24px">Escribí acá para coordinar mientras trabajan la pizarra.</div>'}</div>
-    ${projPending?`<div class="chat-pending">${projPending.type==='video'?`<video src="${projPending.data}"></video>`:`<img src="${projPending.data}">`}<span>${projPending.type==='video'?'Video':'Foto'} listo</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="projPending=null;render()">Quitar</button></div>`:''}
+    ${projPending?`<div class="chat-pending">${projPending.type==='video'?`<video src="${projPending.data}"></video>`:projPending.type==='image'?`<img src="${projPending.data}">`:`<span class="chat-file-ic">${svgIcon(fileIconFor(projPending.mime,projPending.filename),'icon icon-sm')}</span>`}<span>${projPending.type==='file'?esc(projPending.filename):(projPending.type==='video'?'Video':'Foto')+' listo'}</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="projPending=null;render()">Quitar</button></div>`:''}
     <div class="chat-input">
-      <input type="file" id="projFile" accept="image/*,video/*" style="display:none" onchange="projAttachPick('${proj.id}')">
+      <input type="file" id="projFile" accept="image/*,video/*,.pdf,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" style="display:none" onchange="projAttachPick('${proj.id}')">
       <button class="chat-attach" title="Adjuntar foto o video" onclick="document.getElementById('projFile').click()">${svgIcon('clip')}</button>
       <input id="projMsg" placeholder="Mensaje al grupo…" onkeydown="if(event.key==='Enter')sendProjMsg('${proj.id}')">
       <button class="chat-send" onclick="sendProjMsg('${proj.id}')">${svgIcon('send')}</button>
@@ -1399,6 +1443,19 @@ function boardCard(projId,c){
     return `<div class="bcard title-card" style="left:${c.x||20}px;top:${c.y||20}px" onpointerdown="bcardDown(event,'${projId}','${c.id}')">
       ${canEdit?`<button class="bc-btn bc-del" title="Quitar" onclick="delCard('${projId}','${c.id}')">${svgIcon('x','icon icon-sm')}</button>`:''}
       <div class="bc-title">${esc(c.text||'Título')}</div></div>`;
+  }
+  if(c.type==='file'){
+    const f=c.file||{}; const ic=fileIconFor(f.mime,f.filename);
+    return `<div class="bcard file-card" style="left:${c.x||20}px;top:${c.y||20}px" onpointerdown="bcardDown(event,'${projId}','${c.id}')">
+      ${canEdit?`<button class="bc-btn bc-del" title="Quitar" onclick="delCard('${projId}','${c.id}')">${svgIcon('x','icon icon-sm')}</button>`:''}
+      <div class="fc-card-head"><span class="fc-card-ic">${svgIcon(ic,'icon')}</span><div class="fc-card-tx"><div class="fc-card-name">${esc(c.text||f.filename||'Archivo')}</div><div class="fc-card-sub">${esc(f.filename||'')}${f.size?' · '+fmtFileSize(f.size):''}</div></div></div>
+      <div class="fc-card-actions">
+        <button class="bc-btn fc-act" onclick="openProjFile('${projId}','${c.id}')">${svgIcon('search','icon icon-sm')} Abrir</button>
+        <button class="bc-btn fc-act" onclick="downloadProjFile('${projId}','${c.id}')">${svgIcon('save','icon icon-sm')} Descargar</button>
+      </div>
+      <div class="bc-foot"><span class="bc-meta">${u?esc((u.name||'').split(' ')[0]):'—'} · ${timeAgo(c.at)}</span>
+        <button class="bc-btn bc-reply" title="Responder con una nota" onclick="replyModal('${projId}','${c.id}')">${svgIcon('message','icon icon-sm')} Responder</button></div>
+    </div>`;
   }
   return `<div class="bcard note${c.parentId?' reply':''}" style="left:${c.x||20}px;top:${c.y||20}px;${c.color?`background:${c.color}`:''}" onpointerdown="bcardDown(event,'${projId}','${c.id}')">
     ${canEdit?`<button class="bc-btn bc-del" title="Quitar" onclick="delCard('${projId}','${c.id}')">${svgIcon('x','icon icon-sm')}</button>`:''}
@@ -1437,14 +1494,18 @@ function cardDetailModal(projId,cardId){
   const p=DB.projects.find(x=>x.id===projId); const c=p&&p.cards.find(x=>x.id===cardId); if(!c) return;
   const u=userById(c.byId); const canEdit=(isAdmin()||c.byId===SES.userId);
   const kids=p.cards.filter(x=>x.parentId===cardId);
-  openModal(`<div class="modal-head"><h3>${c.type==='title'?'Título':c.parentId?'Respuesta':c.type==='image'?'Imagen':'Nota'}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+  const typeLabel=c.type==='title'?'Título':c.parentId?'Respuesta':c.type==='image'?'Imagen':c.type==='file'?'Archivo':'Nota';
+  const f=c.file||{};
+  openModal(`<div class="modal-head"><h3>${typeLabel}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
+      ${c.type==='file'?`<div class="fc-detail"><span class="fc-card-ic">${svgIcon(fileIconFor(f.mime,f.filename),'icon')}</span><div class="fc-card-tx"><div class="fc-card-name">${esc(c.text||f.filename||'Archivo')}</div><div class="fc-card-sub">${esc(f.filename||'')}${f.size?' · '+fmtFileSize(f.size):''}</div></div></div>
+        <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap"><button class="btn btn-primary" style="flex:1 1 140px" onclick="openProjFile('${projId}','${cardId}')">${svgIcon('search','icon icon-sm')} Abrir</button><button class="btn btn-ghost" style="flex:1 1 140px" onclick="downloadProjFile('${projId}','${cardId}')">${svgIcon('save','icon icon-sm')} Descargar</button></div>`:''}
       ${c.img?`<img src="${c.img}" style="width:100%;border-radius:var(--r-md);margin-bottom:12px">`:''}
-      ${c.text?`<div style="font-size:${c.type==='title'?'20px;font-weight:800':'14px'};line-height:1.6;white-space:pre-wrap">${esc(c.text)}</div>`:''}
+      ${c.text&&c.type!=='file'?`<div style="font-size:${c.type==='title'?'20px;font-weight:800':'14px'};line-height:1.6;white-space:pre-wrap">${esc(c.text)}</div>`:''}
       <div class="page-sub" style="margin:10px 0 2px">${u?esc(u.name):'—'} · ${fmtDateTime(c.at)}${kids.length?' · '+kids.length+' respuesta(s)':''}</div>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
-        <button class="btn btn-primary" style="flex:0 0 auto" onclick="replyModal('${projId}','${cardId}')">${svgIcon('message','icon icon-sm')} Responder</button>
-        ${canEdit?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="editCard('${projId}','${cardId}')">${svgIcon('edit','icon icon-sm')} Editar</button><button class="btn btn-ghost" style="flex:0 0 auto" onclick="delCard('${projId}','${cardId}')">${svgIcon('trash','icon icon-sm')} Quitar</button>`:''}
+        <button class="btn btn-ghost" style="flex:0 0 auto" onclick="replyModal('${projId}','${cardId}')">${svgIcon('message','icon icon-sm')} Responder</button>
+        ${canEdit?`${c.type!=='file'?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="editCard('${projId}','${cardId}')">${svgIcon('edit','icon icon-sm')} Editar</button>`:''}<button class="btn btn-ghost" style="flex:0 0 auto" onclick="delCard('${projId}','${cardId}')">${svgIcon('trash','icon icon-sm')} Quitar</button>`:''}
       </div>
     </div>`);
 }
@@ -1535,17 +1596,21 @@ async function projAttachPick(projId){
   const inp=$('#projFile'); const f=inp&&inp.files[0]; if(!f) return;
   if(f.type.startsWith('video')){ if(f.size>6*1024*1024){ toast('El video es muy pesado (máx. 6 MB)','err'); return; } projPending={type:'video',data:await fileToData(f)}; }
   else if(f.type.startsWith('image')){ const arr=await readImages([f]); projPending={type:'image',data:arr[0]}; }
-  else { toast('Solo fotos o videos','err'); return; }
+  else { if(f.size>8*1024*1024){ toast('El archivo es muy grande (máx. 8 MB)','err'); return; } projPending={type:'file',data:await fileToData(f),filename:f.name,mime:f.type||'application/octet-stream',size:f.size}; }
   render();
 }
 window.projAttachPick=projAttachPick;
+function projChatFile(projId,msgId){ const p=DB.projects.find(x=>x.id===projId); const m=p&&(p.chat||[]).find(x=>x.id===msgId); return m?m.media:null; }
+function openProjChatFile(projId,msgId){ openFileData(projChatFile(projId,msgId)); }
+function downloadProjChatFile(projId,msgId){ downloadFileData(projChatFile(projId,msgId)); }
+window.openProjChatFile=openProjChatFile; window.downloadProjChatFile=downloadProjChatFile;
 function sendProjMsg(projId){
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
   const inp=$('#projMsg'); const v=inp?inp.value.trim():'';
   if(!v && !projPending) return;
   const m={id:uid(),byId:SES.userId,text:v,at:now()}; if(projPending) m.media=projPending;
   p.chat=p.chat||[]; p.chat.push(m);
-  const prev=v?v.slice(0,40):(projPending?(projPending.type==='video'?'envió un video':'envió una foto'):'');
+  const prev=v?v.slice(0,40):(projPending?(projPending.type==='video'?'envió un video':projPending.type==='file'?'envió un archivo':'envió una foto'):'');
   notify(p.memberIds.filter(i=>i!==SES.userId), `${me().name.split(' ')[0]} en "${p.name}": ${prev}`,'clipboard',{view:'proyectos'});
   projPending=null; save(); render();
 }
