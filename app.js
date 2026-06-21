@@ -874,7 +874,7 @@ function taskFormBody(t){
     <div class="field"><label>Título</label><input class="input" id="ntTitle" value="${t?esc(t.title):''}" placeholder="Ej: Preparar salsas del día" autocomplete="off"></div>
     <div class="field"><label>Detalle / instrucciones</label><textarea class="textarea" id="ntDesc" placeholder="Explicá qué hay que hacer…">${t?esc(t.desc||''):''}</textarea></div>
     <div class="ip-sec">${svgIcon('users','icon icon-sm')} ¿A quién se la asignás?</div>
-    <div class="assignee-pick" id="ntPeople">${people.map(u=>`<button type="button" class="ap ${sel.includes(u.id)?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${esc((u.name||'').split(' ')[0])} <span style="color:var(--text-soft)">(${roleInfo(u.role).short})</span></button>`).join('')}</div>
+    ${peoplePicker('ntPeople', people, sel)}
     <div class="ip-sec">${svgIcon('clock','icon icon-sm')} Prioridad y fecha</div>
     <div class="field"><label>Prioridad</label>${taskPrioSeg(t?t.prio:'media')}</div>
     <div class="field"><label>¿Para cuándo?</label>
@@ -919,7 +919,7 @@ window.pickImgs=pickImgs;
 function readTaskForm(){
   const title=$('#ntTitle').value.trim();
   if(!title){ toast('Ponele un título a la tarea','err'); return null; }
-  const toIds=[...document.querySelectorAll('#ntPeople .ap.on')].map(b=>b.dataset.id);
+  const toIds=pickedIds('ntPeople');
   if(!toIds.length){ toast('Elegí al menos a una persona','err'); return null; }
   const dStr=$('#ntDate')?$('#ntDate').value:'';
   const tStr=$('#ntTH')?readTP('ntT'):'12:00';
@@ -954,6 +954,24 @@ window.saveTaskEdit=saveTaskEdit;
 function assignablePeople(){
   return DB.users.filter(u=>u.active && u.id!==SES.userId);
 }
+/* Selector de personas reutilizable (avatar · nombre · puesto · check + buscador) */
+function peoplePicker(gridId, people, selected, opts){
+  opts=opts||{}; selected=selected||[];
+  const cards=people.map(u=>{
+    const sd=esc((((u.name||'')+' '+(roleInfo(u.role).short||''))).toLowerCase());
+    const on=(!opts.single && selected.includes(u.id))?' on':'';
+    const click=opts.single?`${opts.single}('${u.id}')`:`this.classList.toggle('on')`;
+    return `<button type="button" class="pp${on}" data-id="${u.id}" data-s="${sd}" onclick="${click}">
+      ${avatarHTML(u)}<span class="pp-tx"><span class="pp-nm">${esc(u.name||'')}</span><span class="pp-rl">${esc(roleInfo(u.role).short||'')}</span></span>${opts.single?svgIcon('chevron','icon icon-sm'):`<span class="pp-ck">${svgIcon('check','icon icon-sm')}</span>`}</button>`;
+  }).join('') || '<div class="td-empty" style="grid-column:1/-1">No hay personas disponibles.</div>';
+  return `<div class="ppick">
+    <div class="ppick-search">${svgIcon('search','icon icon-sm')}<input type="text" placeholder="Buscar persona o puesto…" oninput="ppickFilter('${gridId}',this.value)" autocomplete="off"></div>
+    <div class="ppick-grid" id="${gridId}">${cards}</div>
+  </div>`;
+}
+function ppickFilter(gridId,q){ q=(q||'').toLowerCase().trim(); document.querySelectorAll('#'+gridId+' .pp').forEach(b=>{ b.style.display=(!q||(b.dataset.s||'').includes(q))?'':'none'; }); }
+function pickedIds(gridId){ return [...document.querySelectorAll('#'+gridId+' .pp.on')].map(b=>b.dataset.id); }
+window.ppickFilter=ppickFilter;
 function sucOptionsFor(){
   const mine = isAdmin()? (SES.sucFilter!=='all'?SES.sucFilter:DB.sucursales[0].id) : me().sucursalId;
   const base = me().sucursalId==='all'?mine:me().sucursalId;
@@ -1697,9 +1715,7 @@ function newProjectModal(){
     <div class="modal-body">
       <div class="field"><label>Nombre</label><input class="input" id="npName" placeholder="Ej: Remodelación del salón"></div>
       <div class="field"><label>Descripción</label><textarea class="textarea" id="npDescP" placeholder="¿De qué se trata?"></textarea></div>
-      <div class="field"><label>¿Quiénes participan?</label>
-        <div class="assignee-pick" id="npMembers">${people.map(u=>`<button class="ap ${u.id===SES.userId?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${(u.name||'').split(' ')[0]} <span style="color:var(--text-soft)">(${roleInfo(u.role).short})</span></button>`).join('')}</div>
-      </div>
+      <div class="field"><label>¿Quiénes participan?</label>${peoplePicker('npMembers', people, [SES.userId])}</div>
       <div class="field"><label>Sucursal</label><select class="select" id="npSucP">${sucOptionsFor()}</select></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="createProject()">Crear proyecto</button></div>`);
@@ -1707,7 +1723,7 @@ function newProjectModal(){
 window.newProjectModal=newProjectModal;
 function createProject(){
   const name=$('#npName').value.trim(); if(!name){ toast('Ponele nombre','err'); return; }
-  let members=[...document.querySelectorAll('#npMembers .ap.on')].map(b=>b.dataset.id);
+  let members=pickedIds('npMembers');
   if(!members.includes(SES.userId)) members.push(SES.userId);
   const p={id:uid(),name,desc:$('#npDescP').value.trim(),memberIds:members,sucursalId:$('#npSucP').value,createdAt:now(),cards:[]};
   DB.projects.unshift(p); activeProj=p.id;
@@ -1722,13 +1738,13 @@ function manageMembers(projId){
   const people=DB.users.filter(u=>u.active);
   openModal(`
     <div class="modal-head"><h3>Miembros · ${esc(p.name)}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body"><div class="assignee-pick" id="mmPick">${people.map(u=>`<button class="ap ${p.memberIds.includes(u.id)?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${(u.name||'').split(' ')[0]} <span style="color:var(--text-soft)">(${roleInfo(u.role).short})</span></button>`).join('')}</div></div>
+    <div class="modal-body">${peoplePicker('mmPick', people, p.memberIds)}</div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveMembers('${projId}')">Guardar</button></div>`);
 }
 window.manageMembers=manageMembers;
 function saveMembers(projId){
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
-  const newM=[...document.querySelectorAll('#mmPick .ap.on')].map(b=>b.dataset.id);
+  const newM=pickedIds('mmPick');
   const added=newM.filter(i=>!p.memberIds.includes(i));
   p.memberIds=newM;
   if(added.length) notify(added,`${me().name.split(' ')[0]} te agregó al proyecto "${p.name}"`,'📋',{view:'proyectos'});
@@ -1900,7 +1916,7 @@ function newDMModal(){
   openModal(`
     <div class="modal-head"><h3>Nuevo chat directo</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body"><div class="field"><label>¿Con quién?</label>
-      <div class="assignee-pick">${people.map(u=>`<button class="ap" onclick="startDM('${u.id}')">${avatarHTML(u)} ${esc(u.name)}</button>`).join('')}</div></div></div>`);
+      ${peoplePicker('dmPick', people, [], {single:'startDM'})}</div></div>`);
 }
 window.newDMModal=newDMModal;
 function startDM(otherId){
@@ -1916,7 +1932,7 @@ function newGroupModal(){
     <div class="modal-head"><h3>Nuevo grupo</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
       <div class="field"><label>Nombre del grupo</label><input class="input" id="ngName" placeholder="Ej: Cocina Central"></div>
-      <div class="field"><label>Miembros</label><div class="assignee-pick" id="ngMembers">${people.map(u=>`<button class="ap ${u.id===SES.userId?'on':''}" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${(u.name||'').split(' ')[0]}</button>`).join('')}</div></div>
+      <div class="field"><label>Miembros</label>${peoplePicker('ngMembers', people, [SES.userId])}</div>
       <div class="field"><label>Sucursal</label><select class="select" id="ngSuc">${sucOptionsFor()}</select></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="createGroup()">Crear grupo</button></div>`);
@@ -1924,7 +1940,7 @@ function newGroupModal(){
 window.newGroupModal=newGroupModal;
 function createGroup(){
   const name=$('#ngName').value.trim(); if(!name){ toast('Ponele nombre al grupo','err'); return; }
-  let members=[...document.querySelectorAll('#ngMembers .ap.on')].map(b=>b.dataset.id);
+  let members=pickedIds('ngMembers');
   if(!members.includes(SES.userId)) members.push(SES.userId);
   const c={id:uid(),type:'group',name,memberIds:members,sucursalId:$('#ngSuc').value,createdById:SES.userId,createdAt:now(),msgs:[]};
   DB.chats.unshift(c);
@@ -1974,13 +1990,12 @@ function groupAddMembersModal(id){
   const avail=DB.users.filter(u=>u.active && !(c.memberIds||[]).includes(u.id));
   if(!avail.length){ toast('Ya están todos en el grupo','ok'); return; }
   openModal(`<div class="modal-head"><h3>Agregar miembros</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
-    <div class="modal-body"><div class="field"><label>Elegí a quién agregar a "${esc(c.name)}"</label>
-      <div class="assignee-pick" id="gaMembers">${avail.map(u=>`<button type="button" class="ap" data-id="${u.id}" onclick="this.classList.toggle('on')">${initials(u.name)} · ${esc((u.name||'').split(' ')[0])}</button>`).join('')}</div></div></div>
+    <div class="modal-body"><div class="field"><label>Elegí a quién agregar a "${esc(c.name)}"</label>${peoplePicker('gaMembers', avail, [])}</div></div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="groupInfoModal('${c.id}')">Volver</button><button class="btn btn-primary" onclick="groupAddMembers('${c.id}')">${svgIcon('plus','icon icon-sm')} Agregar</button></div>`);
 }
 function groupAddMembers(id){
   const c=DB.chats.find(x=>x.id===id); if(!c||!canManageGroup(c)) return;
-  const add=[...document.querySelectorAll('#gaMembers .ap.on')].map(b=>b.dataset.id);
+  const add=pickedIds('gaMembers');
   if(!add.length){ toast('Elegí al menos una persona','err'); return; }
   add.forEach(uid=>{ if(!c.memberIds.includes(uid)) c.memberIds.push(uid); });
   audit('chat',`agregó ${add.length} miembro(s) al grupo "${c.name}"`,c.sucursalId);

@@ -403,6 +403,26 @@ select option,select optgroup{background:var(--bg-elev);color:var(--text)}
 .rec-ing-del{width:38px;height:38px;flex:0 0 auto;border:1px solid var(--border)}
 .rec-ing-del:hover{border-color:var(--danger)}.rec-ing-del:hover .icon{color:var(--danger)}
 @media(max-width:640px){ .rec-grid{grid-template-columns:1fr} }
+/* selector de personas reutilizable */
+.ppick{display:flex;flex-direction:column;gap:10px}
+.ppick-search{display:flex;align-items:center;gap:8px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);padding:0 12px;transition:border-color var(--t-fast)}
+.ppick-search:focus-within{border-color:var(--accent);box-shadow:var(--ring)}
+.ppick-search .icon{color:var(--text-soft);flex:0 0 auto}
+.ppick-search input{flex:1;background:transparent;border:none;outline:none;color:var(--text);font-size:14px;padding:11px 0}
+.ppick-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(195px,1fr));gap:8px;max-height:300px;overflow:auto;padding:2px}
+.pp{display:flex;align-items:center;gap:10px;text-align:left;padding:8px 11px;border:1px solid var(--border);border-radius:var(--r-md);background:var(--bg-soft);cursor:pointer;transition:border-color var(--t-fast),background var(--t-fast),transform var(--t-fast);min-width:0}
+.pp:hover{border-color:var(--accent-line)}
+.pp:active{transform:scale(.98)}
+.pp.on{border-color:var(--accent);background:var(--accent-soft)}
+.pp .av{width:32px;height:32px;font-size:12px;flex:0 0 auto;box-shadow:none}
+.pp-tx{display:flex;flex-direction:column;min-width:0;flex:1}
+.pp-nm{font-weight:650;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pp-rl{font-size:11px;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pp-ck{flex:0 0 auto;color:var(--accent);opacity:0;transition:opacity var(--t-fast)}
+.pp.on .pp-ck{opacity:1}
+.pp>.icon{flex:0 0 auto;color:var(--text-soft)}
+@media(max-width:560px){ .ppick-grid{grid-template-columns:1fr 1fr} }
+@media(max-width:420px){ .ppick-grid{grid-template-columns:1fr} }
 /* reportes: selector de mes */
 .rep-month{display:inline-flex;align-items:center;gap:4px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);padding:4px 6px;flex:0 0 auto}
 .rep-month b{font-size:13.5px;font-weight:700;min-width:150px;text-align:center;text-transform:capitalize}
