@@ -3150,76 +3150,146 @@ function viewPersonal(){
 /* =====================================================================
    VISTA: REPORTES (Gerencia / Contabilidad)
    ===================================================================== */
-function viewReportes(){
-  const tasks=DB.tasks.filter(t=>inScope(t.sucursalId));
-  const done=tasks.filter(t=>t.status==='hecha').length;
-  const late=tasks.filter(t=>t.status==='atrasada').length;
-  const rej=tasks.filter(t=>t.status==='rechazada').length;
-  const compl = tasks.length? Math.round(done/tasks.length*100):0;
-  const peds=DB.pedidos.filter(p=>inScope(p.sucursalId));
-  const pedPend=peds.filter(p=>p.status==='pendiente'||p.status==='proceso').length;
+let repMonth='';
+function ymOf(ts){ const d=new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function monthRange(ym){ const [y,m]=ym.split('-').map(Number); return {start:new Date(y,m-1,1).getTime(), end:new Date(y,m,1).getTime(), days:new Date(y,m,0).getDate(), y, m}; }
+function inMonth(ts,ym){ if(!ts) return false; const r=monthRange(ym); return ts>=r.start && ts<r.end; }
+function monthLabel(ym){ const [y,m]=ym.split('-').map(Number); return new Date(y,m-1,1).toLocaleDateString('es-CR',{month:'long',year:'numeric'}); }
+function repShift(d){ const [y,m]=repMonth.split('-').map(Number); const dt=new Date(y,m-1+d,1); repMonth=dt.getFullYear()+'-'+String(dt.getMonth()+1).padStart(2,'0'); render(); }
+window.repShift=repShift;
+function repVBars(items){
+  const max=Math.max(1,...items.map(i=>+i.value||0));
+  return `<div class="chart-bars">`+items.map(i=>`<div class="cbar" title="${esc(i.title!=null?String(i.title):String(i.value))}"><div class="cbar-val">${i.show!=null?esc(String(i.show)):''}</div><div class="cbar-track"><div class="cbar-fill" style="height:${Math.round((+i.value||0)/max*100)}%"></div></div><div class="cbar-lbl">${esc(String(i.lbl||''))}</div></div>`).join('')+`</div>`;
+}
+function reportData(ym){
+  const tasks=(DB.tasks||[]).filter(t=>t&&inScope(t.sucursalId));
+  const peds=(DB.pedidos||[]).filter(p=>p&&inScope(p.sucursalId));
+  const sales=(DB.souvSales||[]).filter(v=>v&&inScope(v.sucursalId)&&inMonth(v.at,ym));
   const inv=invInScope();
+  const tMonth=tasks.filter(t=>inMonth(t.createdAt,ym));
+  const st=s=>tMonth.filter(t=>t.status===s).length;
+  const done=st('hecha'),late=st('atrasada'),rej=st('rechazada'),proc=st('proceso'),pend=st('pendiente');
+  const compl=tMonth.length?Math.round(done/tMonth.length*100):0;
+  const pMonth=peds.filter(p=>inMonth(p.createdAt,ym));
+  const pDeliv=pMonth.filter(p=>p.status==='entregado').length;
+  const areas={proveeduria:0,contabilidad:0,rrhh:0}; pMonth.forEach(p=>{ if(areas[p.area]!==undefined) areas[p.area]++; });
+  const ingresos=sales.reduce((s,v)=>s+(+v.price||0)*(+v.qty||0),0);
+  const ganancia=sales.reduce((s,v)=>s+((+v.price||0)-(+v.cost||0))*(+v.qty||0),0);
+  const unidades=sales.reduce((s,v)=>s+(+v.qty||0),0);
   const invVal=inv.reduce((s,p)=>s+p.stock*p.cost,0);
   const invLow=inv.filter(lowStock).length;
-
-  // productividad por persona
+  const shifts=(DB.shifts||[]).filter(s=>s&&inScope(s.sucursalId)&&!s.off&&(s.date||'').startsWith(ym));
   const prod=DB.users.filter(u=>u.active).map(u=>{
-    const mine=tasks.filter(t=>t.toIds.includes(u.id));
-    const h=mine.filter(t=>t.status==='hecha').length;
-    const a=mine.filter(t=>t.status==='atrasada').length;
-    const rj=mine.filter(t=>t.status==='rechazada').length;
+    const mine=tMonth.filter(t=>(t.toIds||[]).includes(u.id));
+    const h=mine.filter(t=>t.status==='hecha').length, a=mine.filter(t=>t.status==='atrasada').length, rj=mine.filter(t=>t.status==='rechazada').length;
+    const dias=shifts.filter(s=>s.userId===u.id).length;
     const pct=mine.length?Math.round(h/mine.length*100):0;
-    return {u,total:mine.length,h,a,rj,pct};
-  }).filter(x=>x.total>0).sort((a,b)=>b.pct-a.pct||b.h-a.h);
-
-  // pedidos por área
-  const areas={proveeduria:0,contabilidad:0,rrhh:0};
-  peds.forEach(p=>{ if(areas[p.area]!==undefined) areas[p.area]++; });
-  const maxArea=Math.max(1,...Object.values(areas));
-
-  // valor por categoría
-  const catVal={};
-  inv.forEach(p=>{ catVal[p.category]=(catVal[p.category]||0)+p.stock*p.cost; });
-  const maxCat=Math.max(1,...Object.values(catVal));
-
-  // actividad por sucursal
-  const sucAct=DB.sucursales.map(s=>({s,n:DB.audit.filter(a=>a.sucursalId===s.id).length}));
-
+    return {u,total:mine.length,h,a,rj,dias,pct};
+  }).filter(x=>x.total>0||x.dias>0).sort((a,b)=>b.pct-a.pct||b.h-a.h||b.dias-a.dias);
+  const r=monthRange(ym);
+  const salesDay=[]; for(let dd=1;dd<=r.days;dd++){ const v=sales.filter(s=>new Date(s.at).getDate()===dd).reduce((a,b)=>a+(+b.price||0)*(+b.qty||0),0); salesDay.push({day:dd,value:v}); }
+  const catVal={}; inv.forEach(p=>{ catVal[p.category]=(catVal[p.category]||0)+p.stock*p.cost; });
+  return {ym,tasks,tMonth,done,late,rej,proc,pend,compl,peds,pMonth,pDeliv,areas,sales,ingresos,ganancia,unidades,inv,invVal,invLow,shifts,prod,salesDay,catVal};
+}
+function viewReportes(){
+  if(!repMonth) repMonth=ymOf(Date.now());
+  const ym=repMonth; const d=reportData(ym);
   const guide=sectionGuide('reportes','Reportes de Gerencia',`
-    Resumen del restaurante para tomar decisiones: <b>cumplimiento por puesto</b>, pedidos, inventario y actividad.
+    Resumen del restaurante <b>mes a mes</b> para tomar decisiones: cumplimiento por puesto, asistencia, pedidos, ventas e inventario.
+    <ul style="margin:8px 0 0 18px"><li>Cambiá de mes con las flechas; todo se recalcula.</li><li>Tocá <b>Generar reporte</b> para una versión imprimible / PDF.</li></ul>
     <div class="tip"><b>Importante:</b> el cumplimiento sale del historial real de tareas, no se puede inflar.</div>`);
-
-  let html=`<div class="page-head"><div><div class="page-title">Reportes</div><div class="page-sub">Vista de ${sucName(visibleSuc())}</div></div></div>`;
+  let html=`<div class="page-head"><div><div class="page-title">Reportes</div><div class="page-sub">${esc(sucName(visibleSuc()))}</div></div>
+    <div class="ph-spacer"></div>
+    <div class="rep-month"><button class="icon-btn" style="width:32px;height:32px" onclick="repShift(-1)" title="Mes anterior">${svgIcon('back','icon icon-sm')}</button><b>${esc(cap(monthLabel(ym)))}</b><button class="icon-btn" style="width:32px;height:32px" onclick="repShift(1)" title="Mes siguiente"><svg class="icon icon-sm" viewBox="0 0 24 24" style="transform:scaleX(-1)"><use href="#i-back"/></svg></button></div>
+    <button class="btn btn-primary" style="flex:0 0 auto" onclick="generateMonthlyReport()">${svgIcon('save','icon icon-sm')} Generar reporte</button></div>`;
   html+=guide;
   html+=`<div class="kpi-row">
-    <div class="kpi ${compl>=70?'good':compl>=40?'warn':'alert'}"><div class="label">Cumplimiento</div><div class="value">${compl}%</div><div class="sub">${done}/${tasks.length} tareas hechas</div></div>
-    <div class="kpi ${late?'alert':'good'}"><div class="label">Atrasadas</div><div class="value">${late}</div><div class="sub">${rej} rechazadas</div></div>
-    <div class="kpi ${pedPend?'warn':'good'}"><div class="label">Pedidos activos</div><div class="value">${pedPend}</div><div class="sub">por atender</div></div>
-    <div class="kpi"><div class="label">Valor inventario</div><div class="value" style="font-size:20px">${money(invVal)}</div><div class="sub">${invLow} bajo mínimo</div></div>
+    <div class="kpi ${d.compl>=70?'good':d.compl>=40?'warn':'alert'}"><div class="label">Cumplimiento</div><div class="value">${d.compl}%</div><div class="sub">${d.done}/${d.tMonth.length} tareas hechas</div></div>
+    <div class="kpi ${d.late?'alert':'good'}"><div class="label">Atrasadas</div><div class="value">${d.late}</div><div class="sub">${d.rej} rechazadas</div></div>
+    <div class="kpi"><div class="label">Pedidos del mes</div><div class="value">${d.pMonth.length}</div><div class="sub">${d.pDeliv} entregados</div></div>
+    <div class="kpi ok"><div class="label">Ventas souvenirs</div><div class="value" style="font-size:20px">${money(d.ingresos)}</div><div class="sub">ganancia ${money(d.ganancia)}</div></div>
   </div>`;
-
-  html+=`<div class="card"><div style="font-weight:700;font-size:15px;margin-bottom:14px">🏆 Cumplimiento por persona</div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Asign.</th><th>Hechas</th><th>Atrasadas</th><th>Rechaz.</th><th>%</th></tr></thead><tbody>
-    ${prod.map(x=>`<tr><td><div style="display:flex;align-items:center;gap:8px">${avatarHTML(x.u)}<span style="font-weight:600">${esc(x.u.name)}</span></div></td>
-      <td>${roleInfo(x.u.role).short}</td><td>${x.total}</td><td style="color:var(--success);font-weight:700">${x.h}</td>
+  const stMax=Math.max(1,d.done,d.proc,d.pend,d.late,d.rej);
+  const aMax=Math.max(1,...Object.values(d.areas));
+  const catE=Object.entries(d.catVal).sort((a,b)=>b[1]-a[1]); const cMax=Math.max(1,...catE.map(e=>e[1]),1);
+  html+=`<div class="chart-grid">
+    <div class="chartcard"><div class="chart-title">${svgIcon('check','icon icon-sm')} Estado de tareas del mes</div>
+      ${bar('Hechas',d.done,stMax,'var(--success)')}${bar('En proceso',d.proc,stMax,'var(--info)')}${bar('Pendientes',d.pend,stMax,'var(--text-soft)')}${bar('Atrasadas',d.late,stMax,'var(--warn)')}${bar('Rechazadas',d.rej,stMax,'var(--danger)')}</div>
+    <div class="chartcard"><div class="chart-title">${svgIcon('box','icon icon-sm')} Pedidos por área</div>
+      ${bar('Proveeduría',d.areas.proveeduria,aMax,'var(--success)')}${bar('Contabilidad',d.areas.contabilidad,aMax,'var(--info)')}${bar('Recursos Humanos',d.areas.rrhh,aMax,'var(--accent)')}</div>
+  </div>`;
+  html+=`<div class="chart-grid">
+    <div class="chartcard"><div class="chart-title">${svgIcon('chart','icon icon-sm')} Valor de inventario por categoría</div>
+      ${catE.length?catE.map(([c,v])=>bar(c,Math.round(v),cMax,'var(--accent-2)')).join(''):'<div class="chart-empty">Sin inventario cargado.</div>'}</div>
+    <div class="chartcard"><div class="chart-title">${svgIcon('trend','icon icon-sm')} Ventas de souvenirs por día</div>
+      ${d.sales.length?repVBars(d.salesDay.map(x=>({lbl:(x.day%5===0||x.day===1)?x.day:'',value:x.value,title:`Día ${x.day}: ${money(x.value)}`}))):'<div class="chart-empty">Sin ventas de souvenirs este mes.</div>'}</div>
+  </div>`;
+  html+=`<div class="card"><div class="rep-tbl-title">${svgIcon('users','icon icon-sm')} Cumplimiento y asistencia por persona</div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Días trab.</th><th>Asign.</th><th>Hechas</th><th>Atras.</th><th>Rech.</th><th>%</th></tr></thead><tbody>
+    ${d.prod.map(x=>`<tr><td><div style="display:flex;align-items:center;gap:8px">${avatarHTML(x.u)}<span style="font-weight:600">${esc(x.u.name)}</span></div></td>
+      <td>${roleInfo(x.u.role).short}</td><td><b>${x.dias}</b></td><td>${x.total}</td><td style="color:var(--success);font-weight:700">${x.h}</td>
       <td style="color:${x.a?'var(--warn)':'inherit'};font-weight:${x.a?700:400}">${x.a}</td>
       <td style="color:${x.rj?'var(--danger)':'inherit'};font-weight:${x.rj?700:400}">${x.rj}</td>
-      <td><b>${x.pct}%</b></td></tr>`).join('') || '<tr><td colspan="7" style="color:var(--text-soft)">Sin datos todavía.</td></tr>'}
+      <td><b>${x.pct}%</b></td></tr>`).join('') || '<tr><td colspan="8" style="color:var(--text-soft)">Sin actividad registrada en el mes.</td></tr>'}
     </tbody></table></div></div>`;
-
-  html+=`<div class="kpi-row" style="grid-template-columns:1fr 1fr">
-    <div class="card" style="margin:0"><div style="font-weight:700;font-size:15px;margin-bottom:14px">📦 Pedidos por área</div>
-      ${bar('Proveeduría',areas.proveeduria,maxArea,'var(--success)')}${bar('Contabilidad',areas.contabilidad,maxArea,'var(--info)')}${bar('Recursos Humanos',areas.rrhh,maxArea,'var(--accent)')}</div>
-    <div class="card" style="margin:0"><div style="font-weight:700;font-size:15px;margin-bottom:14px">💰 Valor de inventario por categoría</div>
-      ${Object.keys(catVal).length?Object.entries(catVal).sort((a,b)=>b[1]-a[1]).map(([c,v])=>bar((CAT_EMOJI[c]||'')+' '+c,Math.round(v),maxCat,'var(--accent-2)')).join(''):'<div style="color:var(--text-soft);font-size:13px">Sin inventario.</div>'}</div>
-  </div>`;
-
   if(isAdmin()){
-    html+=`<div class="card"><div style="font-weight:700;font-size:15px;margin-bottom:14px">🏢 Actividad por sucursal</div>
-      ${sucAct.map(x=>bar(x.s.name,x.n,Math.max(1,...sucAct.map(y=>y.n)),'var(--accent)')).join('')}</div>`;
+    const sucAct=DB.sucursales.map(s=>({s,n:(DB.audit||[]).filter(a=>a.sucursalId===s.id&&inMonth(a.at,ym)).length}));
+    const sMax=Math.max(1,...sucAct.map(y=>y.n));
+    html+=`<div class="chartcard"><div class="chart-title">${svgIcon('pin','icon icon-sm')} Actividad por sucursal (mes)</div>${sucAct.map(x=>bar(x.s.name,x.n,sMax,'var(--accent)')).join('')}</div>`;
   }
   return html;
 }
+function generateMonthlyReport(){
+  const ym=repMonth||ymOf(Date.now()); const d=reportData(ym);
+  const ml=cap(monthLabel(ym)); const suc=sucName(visibleSuc());
+  const gen=new Date().toLocaleString('es-CR',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  const k=(l,v)=>`<div class="k"><div class="kl">${l}</div><div class="kv">${v}</div></div>`;
+  const prow=d.prod.map(x=>`<tr><td>${esc(x.u.name)}</td><td>${esc(roleInfo(x.u.role).short)}</td><td>${x.dias}</td><td>${x.total}</td><td>${x.h}</td><td>${x.a}</td><td>${x.rj}</td><td><b>${x.pct}%</b></td></tr>`).join('')||'<tr><td colspan="8" style="color:#999">Sin actividad en el mes</td></tr>';
+  const li=(l,v)=>`<div class="li"><span>${l}</span><b>${v}</b></div>`;
+  const html=`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reporte ${esc(ml)} — Sabor Tico</title>
+  <style>
+    *{box-sizing:border-box;font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif}
+    body{margin:0;background:#f0f0f0;color:#1c1c1c}
+    .bar{margin:14px auto;max-width:900px;display:flex;gap:10px;justify-content:flex-end;padding:0 16px}
+    .bar button{padding:10px 16px;border:none;border-radius:8px;font-weight:700;cursor:pointer;font-size:14px}
+    .pbtn{background:#b83a52;color:#fff}.cbtn{background:#dcdcdc;color:#222}
+    .sheet{max-width:900px;margin:0 auto 30px;background:#fff;padding:34px 40px;box-shadow:0 2px 14px rgba(0,0,0,.08)}
+    .top{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:3px solid #b83a52;padding-bottom:16px;margin-bottom:8px}
+    .brand{font-size:24px;font-weight:800}.brand span{color:#b83a52}
+    .top h1{font-size:17px;margin:8px 0 0;font-weight:700}
+    .muted{color:#888;font-size:12px;line-height:1.5}
+    .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:22px 0 8px}
+    .k{border:1px solid #e6e6e6;border-radius:10px;padding:13px 15px}
+    .kl{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#999;font-weight:700}
+    .kv{font-size:21px;font-weight:800;margin-top:5px}
+    h2{font-size:13.5px;margin:26px 0 11px;border-left:4px solid #b83a52;padding-left:10px;text-transform:uppercase;letter-spacing:.4px;color:#444}
+    table{width:100%;border-collapse:collapse;font-size:12.5px}
+    th{text-align:left;background:#faf2f3;border-bottom:2px solid #ececec;padding:9px 10px;font-size:10px;text-transform:uppercase;letter-spacing:.4px;color:#777}
+    td{padding:9px 10px;border-bottom:1px solid #f0f0f0}
+    .twocol{display:grid;grid-template-columns:1fr 1fr;gap:26px}
+    .li{display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #f0f0f0;font-size:13px}
+    .foot{margin-top:30px;color:#aaa;font-size:11px;text-align:center;border-top:1px solid #eee;padding-top:14px}
+    @media print{.bar{display:none}body{background:#fff}.sheet{box-shadow:none;margin:0;padding:0;max-width:none}}
+  </style></head><body>
+  <div class="bar"><button class="cbtn" onclick="window.close()">Cerrar</button><button class="pbtn" onclick="window.print()">Imprimir / Guardar PDF</button></div>
+  <div class="sheet">
+    <div class="top"><div><div class="brand">Sabor Tico<span>.</span></div><h1>Reporte de trabajo — ${esc(ml)}</h1></div>
+      <div class="muted" style="text-align:right">${esc(suc)}<br>Generado: ${esc(gen)}<br>por ${esc(me()?me().name:'')}</div></div>
+    <div class="kpis">${k('Cumplimiento',d.compl+'%')}${k('Tareas hechas',d.done+' / '+d.tMonth.length)}${k('Pedidos del mes',d.pMonth.length+' ('+d.pDeliv+' entreg.)')}${k('Ganancia souvenirs',money(d.ganancia))}</div>
+    <h2>Cumplimiento y asistencia por persona</h2>
+    <table><thead><tr><th>Persona</th><th>Puesto</th><th>Días trab.</th><th>Asignadas</th><th>Hechas</th><th>Atrasadas</th><th>Rechazadas</th><th>%</th></tr></thead><tbody>${prow}</tbody></table>
+    <div class="twocol">
+      <div><h2>Tareas</h2>${li('Creadas en el mes',d.tMonth.length)}${li('Hechas',d.done)}${li('En proceso',d.proc)}${li('Pendientes',d.pend)}${li('Atrasadas',d.late)}${li('Rechazadas',d.rej)}</div>
+      <div><h2>Pedidos y ventas</h2>${li('Pedidos del mes',d.pMonth.length)}${li('Proveeduría',d.areas.proveeduria)}${li('Contabilidad',d.areas.contabilidad)}${li('Recursos',d.areas.rrhh)}${li('Souvenirs vendidos',d.unidades+' · '+money(d.ingresos))}${li('Ganancia souvenirs',money(d.ganancia))}</div>
+    </div>
+    <h2>Inventario (estado actual)</h2>
+    ${li('Valor total del inventario',money(d.invVal))}${li('Productos bajo mínimo',d.invLow)}
+    <div class="foot">Sabor Tico · Reporte generado automáticamente · ${esc(gen)}</div>
+  </div></body></html>`;
+  const w=window.open('','_blank'); if(!w){ toast('Permití las ventanas emergentes para generar el reporte','err'); return; }
+  w.document.write(html); w.document.close();
+}
+window.generateMonthlyReport=generateMonthlyReport;
 
 /* =====================================================================
    VISTA: RESERVACIONES (clientes / agencias + tabla por día)
