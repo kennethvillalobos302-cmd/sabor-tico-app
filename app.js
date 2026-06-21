@@ -3031,13 +3031,14 @@ const RESERV_EST={pendiente:{l:'Pendiente',c:'pendiente'},confirmada:{l:'Confirm
 let resvTab='lista', resvFilter='proximas', resvEstado='todos', resvSearch='', clientSearch='';
 function reservScoped(){ return (DB.reservations||[]).filter(r=>r&&inScope(r.sucursalId)); }
 function clientById(id){ return (DB.clients||[]).find(c=>c.id===id); }
+function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
 function starsHTML(score,cid){
   let s=''; for(let i=1;i<=5;i++){ s+=`<button class="star ${i<=(score||0)?'on':''}" ${cid?`onclick="event.stopPropagation();setScore('${cid}',${i})"`:'disabled'} title="${i} de 5">${svgIcon('star','icon icon-sm')}</button>`; }
   return `<span class="stars">${s}</span>`;
 }
 function reservTodayCard(){
   if(!canReservView()) return '';
-  const today=new Date().toISOString().slice(0,10);
+  const today=todayISO();
   const rs=reservScoped().filter(r=>r&&r.resDate===today && r.status!=='cancelada').sort((a,b)=>(a.resTime||'').localeCompare(b.resTime||''));
   const pers=rs.reduce((s,r)=>s+(+r.people||0),0);
   if(!rs.length) return `<div class="card sched-card free"><span class="av" style="background:var(--bg-soft)">${svgIcon('reserva')}</span><div style="flex:1"><div style="font-weight:700">Sin reservas para hoy</div><div class="page-sub" style="margin:0">Cuando registres una, aparece acá.</div></div><button class="btn btn-ghost" style="flex:0 0 auto" onclick="go('reservas')">Ver</button></div>`;
@@ -3063,7 +3064,7 @@ function viewReservas(){
   return html;
 }
 function reservLista(editor){
-  const today=new Date().toISOString().slice(0,10);
+  const today=todayISO();
   let list=reservScoped();
   if(resvFilter==='hoy') list=list.filter(r=>r.resDate===today);
   else if(resvFilter==='proximas') list=list.filter(r=>r.resDate>=today);
@@ -3245,7 +3246,7 @@ function saveReserv(id){
     audit('reserva',`registró reserva de ${clientName} para ${data.resDate} ${fmt12(data.resTime)}`,data.sucursalId);
     notify(DB.users.filter(u=>['admin','gerencia_exp','jefe_salon','salonero'].includes(u.role)).map(u=>u.id), `Nueva reserva: ${clientName} · ${fmtResDate(data.resDate)} ${fmt12(data.resTime)} · ${data.people}p`, 'reserva', {view:'reservas'});
   }
-  closeModal(); toast('Reserva guardada','ok'); render();
+  closeModal(); toast('Reserva guardada','ok'); save(); render();
 }
 function reservDetail(id){
   const r=DB.reservations.find(x=>x.id===id); if(!r) return;
