@@ -879,10 +879,10 @@ function taskFormBody(t){
     <div class="field"><label>Prioridad</label>${taskPrioSeg(t?t.prio:'media')}</div>
     <div class="field"><label>¿Para cuándo?</label>
       <div class="due-presets"><button type="button" class="chip" onclick="ntDuePreset('today')">Hoy</button><button type="button" class="chip" onclick="ntDuePreset('tomorrow')">Mañana</button><button type="button" class="chip" onclick="ntDuePreset('3d')">En 3 días</button><button type="button" class="chip" onclick="ntDuePreset('week')">En 1 semana</button></div>
-      <div class="td-when">
-        <div class="td-when-date">${dateField(dp.iso,'nt')}</div>
-        <div class="td-when-time"><label class="td-when-lbl">Hora</label>${timePicker('ntT',dp.hhmm,'')}</div>
-      </div>
+    </div>
+    <div class="row2 rv-when">
+      <div class="field"><label>Fecha</label>${dateField(dp.iso,'nt')}</div>
+      <div class="field"><label>Hora</label>${timePicker('ntT',dp.hhmm,'')}</div>
     </div>
     <div class="field"><label>Sucursal</label><select class="select" id="ntSuc">${t?sucOptionsSel(t.sucursalId):sucOptionsFor()}</select></div>`;
 }
