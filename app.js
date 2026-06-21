@@ -27,6 +27,16 @@ const ROLES = {
   bartender:   { label:'Bartender',       short:'Bartender',    color:'#514a44' },
 };
 const ROLE_KEYS = Object.keys(ROLES);
+/* Orden por departamento para listar/personas: Gerencia · Salón · Cocina · Administración */
+const DEPT_ORDER = [
+  {label:'Gerencia',       roles:['admin','gerencia_exp','gerencia_data']},
+  {label:'Salón',          roles:['jefe_salon','salonero','bartender']},
+  {label:'Cocina',         roles:['chef','cocinero']},
+  {label:'Administración',  roles:['proveeduria','contarh']},
+];
+function deptRank(role){ for(let i=0;i<DEPT_ORDER.length;i++){ if(DEPT_ORDER[i].roles.includes(role)) return i; } return DEPT_ORDER.length; }
+function deptLabel(role){ const i=deptRank(role); return (DEPT_ORDER[i]&&DEPT_ORDER[i].label)||'Otros'; }
+function byDept(a,b){ return (deptRank(a.role)-deptRank(b.role)) || ((a.name||'').localeCompare(b.name||'')); }
 
 /* Áreas de pedidos (a quién va dirigida una solicitud). Una misma persona
    (Melanie · contarh) atiende tanto Contabilidad como Recursos. */
@@ -957,19 +967,27 @@ function assignablePeople(){
 /* Selector de personas reutilizable (avatar · nombre · puesto · check + buscador) */
 function peoplePicker(gridId, people, selected, opts){
   opts=opts||{}; selected=selected||[];
-  const cards=people.map(u=>{
+  const sorted=people.slice().sort(byDept);
+  let cards='', lastD=-1;
+  sorted.forEach(u=>{
+    const dr=deptRank(u.role);
+    if(dr!==lastD){ lastD=dr; cards+=`<div class="pp-group">${esc(deptLabel(u.role))}</div>`; }
     const sd=esc((((u.name||'')+' '+(roleInfo(u.role).short||''))).toLowerCase());
     const on=(!opts.single && selected.includes(u.id))?' on':'';
     const click=opts.single?`${opts.single}('${u.id}')`:`this.classList.toggle('on')`;
-    return `<button type="button" class="pp${on}" data-id="${u.id}" data-s="${sd}" onclick="${click}">
+    cards+=`<button type="button" class="pp${on}" data-id="${u.id}" data-s="${sd}" onclick="${click}">
       ${avatarHTML(u)}<span class="pp-tx"><span class="pp-nm">${esc(u.name||'')}</span><span class="pp-rl">${esc(roleInfo(u.role).short||'')}</span></span>${opts.single?svgIcon('chevron','icon icon-sm'):`<span class="pp-ck">${svgIcon('check','icon icon-sm')}</span>`}</button>`;
-  }).join('') || '<div class="td-empty" style="grid-column:1/-1">No hay personas disponibles.</div>';
+  });
+  if(!sorted.length) cards='<div class="td-empty" style="grid-column:1/-1">No hay personas disponibles.</div>';
   return `<div class="ppick">
     <div class="ppick-search">${svgIcon('search','icon icon-sm')}<input type="text" placeholder="Buscar persona o puesto…" oninput="ppickFilter('${gridId}',this.value)" autocomplete="off"></div>
     <div class="ppick-grid" id="${gridId}">${cards}</div>
   </div>`;
 }
-function ppickFilter(gridId,q){ q=(q||'').toLowerCase().trim(); document.querySelectorAll('#'+gridId+' .pp').forEach(b=>{ b.style.display=(!q||(b.dataset.s||'').includes(q))?'':'none'; }); }
+function ppickFilter(gridId,q){ q=(q||'').toLowerCase().trim();
+  document.querySelectorAll('#'+gridId+' .pp').forEach(b=>{ b.style.display=(!q||(b.dataset.s||'').includes(q))?'':'none'; });
+  document.querySelectorAll('#'+gridId+' .pp-group').forEach(h=>{ h.style.display=q?'none':''; });
+}
 function pickedIds(gridId){ return [...document.querySelectorAll('#'+gridId+' .pp.on')].map(b=>b.dataset.id); }
 window.ppickFilter=ppickFilter;
 function sucOptionsFor(){
@@ -2040,9 +2058,8 @@ function viewEquipo(){
     <button class="btn btn-primary" style="flex:0 0 auto" onclick="newUserModal()">+ Usuario</button></div>`;
   html+=guide;
   const groups=[{id:'all',name:'Todas las sucursales (global)'},...DB.sucursales];
-  const roleIdx=r=>ROLE_KEYS.indexOf(r);
   groups.forEach(g=>{
-    const people=DB.users.filter(u=>u.sucursalId===g.id).sort((a,b)=>roleIdx(a.role)-roleIdx(b.role)||a.name.localeCompare(b.name));
+    const people=DB.users.filter(u=>u.sucursalId===g.id).sort(byDept);
     const editBtn=g.id!=='all'?`<button class="icon-btn" style="width:32px;height:32px" title="Renombrar sucursal" onclick="sucEditModal('${g.id}')">${svgIcon('edit','icon icon-sm')}</button>`:'';
     html+=`<div class="page-head" style="margin:20px 0 10px;align-items:center"><div class="page-title" style="font-size:16px;display:flex;align-items:center;gap:8px">${svgIcon('pin','icon')} ${esc(g.name)}</div><div class="page-sub" style="margin:0 0 0 6px">· ${people.length} ${people.length===1?'persona':'personas'}</div><div class="ph-spacer"></div>${editBtn}</div>`;
     if(!people.length){ html+=`<div class="card" style="color:var(--text-soft);font-size:13px">Sin personas en esta sucursal.</div>`; return; }
@@ -3140,7 +3157,7 @@ window.addBreakRow=addBreakRow; window.renderBreakRows=renderBreakRows;
    ===================================================================== */
 function viewPersonal(){
   const manage=canPersonal();
-  const people=DB.users.filter(u=>isAdmin()||u.sucursalId==='all'||inScope(u.sucursalId));
+  const people=DB.users.filter(u=>isAdmin()||u.sucursalId==='all'||inScope(u.sucursalId)).sort(byDept);
   const sols=DB.pedidos.filter(p=>(p.area==='rrhh'||p.area==='contabilidad')&&inScope(p.sucursalId)).sort((a,b)=>b.createdAt-a.createdAt);
   const guide=sectionGuide('personal','Personal y RRHH',`
     Directorio del equipo y <b>solicitudes a Recursos Humanos</b> (permisos, adelantos, vacaciones).
@@ -3148,14 +3165,19 @@ function viewPersonal(){
   let html=`<div class="page-head"><div><div class="page-title">Personal</div><div class="page-sub">${people.length} personas · ${sols.filter(s=>s.status==='pendiente'||s.status==='proceso').length} solicitudes activas</div></div>
     <div class="ph-spacer"></div>${manage?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="newUserModal()">+ Persona</button>`:''}</div>`;
   html+=guide;
+  const pcols=manage?5:4;
   html+=`<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Sucursal</th><th>Teléfono</th>${manage?'<th></th>':''}</tr></thead><tbody>`;
-  html+=people.map(u=>`<tr>
+  let lastD=-1;
+  html+=people.map(u=>{
+    const dr=deptRank(u.role); let head='';
+    if(dr!==lastD){ lastD=dr; head=`<tr class="grp-row"><td colspan="${pcols}">${esc(deptLabel(u.role))}</td></tr>`; }
+    return head+`<tr>
     <td><div style="display:flex;align-items:center;gap:10px">${avatarHTML(u)}<div style="font-weight:600">${esc(u.name)}</div></div></td>
     <td><span class="role-badge">${roleInfo(u.role).label}</span></td>
     <td>${esc(sucName(u.sucursalId))}</td>
     <td>${esc(u.phone||'—')}</td>
     ${manage?`<td style="text-align:right"><button class="btn btn-ghost" style="padding:6px 10px" onclick="editUserModal('${u.id}')">Editar</button></td>`:''}
-  </tr>`).join('');
+  </tr>`;}).join('');
   html+=`</tbody></table></div></div>`;
   html+=`<div class="page-head" style="margin:18px 0 10px"><div class="page-title" style="font-size:17px">Solicitudes a RRHH</div></div>`;
   html+= sols.length? sols.map(pedidoRow).join('') : emptyState('👤','Sin solicitudes','Permisos, adelantos y vacaciones aparecen acá.');
