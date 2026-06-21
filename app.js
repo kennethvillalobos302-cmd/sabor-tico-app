@@ -961,9 +961,12 @@ function saveTaskEdit(id){
 window.saveTaskEdit=saveTaskEdit;
 
 /* helpers de asignación / sucursal */
-function assignablePeople(){
-  return DB.users.filter(u=>u.active && u.id!==SES.userId);
+/* Personas visibles según mi sucursal: si soy de una sede veo esa + los globales (de "ambos lados");
+   si soy global/gerencia veo a todos; admin respeta el filtro de sucursal de arriba. */
+function scopedPeople(excludeSelf){
+  return DB.users.filter(u=> u.active && inScope(u.sucursalId) && (!excludeSelf || u.id!==SES.userId));
 }
+function assignablePeople(){ return scopedPeople(true); }
 /* Selector de personas reutilizable (avatar · nombre · puesto · check + buscador) */
 function peoplePicker(gridId, people, selected, opts){
   opts=opts||{}; selected=selected||[];
@@ -1727,7 +1730,7 @@ window.openCall=openCall; window.toggleCall=toggleCall; window.leaveCall=leaveCa
 window.addCard=addCard;
 
 function newProjectModal(){
-  const people=DB.users.filter(u=>u.active);
+  const people=scopedPeople(false);
   openModal(`
     <div class="modal-head"><h3>Nuevo proyecto</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
@@ -1753,7 +1756,7 @@ window.createProject=createProject;
 
 function manageMembers(projId){
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
-  const people=DB.users.filter(u=>u.active);
+  const people=scopedPeople(false);
   openModal(`
     <div class="modal-head"><h3>Miembros · ${esc(p.name)}</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">${peoplePicker('mmPick', people, p.memberIds)}</div>
@@ -1930,7 +1933,7 @@ async function delMsg(chatId,msgId,scope){
 window.delMsgMenu=delMsgMenu; window.delMsg=delMsg;
 
 function newDMModal(){
-  const people=DB.users.filter(u=>u.active && u.id!==SES.userId);
+  const people=scopedPeople(true);
   openModal(`
     <div class="modal-head"><h3>Nuevo chat directo</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body"><div class="field"><label>¿Con quién?</label>
@@ -1945,7 +1948,7 @@ function startDM(otherId){
 window.startDM=startDM;
 
 function newGroupModal(){
-  const people=DB.users.filter(u=>u.active);
+  const people=scopedPeople(false);
   openModal(`
     <div class="modal-head"><h3>Nuevo grupo</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">
@@ -2005,7 +2008,7 @@ function groupRename(id){
 }
 function groupAddMembersModal(id){
   const c=DB.chats.find(x=>x.id===id); if(!c||!canManageGroup(c)) return;
-  const avail=DB.users.filter(u=>u.active && !(c.memberIds||[]).includes(u.id));
+  const avail=scopedPeople(false).filter(u=>!(c.memberIds||[]).includes(u.id));
   if(!avail.length){ toast('Ya están todos en el grupo','ok'); return; }
   openModal(`<div class="modal-head"><h3>Agregar miembros</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body"><div class="field"><label>Elegí a quién agregar a "${esc(c.name)}"</label>${peoplePicker('gaMembers', avail, [])}</div></div>
@@ -3059,7 +3062,7 @@ window.applyShiftPreset=applyShiftPreset; window.savePresets=savePresets; window
 function shiftNewModal(){ shBreaks=[]; shPresetEdit=false; openModal(shiftForm('Asignar turno',null), true); }
 function shiftEditModal(id){ const s=DB.shifts.find(x=>x.id===id); shBreaks=s?(s.breaks||[]).map(b=>({...b})):[]; shPresetEdit=false; openModal(shiftForm('Editar turno',s), true); }
 function shiftForm(title,s){
-  const people=DB.users.filter(u=>u.active);
+  const people=scopedPeople(false);
   const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
   const date=s?s.date:d.toISOString().slice(0,10);
   const st=s&&s.start?s.start:'10:00', en=s&&s.end?s.end:'18:00';
@@ -3157,7 +3160,7 @@ window.addBreakRow=addBreakRow; window.renderBreakRows=renderBreakRows;
    ===================================================================== */
 function viewPersonal(){
   const manage=canPersonal();
-  const people=DB.users.filter(u=>isAdmin()||u.sucursalId==='all'||inScope(u.sucursalId)).sort(byDept);
+  const people=DB.users.filter(u=>inScope(u.sucursalId)).sort(byDept);
   const sols=DB.pedidos.filter(p=>(p.area==='rrhh'||p.area==='contabilidad')&&inScope(p.sucursalId)).sort((a,b)=>b.createdAt-a.createdAt);
   const guide=sectionGuide('personal','Personal y RRHH',`
     Directorio del equipo y <b>solicitudes a Recursos Humanos</b> (permisos, adelantos, vacaciones).
