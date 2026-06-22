@@ -2966,6 +2966,8 @@ function makeable(r){
 }
 function recipeCost(r){ return (r.ingredients||[]).reduce((s,i)=>{const p=DB.inventory.find(x=>x.id===i.productId);return s+(p?(+p.cost||0)*(+i.qty||0):0);},0); }
 function recipeProfit(r){ return (+r.price||0)-recipeCost(r); }
+function recipeMargin(r){ const p=+r.price||0; if(p<=0) return null; return Math.round(recipeProfit(r)/p*100); }
+function recipeLowMargin(r){ const m=recipeMargin(r); return m!=null && m<20; }   // margen <20% o a pérdida
 function rindeCls(n){ return n<=0?'rechazada':n<5?'atrasada':'hecha'; }
 let recSearch='', recCat='todas';
 function viewRecetas(){
@@ -3012,8 +3014,9 @@ function recipeCard(r){
     <div class="rec-figs">
       <div class="rec-fig"><span class="rec-fig-l">Precio</span><span class="rec-fig-v">${money(r.price)}</span></div>
       ${editor?`<div class="rec-fig"><span class="rec-fig-l">Costo</span><span class="rec-fig-v">${money(recipeCost(r))}</span></div>
-      <div class="rec-fig"><span class="rec-fig-l">Ganancia</span><span class="rec-fig-v" style="color:var(--success)">${money(recipeProfit(r))}</span></div>`:''}
+      <div class="rec-fig"><span class="rec-fig-l">Ganancia</span><span class="rec-fig-v" style="color:${recipeProfit(r)<=0?'var(--danger)':'var(--success)'}">${money(recipeProfit(r))}</span></div>`:''}
     </div>
+    ${editor&&recipeLowMargin(r)?`<div class="rec-warn">${svgIcon('info','icon icon-sm')} Margen bajo (${recipeMargin(r)}%) — revisá precio o costo</div>`:''}
     <div class="rec-ings">${svgIcon('box','icon icon-sm')} ${ings||'Sin ingredientes'}${r.ingredients.length>4?' …':''}</div>
     ${cook?`<div class="rec-cardfoot" onclick="event.stopPropagation()"><button class="btn btn-primary" onclick="prepareModal('${r.id}')">${svgIcon('utensils','icon icon-sm')} Preparar</button></div>`:''}
   </div>`;
@@ -3637,6 +3640,7 @@ function viewReportes(){
   let html=`<div class="page-head"><div><div class="page-title">Reportes</div><div class="page-sub">${esc(sucName(visibleSuc()))}</div></div>
     <div class="ph-spacer"></div>
     <div class="rep-month"><button class="icon-btn" style="width:32px;height:32px" onclick="repShift(-1)" title="Mes anterior">${svgIcon('back','icon icon-sm')}</button><b>${esc(cap(monthLabel(ym)))}</b><button class="icon-btn" style="width:32px;height:32px" onclick="repShift(1)" title="Mes siguiente"><svg class="icon icon-sm" viewBox="0 0 24 24" style="transform:scaleX(-1)"><use href="#i-back"/></svg></button></div>
+    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="exportReportCSV()">${svgIcon('down','icon icon-sm')} Exportar CSV</button>
     <button class="btn btn-primary" style="flex:0 0 auto" onclick="generateMonthlyReport()">${svgIcon('save','icon icon-sm')} Generar reporte</button></div>`;
   html+=guide;
   html+=`<div class="kpi-row">
@@ -3674,6 +3678,28 @@ function viewReportes(){
   }
   return html;
 }
+// Exportar el reporte del mes a CSV (para contabilidad / Excel)
+function exportReportCSV(){
+  const ym=repMonth||ymOf(Date.now()); const d=reportData(ym);
+  const esc=s=>{ s=String(s==null?'':s); return /[",;\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+  const rows=[];
+  rows.push(['Reporte', cap(monthLabel(ym)), sucName(visibleSuc())]);
+  rows.push([]);
+  rows.push(['Resumen']);
+  rows.push(['Tareas del mes', d.tMonth.length]); rows.push(['Hechas', d.done]); rows.push(['Atrasadas', d.late]); rows.push(['Cumplimiento %', d.compl]);
+  rows.push(['Pedidos', d.pMonth.length]); rows.push(['Entregados', d.pDeliv]);
+  rows.push(['Ventas souvenirs (₡)', d.ingresos]); rows.push(['Ganancia souvenirs (₡)', d.ganancia]);
+  rows.push(['Valor inventario (₡)', Math.round(d.invVal)]); rows.push(['Productos bajo mínimo', d.invLow]);
+  rows.push([]);
+  rows.push(['Persona','Puesto','Días plan.','Presente','Horas','Asignadas','Hechas','Atrasadas','Cumplimiento %']);
+  d.prod.forEach(x=>rows.push([x.u.name, roleInfo(x.u.role).short, x.dias, x.presente, x.horas, x.total, x.h, x.a, x.pct]));
+  const csv='﻿'+rows.map(r=>r.map(esc).join(';')).join('\r\n');   // BOM + ';' para Excel en español
+  const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download='sabor-tico-reporte-'+ym+'.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+  toast('Reporte CSV descargado','ok');
+}
+window.exportReportCSV=exportReportCSV;
 function generateMonthlyReport(){
   const ym=repMonth||ymOf(Date.now()); const d=reportData(ym);
   const ml=cap(monthLabel(ym)); const suc=sucName(visibleSuc());
