@@ -186,7 +186,7 @@ input,textarea,select{font-family:inherit;font-size:14.5px}
 /* ---------- APP SHELL ---------- */
 .app{display:none;height:100%;flex-direction:column}
 .app.on{display:flex}
-.topbar{display:flex;align-items:center;gap:12px;padding:11px 18px;border-bottom:1px solid var(--border-soft);
+.topbar{display:flex;align-items:center;gap:12px;padding:calc(11px + env(safe-area-inset-top)) 18px 11px;border-bottom:1px solid var(--border-soft);
   background:color-mix(in srgb,var(--bg-elev) 88%, transparent);backdrop-filter:blur(10px);flex-shrink:0;z-index:20}
 .tb-logo{font-size:18px;font-weight:800;letter-spacing:-.4px;white-space:nowrap}
 .tb-logo .dot{color:var(--accent)}
@@ -1058,35 +1058,41 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
 /* ---------- RESPONSIVE ---------- */
 @media(max-width:780px){
   .sidebar{display:none}
-  .main{padding:16px 15px 86px}
+  .app.on{height:100dvh}
+  .main{padding:16px 15px}
   .kpi-row{grid-template-columns:1fr 1fr;gap:11px}
   .kpi .value{font-size:24px}
   .row2{grid-template-columns:1fr}
   .detail-meta{grid-template-columns:1fr}
   .tb-user .nm,.tb-user .rl{display:none}
-  .topbar{padding:10px 14px}
+  .topbar{padding:calc(10px + env(safe-area-inset-top)) 14px 10px}
   .suc-switch{padding:7px 9px}
   .page-title{font-size:20px}
-  .bottom-nav{display:flex;position:fixed;bottom:0;left:0;right:0;
-    background:color-mix(in srgb,var(--bg-elev) 92%, transparent);backdrop-filter:blur(12px);
-    border-top:1px solid var(--border-soft);z-index:30;padding:7px 4px calc(7px + env(safe-area-inset-bottom));justify-content:space-around}
+  .bottom-nav{display:flex;flex-shrink:0;
+    background:var(--bg-elev);
+    border-top:1px solid var(--border-soft);padding:7px 4px calc(7px + env(safe-area-inset-bottom));justify-content:space-around}
   .bn-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 4px;border-radius:var(--r-md);color:var(--text-soft);font-size:10.5px;font-weight:650;position:relative;flex:1;min-height:52px;transition:color var(--t-fast),background var(--t-fast)}
   .bn-item .ico .icon{width:23px;height:23px;transition:transform var(--t-fast)}
   .bn-item.active{color:var(--accent);background:var(--accent-soft)}
   .bn-item.active .ico .icon{transform:translateY(-1px) scale(1.06)}
   .bn-item:active{transform:scale(.93)}
   .bn-item .ncount{position:absolute;top:3px;right:20%;background:var(--danger);color:#fff;font-size:9px;font-weight:800;border-radius:9px;min-width:16px;height:16px;padding:0 4px;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-elev)}
-  .chat-wrap{height:calc(100vh - 160px)}
+  .chat-wrap{height:auto;border:none;border-radius:0;box-shadow:none}
   .chat-list{width:100%}
   .chat-list.hide-mobile{display:none}
   .chat-pane.hide-mobile{display:none}
+  /* Mensajes en celular a pantalla completa (estilo WhatsApp): el chat llena, el texto se escribe abajo */
+  body.chat-open .main{padding:0;display:flex;flex-direction:column;overflow:hidden}
+  body.chat-open .view{flex:1;min-height:0;display:flex}
+  body.chat-open .page-head,body.chat-open .section-guide{display:none}
+  body.chat-open .chat-wrap{flex:1;min-height:0;height:auto;background:var(--bg)}
   .board{justify-content:center}
   .bcard{width:100%;max-width:360px}
   .notif-panel,.user-menu{right:10px}
   .tbl-wrap{overflow-x:auto}
 }
 @media(max-width:780px){
-  .main{padding:12px 12px 90px}
+  .main{padding:12px 12px}
   .view{max-width:100%}
   .page-title{font-size:18px}
   .kpi{padding:13px}

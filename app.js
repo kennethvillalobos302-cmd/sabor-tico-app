@@ -960,7 +960,7 @@ function render(){
   if(!(ROLE_NAV[me().role]||[]).includes(SES.view)) SES.view='inicio';
   try{
     v.innerHTML = de((map[SES.view]||viewInicio)());
-    if(SES.view==='chat') afterChatRender();
+    if(SES.view==='chat') afterChatRender(); else document.body.classList.remove('chat-open');
     if(SES.view==='proyectos'){ const pc=$('#projChatMsgs'); if(pc) pc.scrollTop=pc.scrollHeight; applyZoom(); }
   }catch(e){
     console.error('view '+SES.view, e);
@@ -2188,8 +2188,10 @@ function viewChat(){
   </div>`;
   html+=guide;
 
-  const sel = SES.activeChat || (chats[0]&&chats[0].id);
-  SES.activeChat=sel;
+  const mob = window.innerWidth<=780;
+  let sel = SES.activeChat;
+  if(!mob && !sel) sel = chats[0] && chats[0].id;   // en compu se abre el primero; en celular, lista primero (estilo WhatsApp)
+  SES.activeChat = sel || null;
   const listHtml = chats.length? chats.map(c=>{
     const msgs=c.msgs||[]; const last=[...msgs].reverse().find(m=> m && !msgDeleted(m) && !((m.hiddenFor||[]).includes(SES.userId)));
     const mem=c.memberIds||[];
@@ -2248,14 +2250,15 @@ function afterChatRender(){
   const m=$('#chatMsgs'); if(m) m.scrollTop=m.scrollHeight;
   const cur=DB.chats.find(c=>c.id===SES.activeChat);
   if(cur) markSeen(cur);
-  // mobile: mostrar pane si hay chat activo
+  // celular: con chat abierto = pantalla completa (estilo WhatsApp); sin chat = lista
   if(window.innerWidth<=780){
     const list=$('#chatList'), pane=$('#chatPane');
-    if(SES.activeChat && pane){ list.classList.add('hide-mobile'); pane.classList.remove('hide-mobile'); }
-  }
+    if(SES.activeChat && cur){ if(list)list.classList.add('hide-mobile'); if(pane)pane.classList.remove('hide-mobile'); document.body.classList.add('chat-open'); }
+    else { if(list)list.classList.remove('hide-mobile'); if(pane)pane.classList.add('hide-mobile'); document.body.classList.remove('chat-open'); }
+  } else { document.body.classList.remove('chat-open'); }
 }
 window.openChat=id=>{ SES.activeChat=id; render(); };
-window.backChatList=()=>{ const l=$('#chatList'),p=$('#chatPane'); if(l)l.classList.remove('hide-mobile'); if(p)p.classList.add('hide-mobile'); };
+window.backChatList=()=>{ SES.activeChat=null; document.body.classList.remove('chat-open'); render(); };
 
 let chatPending=null;
 function fileToData(f){ return new Promise(r=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.readAsDataURL(f);}); }
