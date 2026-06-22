@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v32 · Equipo unificado (con Personal y RRHH)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v33 · elegir personas por área o sucursal';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1412,14 +1412,22 @@ function scopedPeople(excludeSelf){
   return DB.users.filter(u=> u.active && inScope(u.sucursalId) && (!excludeSelf || u.id!==SES.userId));
 }
 function assignablePeople(){ return scopedPeople(true); }
-/* Selector de personas reutilizable (avatar · nombre · puesto · check + buscador) */
-function peoplePicker(gridId, people, selected, opts){
+/* Selector de personas reutilizable (avatar · nombre · puesto · check + buscador).
+   Se puede agrupar por DEPARTAMENTO (área) o por SUCURSAL, con un toggle arriba. */
+const _ppStore={};   // gridId -> {people, opts}: para re-armar la grilla al cambiar de agrupación
+function _ppCards(people, opts, mode, selected){
   opts=opts||{}; selected=selected||[];
-  const sorted=people.slice().sort(byDept);
-  let cards='', lastD=-1;
+  const sucRank = id => id==='all' ? -1 : (DB.sucursales.findIndex(s=>s.id===id)<0 ? 999 : DB.sucursales.findIndex(s=>s.id===id));
+  const sorted = people.slice().sort(mode==='suc'
+    ? (a,b)=> (sucRank(a.sucursalId)-sucRank(b.sucursalId)) || (deptRank(a.role)-deptRank(b.role)) || ((a.name||'').localeCompare(b.name||''))
+    : byDept);
+  let cards='', lastG=null;
   sorted.forEach(u=>{
-    const dr=deptRank(u.role);
-    if(dr!==lastD){ lastD=dr; cards+=`<div class="pp-group">${esc(deptLabel(u.role))}</div>`; }
+    const gKey = mode==='suc' ? (u.sucursalId||'') : deptRank(u.role);
+    if(gKey!==lastG){ lastG=gKey;
+      const gLabel = mode==='suc' ? (u.sucursalId==='all'?'Todas las sucursales':sucName(u.sucursalId)) : deptLabel(u.role);
+      cards+=`<div class="pp-group">${esc(gLabel)}</div>`;
+    }
     const sd=esc((((u.name||'')+' '+(roleInfo(u.role).short||''))).toLowerCase());
     const on=(!opts.single && selected.includes(u.id))?' on':'';
     const click=opts.single?`${opts.single}('${u.id}')`:`this.classList.toggle('on')`;
@@ -1427,11 +1435,33 @@ function peoplePicker(gridId, people, selected, opts){
       ${avatarHTML(u)}<span class="pp-tx"><span class="pp-nm">${esc(u.name||'')}</span><span class="pp-rl">${esc(roleInfo(u.role).short||'')}</span></span>${opts.single?svgIcon('chevron','icon icon-sm'):`<span class="pp-ck">${svgIcon('check','icon icon-sm')}</span>`}</button>`;
   });
   if(!sorted.length) cards='<div class="td-empty" style="grid-column:1/-1">No hay personas disponibles.</div>';
+  return cards;
+}
+function peoplePicker(gridId, people, selected, opts){
+  opts=opts||{}; selected=selected||[];
+  _ppStore[gridId]={people, opts};
+  const cards=_ppCards(people, opts, 'dept', selected);
+  // ofrecé "por sucursal" si el equipo en alcance abarca 2+ sucursales (incluye "global"), aunque la lista actual excluya a alguien
+  const showToggle = (DB.sucursales||[]).length>1 || new Set((DB.users||[]).filter(u=>u&&u.active&&inScope(u.sucursalId)).map(u=>u.sucursalId||'')).size>1;
+  const toggle = showToggle ? `<div class="pp-modes">
+      <button type="button" class="pp-mode on" data-m="dept" onclick="ppickGroup('${gridId}','dept')">Por área</button>
+      <button type="button" class="pp-mode" data-m="suc" onclick="ppickGroup('${gridId}','suc')">Por sucursal</button>
+    </div>` : '';
   return `<div class="ppick">
+    ${toggle}
     <div class="ppick-search">${svgIcon('search','icon icon-sm')}<input type="text" placeholder="Buscar persona o puesto…" oninput="ppickFilter('${gridId}',this.value)" autocomplete="off"></div>
     <div class="ppick-grid" id="${gridId}">${cards}</div>
   </div>`;
 }
+function ppickGroup(gridId, mode){
+  const st=_ppStore[gridId]; const grid=document.getElementById(gridId); if(!st||!grid) return;
+  const sel=[...grid.querySelectorAll('.pp.on')].map(b=>b.dataset.id);   // conservar la selección actual
+  grid.innerHTML=_ppCards(st.people, st.opts, mode, sel);
+  const wrap=grid.closest('.ppick');
+  if(wrap){ wrap.querySelectorAll('.pp-mode').forEach(b=>b.classList.toggle('on', b.dataset.m===mode));
+    const inp=wrap.querySelector('.ppick-search input'); if(inp&&inp.value) ppickFilter(gridId, inp.value); }   // re-aplicar el buscador
+}
+window.ppickGroup=ppickGroup;
 function ppickFilter(gridId,q){ q=(q||'').toLowerCase().trim();
   document.querySelectorAll('#'+gridId+' .pp').forEach(b=>{ b.style.display=(!q||(b.dataset.s||'').includes(q))?'':'none'; });
   document.querySelectorAll('#'+gridId+' .pp-group').forEach(h=>{ h.style.display=q?'none':''; });
