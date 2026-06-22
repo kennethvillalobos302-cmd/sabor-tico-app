@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v23 · sincroniza nombres de sucursal';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v24 · cada cambio sincroniza';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -109,21 +109,52 @@ let DB = null;
 let SES = { userId:null, view:'inicio', sucFilter:'all', activeChat:null };
 
 function save(){
+  if(!_applyingRemote){ try{ stampEdits(); }catch(_){} }   // sellar updatedAt en lo que cambió localmente
   try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
   if(cloudOn && !_applyingRemote){ clearTimeout(_saveTimer); _saveTimer=setTimeout(cloudPush, 400); }
 }
 function load(){
   const raw = localStorage.getItem(DB_KEY);
-  if(raw){ try { DB = JSON.parse(raw); migrate(); return; } catch(e){} }
+  if(raw){ try { DB = JSON.parse(raw); migrate(); rebuildEntSnap(); return; } catch(e){} }
   DB = seed();
   migrate();
+  rebuildEntSnap();
   save();
+}
+/* ---- Sello automático de ediciones (para que CADA cambio sincronice) ----
+   Cualquier objeto de RECON_COLLS que cambie localmente recibe updatedAt=now() al guardar.
+   La reconciliación hace ganar "la edición más reciente", así un cambio (estado de tarea,
+   stock, nombre, etc.) se propaga a todos y no lo revierte un equipo con datos viejos.
+   No hay que marcar a mano cada función: se detecta solo comparando contra la última base. */
+let _entSnap = Object.create(null);
+// Sublistas que se reconcilian aparte por id (mensajes/comentarios): NO deben disparar el sello del padre,
+// si no, un comentario nuevo "ganaría" y revertiría una edición real (estado, etc.). También evita
+// reserializar historiales enormes en cada guardado.
+const _SKIP_SER={updatedAt:1,comments:1,msgs:1,chat:1,log:1};
+function _serEnt(e){ if(!e||typeof e!=='object') return ''; const c={}; Object.keys(e).filter(k=>!_SKIP_SER[k]).sort().forEach(k=>c[k]=e[k]); try{ return JSON.stringify(c); }catch(_){ return ''; } }
+function stampEdits(){
+  if(!DB) return;
+  for(let i=0;i<RECON_COLLS.length;i++){ const arr=DB[RECON_COLLS[i]]; if(!Array.isArray(arr)) continue;
+    for(let j=0;j<arr.length;j++){ const e=arr[j]; if(!e||!e.id) continue;
+      const s=_serEnt(e), prev=_entSnap[e.id];
+      if(prev===undefined){ _entSnap[e.id]=s; }                          // objeto nuevo (ya se propaga por id)
+      else if(prev!==s){ e.updatedAt=now(); _entSnap[e.id]=_serEnt(e); }  // cambió localmente -> sellar
+    }
+  }
+}
+function rebuildEntSnap(){   // tras adoptar datos remotos / al cargar: esa es la nueva base
+  _entSnap=Object.create(null);
+  if(!DB) return;
+  for(let i=0;i<RECON_COLLS.length;i++){ const arr=DB[RECON_COLLS[i]]; if(!Array.isArray(arr)) continue;
+    for(let j=0;j<arr.length;j++){ const e=arr[j]; if(e&&e.id) _entSnap[e.id]=_serEnt(e); }
+  }
 }
 /* ---------------- Sincronización en la nube (Firebase Realtime Database) ---------------- */
 let _sizeWarned=false;
 async function cloudPush(){
   if(!cloudOn || !fbdb) return;
   try{
+    try{ stampEdits(); }catch(_){}   // por si se llamó cloudPush directo (no vía save)
     const payload={ data:DB, client:CLIENT_ID, at:Date.now() };
     // Aviso suave: si el estado compartido crece demasiado (muchos adjuntos), conviene depurar
     if(!_sizeWarned){ try{ if(JSON.stringify(payload).length > 8*1024*1024){ _sizeWarned=true; if(typeof toast==='function') toast('Los datos están muy pesados (muchos adjuntos). Conviene depurar.','err'); } }catch(_){} }
@@ -193,7 +224,14 @@ function reconcileEntities(localDB, remoteDB){
       if(!o||!o.id || _isDel(tombs,revs,o.id)) return;
       const idx=out.findIndex(x=>x&&x.id===o.id);
       if(idx<0){ out.push({...o}); added=true; }                              // objeto local nuevo: conservar
-      else if(_stamp(o) > _stamp(out[idx])){ out[idx]={...o}; added=true; }    // edición local más reciente: gana
+      else if(_stamp(o) > _stamp(out[idx])){                                  // edición local más reciente: gana
+        const rem=out[idx], merged={...o};
+        // preservar las sublistas remotas (mensajes/comentarios) para que la unión posterior no las pierda
+        if(Array.isArray(rem.comments)) merged.comments=rem.comments;
+        if(Array.isArray(rem.msgs)) merged.msgs=rem.msgs;
+        if(Array.isArray(rem.chat)) merged.chat=rem.chat;
+        out[idx]=merged; added=true;
+      }
     });
     remoteDB[coll]=out;
   });
@@ -233,6 +271,7 @@ async function cloudInit(){
   }
   else { const raw=localStorage.getItem(DB_KEY); try{ DB = raw?JSON.parse(raw):seed(); }catch(_){ DB=seed(); } }
   migrate();
+  rebuildEntSnap();   // base para detectar ediciones locales futuras
   try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
   cloudOn=true;
   // Subir solo si el servidor está REALMENTE vacío (lectura OK sin datos) o tras migración/merge.
@@ -249,6 +288,7 @@ async function cloudInit(){
       try{
         needRepush = reconcile(DB, v.data);   // unir objetos nuevos + mensajes/comentarios locales (no perder nada)
         DB=v.data; migrate(true); // normalizar datos entrantes (sin la limpieza destructiva) para que nunca falten colecciones
+        rebuildEntSnap();   // el estado adoptado es la nueva base (no marcar como "edición local" lo que vino remoto)
         try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
         const modalOpen=$('#modalBg').classList.contains('on');
         if(me()){ if(!modalOpen) render(); try{ checkNotifPops(); }catch(_){} } else { renderLogin(); }
