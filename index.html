@@ -192,6 +192,8 @@ input,textarea,select{font-family:inherit;font-size:14px}
 .tb-logo .dot{color:var(--accent)}
 .cloud-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--success);background:var(--success-bg);padding:4px 9px;border-radius:var(--r-pill)}
 .cloud-tag::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--success)}
+.cloud-tag.off{color:var(--text-soft);background:var(--bg-soft)}
+.cloud-tag.off::before{background:var(--text-soft)}
 @media(max-width:780px){ .cloud-tag{display:none} }
 .suc-switch{position:relative;display:flex;align-items:center;gap:7px;background:var(--bg-soft);border:1px solid var(--border);
   border-radius:var(--r-md);padding:7px 11px;font-size:13px;font-weight:650;transition:border-color var(--t-fast)}

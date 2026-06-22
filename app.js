@@ -59,6 +59,18 @@ function uid(){ try{ if(self.crypto && crypto.randomUUID) return crypto.randomUU
 const now = () => Date.now();
 // Carrera contra un tiempo límite: evita que el arranque se quede colgado sin internet
 function withTimeout(p, ms){ let t; const to=new Promise((_,rej)=>{ t=setTimeout(()=>rej(new Error('timeout')), ms); }); return Promise.race([ Promise.resolve(p).finally(()=>clearTimeout(t)), to ]); }
+
+/* ---- Captura global de errores: guarda los últimos para que Gerencia los pueda ver ---- */
+const ERRLOG_KEY='saborTico_errlog';
+function logError(kind, msg, extra){
+  try{
+    const arr=JSON.parse(localStorage.getItem(ERRLOG_KEY)||'[]');
+    arr.unshift({ at:Date.now(), kind, msg:String(msg||'').slice(0,500), extra:String(extra||'').slice(0,300), view:(typeof SES!=='undefined'&&SES?SES.view:'') });
+    localStorage.setItem(ERRLOG_KEY, JSON.stringify(arr.slice(0,40)));
+  }catch(_){}
+}
+window.addEventListener('error', e=>{ logError('error', e&&e.message, e&&e.filename?(e.filename+':'+e.lineno):''); });
+window.addEventListener('unhandledrejection', e=>{ const r=e&&e.reason; logError('promesa', r&&r.message?r.message:r, r&&r.stack?String(r.stack).split('\n').slice(0,3).join(' | '):''); });
 // Escape para HTML. Incluye comilla simple y backtick: así también es seguro dentro de
 // atributos con comilla simple y de los onclick="...('...')" que usa la app. (de() NO escapa: solo quita emojis)
 const esc = s => (s==null?'':String(s)).replace(/[&<>"'`]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c]));
@@ -195,6 +207,11 @@ async function cloudInit(){
         if(me()){ if(!modalOpen) render(); try{ checkNotifPops(); }catch(_){} } else { renderLogin(); }
       } finally { _applyingRemote=false; }
       if(needRepush) save();   // el remoto no tenía algunos de nuestros mensajes: reenviarlos para que lleguen a todos
+    });
+    // Indicador de conexión real: "Sincronizado" (verde) / "Sin conexión" (gris)
+    fbdb.ref('.info/connected').on('value', s=>{
+      const on=!!(s&&s.val()); const t=$('#cloudTag');
+      if(t){ t.textContent = on?'Sincronizado':'Sin conexión'; t.classList.toggle('off', !on); }
     });
   }catch(e){ console.warn('cloud realtime', e); }
   return true;
@@ -409,6 +426,11 @@ function migrate(){
   (DB.tasks||[]).forEach(t=>{ if(!Array.isArray(t.toIds)){ t.toIds=[]; ch=true; } if(!Array.isArray(t.log)) t.log=[]; if(!Array.isArray(t.comments)) t.comments=[]; });
   (DB.projects||[]).forEach(p=>{ if(!Array.isArray(p.cards)){ p.cards=[]; ch=true; } if(!Array.isArray(p.memberIds)){ p.memberIds=[]; ch=true; } });
   (DB.pedidos||[]).forEach(p=>{ if(!Array.isArray(p.log)) p.log=[]; if(!Array.isArray(p.comments)) p.comments=[]; });
+  // Limitar historiales operativos (orden: más nuevo primero) para que el estado compartido no crezca sin fin.
+  // No toca chat ni comentarios (esos se reconcilian por id).
+  if((DB.audit||[]).length>2000){ DB.audit=DB.audit.slice(0,2000); ch=true; }
+  if((DB.notifs||[]).length>400){ DB.notifs=DB.notifs.slice(0,400); ch=true; }
+  if((DB.invMoves||[]).length>3000){ DB.invMoves=DB.invMoves.slice(0,3000); ch=true; }
   if(ch) save();
 }
 
@@ -866,7 +888,9 @@ function render(){
       <pre style="text-align:left;white-space:pre-wrap;word-break:break-word;background:var(--bg-soft);border:1px solid var(--border);border-radius:10px;padding:12px;font-size:12px;color:var(--danger);margin:0 0 14px;max-height:180px;overflow:auto">${esc('['+SES.view+'] '+(e&&e.message?e.message:String(e))+(e&&e.stack?'\n'+e.stack.split('\n').slice(0,4).join('\n'):''))}</pre>
       <button class="btn btn-primary" style="display:inline-block;width:auto;padding:10px 18px" onclick="go('inicio')">Ir a Inicio</button></div>`;
   }
-  save();
+  // Persistir solo en local; el envío a la nube lo hacen las mutaciones (save()).
+  // Antes render() hacía save() completo → subía el blob en CADA navegación (tráfico innecesario para todos).
+  try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(_){}
 }
 window.render = render;
 
@@ -4294,6 +4318,7 @@ $('#userBtn').addEventListener('click',e=>{
     <button class="um-item" onclick="exportData()">${svgIcon('save')} Respaldar datos</button>
     <button class="um-item" onclick="document.getElementById('importFile').click()">${svgIcon('down')} Restaurar respaldo</button>
     ${isAdmin()?`<button class="um-item" onclick="autoBackupsModal()">${svgIcon('clipboard')} Respaldos automáticos</button>`:''}
+    ${isAdmin()?`<button class="um-item" onclick="errorsModal()">${svgIcon('info')} Errores recientes</button>`:''}
     <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>`;
   m.classList.toggle('on');
 });
@@ -4383,6 +4408,21 @@ async function restoreAutoBackup(date){
   DB=d; ensureCollections(); migrate(); save(); closeModal(); toast('Respaldo del '+date+' restaurado','ok'); render();
 }
 window.autoBackupsModal=autoBackupsModal; window.restoreAutoBackup=restoreAutoBackup;
+
+function errorsModal(){
+  if(!isAdmin()){ toast('Solo Gerencia','err'); return; }
+  $('#userMenu').classList.remove('on');
+  let arr=[]; try{ arr=JSON.parse(localStorage.getItem(ERRLOG_KEY)||'[]'); }catch(_){}
+  const rows = arr.length ? arr.map(e=>`<div class="log-item"><div><b style="color:var(--danger)">${esc(e.kind)}</b> <span style="color:var(--text-soft);font-size:12px">· ${fmtDateTime(e.at)}${e.view?' · '+esc(e.view):''}</span></div><div style="font-size:13px;word-break:break-word">${esc(e.msg)}</div>${e.extra?`<div style="font-size:11px;color:var(--text-soft);word-break:break-word">${esc(e.extra)}</div>`:''}</div>`).join('') : '<div class="empty" style="padding:24px"><div class="em-d">Sin errores registrados. 🎉</div></div>';
+  openModal(`<div class="modal-head"><h3>Errores recientes</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <p class="page-sub" style="margin-top:0">Si algo falla, queda anotado acá (en este dispositivo). Sirve para diagnosticar.</p>
+      <div class="log">${rows}</div>
+      ${arr.length?`<button class="btn btn-ghost" style="margin-top:12px" onclick="clearErrors()">Borrar registro</button>`:''}
+    </div>`, true);
+}
+function clearErrors(){ try{ localStorage.removeItem(ERRLOG_KEY); }catch(_){} closeModal(); toast('Registro de errores borrado','ok'); }
+window.errorsModal=errorsModal; window.clearErrors=clearErrors;
 
 /* =====================================================================
    SUCURSAL switch
