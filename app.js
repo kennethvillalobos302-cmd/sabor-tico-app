@@ -848,6 +848,14 @@ function navItems(){
   const ids = ROLE_NAV[me().role] || ['inicio','tareas','pedidos','proyectos','chat'];
   return ids.map(id=>({id,...NAV_DEF[id]}));
 }
+// Barra inferior del celular: lo más usado a mano. Mensajes va junto a Tareas.
+function bottomNavItems(){
+  const ids = ROLE_NAV[me().role] || [];
+  const want = ['inicio','tareas','chat','pedidos'];          // Inicio · Tareas · Mensajes · Pedidos
+  const pick = want.filter(id=>ids.includes(id));
+  ids.forEach(id=>{ if(pick.length<4 && pick.indexOf(id)<0) pick.push(id); });  // completar si al puesto le falta alguno
+  return pick.slice(0,4).map(id=>({id,...NAV_DEF[id]}));
+}
 
 function pendingForMe(){
   return (DB.tasks||[]).filter(t=> (t.toIds||[]).includes(SES.userId) && (t.status==='pendiente'||t.status==='proceso'||t.status==='atrasada')).length;
@@ -873,10 +881,11 @@ function renderNav(){
   $('#sidebar').innerHTML =
     `<div class="nav-sep">Trabajo</div>` + work.map(navBtn).join('') +
     (ctrl.length? `<div class="nav-sep">${isAdmin()?'Control total':'Gestión'}</div>`+ctrl.map(navBtn).join('') : '');
-  // bottom nav: 4 principales + "Más" con todas las opciones
-  const bn = items.slice(0,4);
-  let moreBadge=0; items.slice(4).forEach(n=>moreBadge+=navBadge(n.id));
-  const moreActive = !bn.some(n=>n.id===SES.view);
+  // bottom nav: 4 principales (Inicio · Tareas · Mensajes · Pedidos) + "Más" con todo lo demás
+  const bn = bottomNavItems();
+  const bnIds = bn.map(n=>n.id);
+  let moreBadge=0; items.forEach(n=>{ if(bnIds.indexOf(n.id)<0) moreBadge+=navBadge(n.id); });
+  const moreActive = bnIds.indexOf(SES.view)<0;
   $('#bottomNav').innerHTML = bn.map(n=>{
     const b=navBadge(n.id);
     return `<button class="bn-item ${SES.view===n.id?'active':''}" onclick="go('${n.id}')">

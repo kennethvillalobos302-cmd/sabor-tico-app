@@ -1070,11 +1070,12 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   .bottom-nav{display:flex;position:fixed;bottom:0;left:0;right:0;
     background:color-mix(in srgb,var(--bg-elev) 92%, transparent);backdrop-filter:blur(12px);
     border-top:1px solid var(--border-soft);z-index:30;padding:7px 4px calc(7px + env(safe-area-inset-bottom));justify-content:space-around}
-  .bn-item{display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 8px;border-radius:var(--r-md);color:var(--text-soft);font-size:10px;font-weight:650;position:relative;flex:1;transition:color var(--t-fast)}
-  .bn-item .ico{font-size:20px;transition:transform var(--t-fast)}
-  .bn-item.active{color:var(--accent)}
-  .bn-item.active .ico{transform:translateY(-1px) scale(1.05)}
-  .bn-item .ncount{position:absolute;top:0;right:18%;background:var(--danger);color:#fff;font-size:9px;border-radius:8px;min-width:15px;height:15px;display:flex;align-items:center;justify-content:center}
+  .bn-item{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;padding:6px 4px;border-radius:var(--r-md);color:var(--text-soft);font-size:10.5px;font-weight:650;position:relative;flex:1;min-height:52px;transition:color var(--t-fast),background var(--t-fast)}
+  .bn-item .ico .icon{width:23px;height:23px;transition:transform var(--t-fast)}
+  .bn-item.active{color:var(--accent);background:var(--accent-soft)}
+  .bn-item.active .ico .icon{transform:translateY(-1px) scale(1.06)}
+  .bn-item:active{transform:scale(.93)}
+  .bn-item .ncount{position:absolute;top:3px;right:20%;background:var(--danger);color:#fff;font-size:9px;font-weight:800;border-radius:9px;min-width:16px;height:16px;padding:0 4px;display:flex;align-items:center;justify-content:center;border:2px solid var(--bg-elev)}
   .chat-wrap{height:calc(100vh - 160px)}
   .chat-list{width:100%}
   .chat-list.hide-mobile{display:none}
@@ -1112,6 +1113,13 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
 .modal-body{padding:18px 20px}
 .modal-foot{padding:14px 20px;gap:10px}
 .modal-foot .btn{padding:13px;font-size:15px}
+/* En celular, los pop-ups suben desde abajo (estilo "hoja") = más cómodo para el pulgar */
+@media(max-width:780px){
+  .modal-bg{align-items:flex-end;padding:0}
+  .modal,.modal.wide{max-width:100%;width:100%;max-height:92vh;border-radius:20px 20px 0 0;animation:sheetUp .24s var(--ease-out) both}
+  .modal-foot{padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+}
+@keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 /* selector de hora grande y claro */
 .tp{gap:4px;padding:6px 8px;border-radius:var(--r-md)}
 .tp select{font-size:20px;padding:8px 4px;-webkit-appearance:none;appearance:none;background:none;cursor:pointer}
