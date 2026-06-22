@@ -4287,6 +4287,7 @@ $('#userBtn').addEventListener('click',e=>{
     <button class="um-item" onclick="toggleTheme()">${svgIcon('theme')} Cambiar tema</button>
     <button class="um-item" onclick="exportData()">${svgIcon('save')} Respaldar datos</button>
     <button class="um-item" onclick="document.getElementById('importFile').click()">${svgIcon('down')} Restaurar respaldo</button>
+    ${isAdmin()?`<button class="um-item" onclick="autoBackupsModal()">${svgIcon('clipboard')} Respaldos automáticos</button>`:''}
     <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>`;
   m.classList.toggle('on');
 });
@@ -4327,6 +4328,55 @@ async function exportData(){
   toast('Respaldo descargado 💾 (incluye fotos)','ok');
 }
 window.exportData=exportData;
+
+/* =====================================================================
+   RESPALDO AUTOMÁTICO DIARIO (en este dispositivo)
+   Guarda una copia con fecha una vez al día (las últimas 14). Es la red de
+   seguridad para "deshacer una catástrofe": restaurar el estado de un día previo.
+   No reemplaza el respaldo descargable (ese sí incluye las fotos y va fuera del equipo).
+   ===================================================================== */
+const BAK_PREFIX='sab_bak_', BAK_IDX='saborTico_bakindex', BAK_KEEP=14;
+function _bakIndex(){ try{ return JSON.parse(localStorage.getItem(BAK_IDX)||'[]'); }catch(_){ return []; } }
+function autoBackup(){
+  if(!DB || !Array.isArray(DB.users) || !DB.users.length) return;
+  const today=todayISO();
+  let idx=_bakIndex();
+  if(idx.includes(today)) return;                 // ya hay copia de hoy
+  let saved=false;
+  try{ localStorage.setItem(BAK_PREFIX+today, JSON.stringify(DB)); saved=true; }
+  catch(_){ // sin espacio: borrar las más viejas y reintentar
+    while(idx.length && !saved){ const old=idx.shift(); try{ localStorage.removeItem(BAK_PREFIX+old); }catch(__){} try{ localStorage.setItem(BAK_PREFIX+today, JSON.stringify(DB)); saved=true; }catch(__){} }
+  }
+  if(!saved) return;
+  idx.push(today);
+  while(idx.length>BAK_KEEP){ const old=idx.shift(); try{ localStorage.removeItem(BAK_PREFIX+old); }catch(_){} }  // conservar últimas 14
+  try{ localStorage.setItem(BAK_IDX, JSON.stringify(idx)); }catch(_){}
+}
+function autoBackupsModal(){
+  if(!isAdmin()){ toast('Solo Gerencia','err'); return; }
+  $('#userMenu').classList.remove('on');
+  const idx=_bakIndex().slice().reverse();
+  const rows = idx.length ? idx.map(d=>{
+    let kb=0; try{ kb=Math.round(((localStorage.getItem(BAK_PREFIX+d)||'').length)/1024); }catch(_){}
+    return `<div class="log-item" style="display:flex;align-items:center;gap:10px">
+      <div style="flex:1"><b>${esc(d)}</b> <span style="color:var(--text-soft);font-size:12px">· ${kb} KB</span></div>
+      <button class="btn btn-ghost" style="padding:6px 10px;flex:0 0 auto" onclick="restoreAutoBackup('${esc(d)}')">Restaurar</button></div>`;
+  }).join('') : '<div class="empty" style="padding:24px"><div class="em-d">Aún no hay respaldos automáticos. Se crea uno cada día al abrir la app.</div></div>';
+  openModal(`<div class="modal-head"><h3>Respaldos automáticos</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <p class="page-sub" style="margin-top:0">Copia diaria en este dispositivo (últimas ${BAK_KEEP}). Restaurar reemplaza los datos actuales en todos los dispositivos. Para una copia con fotos y fuera del equipo, usá “Respaldar datos”.</p>
+      <div class="log">${rows}</div>
+    </div>`, true);
+}
+async function restoreAutoBackup(date){
+  if(!isAdmin()) return;
+  let d; try{ d=JSON.parse(localStorage.getItem(BAK_PREFIX+date)||'null'); }catch(_){ d=null; }
+  if(!d || !Array.isArray(d.users) || !d.users.length){ toast('Ese respaldo no se puede leer','err'); return; }
+  if(!await confirmDialog('Esto REEMPLAZA todos los datos actuales (en todos los dispositivos) por la copia del '+date+'. No se puede deshacer.',{title:'¿Restaurar copia del '+date+'?',okText:'Sí, restaurar'})) return;
+  try{ localStorage.setItem(DB_KEY+'_prevbackup', JSON.stringify(DB)); }catch(_){}
+  DB=d; ensureCollections(); migrate(); save(); closeModal(); toast('Respaldo del '+date+' restaurado','ok'); render();
+}
+window.autoBackupsModal=autoBackupsModal; window.restoreAutoBackup=restoreAutoBackup;
 
 /* =====================================================================
    SUCURSAL switch
@@ -4473,6 +4523,7 @@ impInput.addEventListener('change',async e=>{
   let ok=false; try{ ok=await cloudInit(); }catch(e){ console.warn('cloud init', e); }
   if(!ok) load();
   try{ await migratePins(); }catch(_){}   // pasar PIN viejos en texto a hash, una sola vez
+  try{ autoBackup(); }catch(_){}          // copia diaria automática (red de seguridad)
   renderLogin();
   const ses=localStorage.getItem('saborTico_ses')||sessionStorage.getItem('saborTico_ses');
   if(ses && userById(ses)){ SES.userId=ses; notifBaseline(); $('#loginScreen').style.display='none'; $('#app').classList.add('on'); render(); maybeForcePinChange(); }
