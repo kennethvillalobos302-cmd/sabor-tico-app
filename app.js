@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v33 · elegir personas por área o sucursal';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v34 · proyectos: chat completo + toolbar limpio';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1800,12 +1800,14 @@ function viewProyectos(){
       <span class="bt-widths">${[3,6,10].map(w=>`<button class="pen-w ${w===penWidth?'on':''}" data-w="${w}" onclick="setPenW(${w})"><span style="width:${Math.min(14,w+2)}px;height:${Math.min(14,w+2)}px"></span></button>`).join('')}</span>
     </div>`:''}
     <div class="ph-spacer"></div>
-    ${canEdit?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','title')">${svgIcon('clipboard','icon icon-sm')} Título</button>
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','text')">${svgIcon('edit','icon icon-sm')} Nota</button>
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addCardModal('${proj.id}','image')">${svgIcon('image','icon icon-sm')} Imagen</button>
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="addFileCardModal('${proj.id}')">${svgIcon('clip','icon icon-sm')} Archivo / PDF</button>
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="clearDrawings('${proj.id}')" title="Borrar todos los trazos">${svgIcon('trash','icon icon-sm')}</button>`:''}
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="toggleBoardFull()" title="Pantalla completa">${svgIcon('chart','icon icon-sm')} Pantalla completa</button>
+    ${canEdit?`<div class="bt-add">
+      <button onclick="addCardModal('${proj.id}','title')" title="Agregar un título">${svgIcon('clipboard','icon icon-sm')} Título</button>
+      <button onclick="addCardModal('${proj.id}','text')" title="Agregar una nota">${svgIcon('edit','icon icon-sm')} Nota</button>
+      <button onclick="addCardModal('${proj.id}','image')" title="Agregar una imagen">${svgIcon('image','icon icon-sm')} Imagen</button>
+      <button onclick="addFileCardModal('${proj.id}')" title="Subir un archivo o PDF">${svgIcon('clip','icon icon-sm')} Archivo</button>
+    </div>
+    <button class="bt-icon" onclick="clearDrawings('${proj.id}')" title="Borrar todos los trazos dibujados">${svgIcon('trash','icon icon-sm')}</button>`:''}
+    <button class="bt-icon" onclick="toggleBoardFull()" title="Pantalla completa">${svgIcon('chart','icon icon-sm')}</button>
   </div>`;
 
   // En celular: alternar entre Pizarra y Chat (cada uno a pantalla completa)
