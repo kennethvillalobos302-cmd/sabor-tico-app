@@ -2171,6 +2171,13 @@ function markSeen(c){
   DB._seen[SES.userId][c.id]=now(); save();
 }
 
+function dayKey(ts){ const d=new Date(ts); return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate(); }
+function dayLabel(ts){
+  const d=new Date(ts), t=new Date(), y=new Date(); y.setDate(t.getDate()-1);
+  if(d.toDateString()===t.toDateString()) return 'Hoy';
+  if(d.toDateString()===y.toDateString()) return 'Ayer';
+  return d.toLocaleDateString('es-CR', d.getFullYear()!==t.getFullYear()?{day:'2-digit',month:'short',year:'numeric'}:{day:'2-digit',month:'short'});
+}
 function viewChat(){
   const chats=myChats();
   const guide=sectionGuide('chat','¿Cómo funcionan los mensajes?',`
@@ -2198,11 +2205,16 @@ function viewChat(){
     const u=c.type==='group'?null:userById(mem.find(i=>i!==SES.userId));
     const name=c.type==='group'?c.name:(u?u.name:'Chat');
     const ur=chatUnread(c);
+    const prevTxt = last
+      ? ((c.type==='group' && last.byId!==SES.userId ? ((userById(last.byId)?.name||'').split(' ')[0]+': ') : (last.byId===SES.userId?'Vos: ':''))
+         + (last.text || (last.media?(last.media.type==='video'?'Video':'Foto'):'')))
+      : 'Sin mensajes';
+    const lastT = last ? new Date(last.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'}) : '';
     return `<div class="chat-li ${sel===c.id?'sel':''}" onclick="openChat('${c.id}')">
       ${c.type==='group'?`<div class="av" style="background:var(--accent)">${esc((c.name||'#')[0])}</div>`:avatarHTML(u)}
-      <div style="min-width:0"><div class="cn">${esc(name)} ${c.type==='group'?'<span style="font-size:10px;color:var(--text-soft)">grupo</span>':''}</div>
-      <div class="cp">${last?esc(((userById(last.byId)?.name||'').split(' ')[0]||'')+': '+(last.text||'')):'Sin mensajes'}</div></div>
-      ${ur?`<span class="cbadge">${ur}</span>`:''}</div>`;
+      <div class="cl-mid"><div class="cn">${esc(name)} ${c.type==='group'?'<span class="cl-grp">grupo</span>':''}</div>
+      <div class="cp">${esc(prevTxt)}</div></div>
+      <div class="cl-end">${lastT?`<span class="cl-time">${lastT}</span>`:''}${ur?`<span class="cbadge">${ur}</span>`:''}</div></div>`;
   }).join('') : `<div class="empty" style="padding:30px 14px"><div class="em-d">No hay chats. Creá uno.</div></div>`;
 
   const cur = chats.find(c=>c.id===sel);
@@ -2212,10 +2224,18 @@ function viewChat(){
     const adminPeek = !curMem.includes(SES.userId) && isAdmin();
     const headName = cur.type==='group'?cur.name:(userById(curMem.find(i=>i!==SES.userId))?.name||'Chat');
     const visibleMsgs=(cur.msgs||[]).filter(m=> m && !msgDeleted(m) && !((m.hiddenFor||[]).includes(SES.userId)));
+    let _lastDay='', _prevBy=null;
     const msgsHtml = visibleMsgs.map(m=>{
       const u=userById(m.byId); const mine=m.byId===SES.userId;
       const media = m.media ? (m.media.type==='video' ? mediaTag(m.media.mid||m.media.data,'video','controls') : mediaTag(m.media.mid||m.media.data,'image')) : '';
-      return `<div class="msg ${mine?'mine':''}">${(!mine&&cur.type==='group')?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})} <button class="msg-del" title="Eliminar" onclick="delMsgMenu('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button></div></div>`;
+      let sep='';
+      const dk=dayKey(m.at);
+      if(dk!==_lastDay){ sep=`<div class="chat-day"><span>${esc(dayLabel(m.at))}</span></div>`; _lastDay=dk; _prevBy=null; }
+      const grouped = _prevBy===m.byId; _prevBy=m.byId;
+      const showName = !mine && cur.type==='group' && !grouped;
+      const time = new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'});
+      const onlyMedia = media && !m.text;
+      return sep + `<div class="msg ${mine?'mine':''} ${grouped?'grouped':''} ${onlyMedia?'media-only':''}">${showName?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?`<span class="mtext">${esc(m.text)}</span>`:''}${media}<div class="mtime">${time}${mine?svgIcon('check','icon icon-sm'):''}<button class="msg-del" title="Eliminar" onclick="delMsgMenu('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button></div></div>`;
     }).join('');
     paneHtml=`<div class="chat-pane" id="chatPane">
       <div class="chat-head">
