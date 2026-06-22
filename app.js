@@ -4,6 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
+const APP_VERSION = 'v22 · pantalla completa + chat WhatsApp';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4501,7 +4502,8 @@ $('#userBtn').addEventListener('click',e=>{
     <button class="um-item" onclick="document.getElementById('importFile').click()">${svgIcon('down')} Restaurar respaldo</button>
     ${isAdmin()?`<button class="um-item" onclick="autoBackupsModal()">${svgIcon('clipboard')} Respaldos automáticos</button>`:''}
     ${isAdmin()?`<button class="um-item" onclick="errorsModal()">${svgIcon('info')} Errores recientes</button>`:''}
-    <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>`;
+    <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>
+    <div style="padding:8px 15px;font-size:10.5px;color:var(--text-dim);text-align:center;border-top:1px solid var(--border-soft)">${esc(APP_VERSION)}</div>`;
   m.classList.toggle('on');
 });
 document.addEventListener('click',()=>{ $('#notifPanel').classList.remove('on'); $('#userMenu').classList.remove('on'); });
@@ -4818,6 +4820,12 @@ impInput.addEventListener('change',async e=>{
 /* Service worker: la app abre y muestra lo último cargado aunque no haya internet.
    Solo en http(s) (en Vercel); en modo local (file://) no aplica. */
 if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
-  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW', e)); });
+  // Si entra a controlar una versión NUEVA del SW, recargar una vez para mostrar lo último
+  const hadCtrl = !!navigator.serviceWorker.controller;
+  let _swReloaded=false;
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(_swReloaded||!hadCtrl) return; _swReloaded=true; location.reload(); });
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('sw.js').then(reg=>{ try{ reg.update(); }catch(_){} }).catch(e=>console.warn('SW', e));
+  });
 }
 /* Sabor Tico App — fin */

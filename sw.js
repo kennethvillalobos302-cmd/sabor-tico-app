@@ -9,7 +9,7 @@
    - NO intercepta la base en tiempo real (firebaseio/googleapis) ni /api/:
      se dejan pasar para que Firebase maneje su propia conexión/cola offline.
    ===================================================================== */
-const CACHE = 'sabor-tico-v1';
+const CACHE = 'sabor-tico-v3';
 const SHELL = [
   './', './index.html', './app.js', './config.js', './manifest.json', './icon.svg',
   'https://www.gstatic.com/firebasejs/10.12.5/firebase-app-compat.js',
@@ -52,13 +52,12 @@ self.addEventListener('fetch', e => {
     return;
   }
 
-  // Archivos propios (shell): network-first con respaldo a caché cuando no hay señal
+  // Archivos propios (shell): SIEMPRE lo último cuando hay señal (no-store evita caché HTTP rancia);
+  // solo cae a la copia guardada cuando no hay conexión.
   e.respondWith((async () => {
     try {
-      const res = await fetch(req);
-      if (res && res.ok && (req.mode === 'navigate' || url.pathname === '/' || /\.(js|css|json|svg|html|png|ico)$/.test(url.pathname))) {
-        const c = await caches.open(CACHE); c.put(req, res.clone());
-      }
+      const res = await fetch(req.url, { cache: 'no-store' });
+      if (res && res.ok) { const c = await caches.open(CACHE); c.put(req, res.clone()); }
       return res;
     } catch (_) {
       const cached = await caches.match(req) || await caches.match('./index.html') || await caches.match('./');
