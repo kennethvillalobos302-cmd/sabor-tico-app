@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v28 · borrar sucursales/personas';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v29 · login por departamento';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4806,12 +4806,17 @@ function renderLogin(){
     return;
   }
   if(!loginSuc && sucs.length===1) loginSuc=sucs[0].id;
-  // Paso 2: elegir persona (de la sucursal + globales) y PIN
-  const ppl=DB.users.filter(u=>u.active && (u.sucursalId===loginSuc || u.sucursalId==='all'))
-    .sort((a,b)=>ROLE_KEYS.indexOf(a.role)-ROLE_KEYS.indexOf(b.role)||a.name.localeCompare(b.name));
+  // Paso 2: elegir persona (de la sucursal + globales), AGRUPADA por departamento, y PIN
+  const ppl=DB.users.filter(u=>u.active && (u.sucursalId===loginSuc || u.sucursalId==='all')).sort(byDept);
+  let _lastDept=null;
+  const userGrid = ppl.length ? ppl.map(u=>{
+    const d=deptLabel(u.role); let hdr='';
+    if(d!==_lastDept){ hdr=`<div class="lg-group">${esc(d)}</div>`; _lastDept=d; }
+    return hdr+`<button class="user-pick ${pickedUser===u.id?'sel':''}" data-id="${u.id}" onclick="pickUser('${u.id}')">${avatarHTML(u)}<div><div class="nm">${esc((u.name||'').split(' ')[0])}</div><div class="rl">${roleInfo(u.role).short}</div></div></button>`;
+  }).join('') : '<div style="color:var(--text-soft);font-size:13px;padding:8px;grid-column:1/-1">No hay personas en esta sucursal todavía.</div>';
   area.innerHTML=`${sucs.length>1?`<button class="login-back" onclick="loginSuc=null;pickedUser=null;renderLogin()">${svgIcon('back','icon icon-sm')} Cambiar sucursal</button>`:''}
     <div class="login-label">¿Quién sos?${sucs.length>1?' · '+esc(sucName(loginSuc)):''}</div>
-    <div class="user-grid">${ppl.length?ppl.map(u=>`<button class="user-pick ${pickedUser===u.id?'sel':''}" data-id="${u.id}" onclick="pickUser('${u.id}')">${avatarHTML(u)}<div><div class="nm">${esc((u.name||'').split(' ')[0])}</div><div class="rl">${roleInfo(u.role).short}</div></div></button>`).join(''):'<div style="color:var(--text-soft);font-size:13px;padding:8px">No hay personas en esta sucursal todavía.</div>'}</div>
+    <div class="user-grid">${userGrid}</div>
     <div class="login-label">Tu PIN</div>
     <div class="pin-row"><input id="pinInput" type="password" inputmode="numeric" maxlength="4" placeholder="••••"></div>
     <label class="login-remember"><input type="checkbox" id="rememberMe" ${loginRemember?'checked':''}>

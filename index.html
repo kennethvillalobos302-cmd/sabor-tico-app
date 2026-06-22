@@ -137,6 +137,13 @@ input,textarea,select{font-family:inherit;font-size:14.5px}
   text-transform:uppercase;letter-spacing:1.4px}
 .login-label{font-size:11px;text-transform:uppercase;letter-spacing:1.2px;font-weight:700;color:var(--text-soft);margin-bottom:9px}
 .user-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:244px;overflow-y:auto;overflow-x:hidden;margin-bottom:18px;padding:2px;scrollbar-gutter:stable}
+.lg-group{grid-column:1/-1;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);padding:9px 2px 2px}
+.lg-group:first-child{padding-top:2px}
+/* En computadora: login más ancho y 3 columnas de personas */
+@media(min-width:781px){
+  .login-card{max-width:580px;padding:34px 34px}
+  .user-grid{grid-template-columns:1fr 1fr 1fr;max-height:340px}
+}
 .user-pick{min-width:0}
 .user-pick>div{min-width:0}
 .user-pick .nm,.user-pick .rl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
