@@ -123,14 +123,14 @@ input,textarea,select{font-family:inherit;font-size:14.5px}
 }
 
 /* ---------- LOGIN ---------- */
-.login-screen{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;
+.login-screen{position:fixed;inset:0;display:flex;justify-content:center;overflow-y:auto;
   background:
     radial-gradient(900px 480px at 50% -8%, var(--accent-soft), transparent 70%),
     radial-gradient(600px 400px at 100% 110%, var(--accent-soft), transparent 70%),
     var(--bg);
-  z-index:50;padding:20px}
-.login-card{width:100%;max-width:430px;background:var(--bg-card);border:1px solid var(--border);
-  border-radius:calc(var(--r-lg) + 6px);box-shadow:var(--e3);padding:30px 28px;animation:pop .35s var(--ease-out) both}
+  z-index:50;padding:24px 20px}
+.login-card{width:100%;max-width:430px;margin:auto;background:var(--bg-card);border:1px solid var(--border);
+  border-radius:calc(var(--r-lg) + 6px);box-shadow:var(--e3);padding:28px 26px;animation:pop .35s var(--ease-out) both}
 .login-logo{font-size:32px;font-weight:800;letter-spacing:-.8px;text-align:center}
 .login-logo .dot{color:var(--accent)}
 .login-tag{text-align:center;color:var(--text-soft);font-size:12px;margin-top:6px;margin-bottom:24px;
@@ -139,10 +139,10 @@ input,textarea,select{font-family:inherit;font-size:14.5px}
 .user-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:244px;overflow-y:auto;overflow-x:hidden;margin-bottom:18px;padding:2px;scrollbar-gutter:stable}
 .lg-group{grid-column:1/-1;font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);padding:9px 2px 2px}
 .lg-group:first-child{padding-top:2px}
-/* En computadora: login más ancho y 3 columnas de personas */
+/* En computadora: login más ancho y 3 columnas de personas (compacto para que entre en pantalla) */
 @media(min-width:781px){
-  .login-card{max-width:580px;padding:34px 34px}
-  .user-grid{grid-template-columns:1fr 1fr 1fr;max-height:340px}
+  .login-card{max-width:540px;padding:28px 30px}
+  .user-grid{grid-template-columns:1fr 1fr 1fr;max-height:266px}
 }
 .user-pick{min-width:0}
 .user-pick>div{min-width:0}

@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v29 · login por departamento';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v30 · login compacto + deptos juntos';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -28,12 +28,11 @@ const ROLES = {
   bartender:   { label:'Bartender',       short:'Bartender',    color:'#514a44' },
 };
 const ROLE_KEYS = Object.keys(ROLES);
-/* Orden por departamento para listar/personas: Gerencia · Salón · Cocina · Administración */
+/* Orden por departamento para listar/personas: Gerencia y Administración · Salón · Cocina */
 const DEPT_ORDER = [
-  {label:'Gerencia',       roles:['admin','gerencia_exp','gerencia_data']},
+  {label:'Gerencia y Administración', roles:['admin','gerencia_exp','gerencia_data','proveeduria','contarh']},
   {label:'Salón',          roles:['jefe_salon','salonero','bartender']},
   {label:'Cocina',         roles:['chef','cocinero']},
-  {label:'Administración',  roles:['proveeduria','contarh']},
 ];
 function deptRank(role){ for(let i=0;i<DEPT_ORDER.length;i++){ if(DEPT_ORDER[i].roles.includes(role)) return i; } return DEPT_ORDER.length; }
 function deptLabel(role){ const i=deptRank(role); return (DEPT_ORDER[i]&&DEPT_ORDER[i].label)||'Otros'; }
