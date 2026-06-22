@@ -62,6 +62,12 @@ Con esos pasos, la app pasa de “cualquiera en internet podía ver y borrar tod
 - **Inicio de sesión anónimo de Firebase:** la app entra a la base autenticada (necesario para las reglas cerradas).
 - **Cabeceras de seguridad web (vercel.json):** Content-Security-Policy, anti-clickjacking
   (no se puede meter la app en un iframe), HSTS, no-sniff, Referrer-Policy y Permissions-Policy.
+- **Llamadas/videollamadas (Jitsi):** las llamadas de los proyectos usan el servicio externo
+  **meet.jit.si**. Por eso la CSP permite cargar su reproductor y la Permissions-Policy habilita
+  cámara/micrófono **solo** para ese dominio (y para la propia app). La sala se llama
+  `SaborTico-<id-de-proyecto>` con un id aleatorio (UUID), imposible de adivinar desde afuera.
+  El audio/video de la llamada viaja por los servidores de Jitsi, no por tu Firebase; el resto de
+  los datos del restaurante siguen solo en tu base.
 - **Anti-XSS:** todo lo que escriben las personas se “escapa” correctamente y las imágenes/videos
   solo se aceptan si son archivos reales (se bloquea texto malicioso disfrazado de imagen).
 - **Lectura de facturas más segura:** modelo más barato, límite de tamaño de archivo, control de

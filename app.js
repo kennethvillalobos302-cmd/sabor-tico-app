@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v34 · proyectos: chat completo + toolbar limpio';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v35 · llamadas reales en proyectos (flotante)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1941,9 +1941,11 @@ function projSide(proj){
     const media=m.media?(m.media.type==='video'?mediaTag(m.media.mid||m.media.data,'video','controls'):m.media.type==='image'?mediaTag(m.media.mid||m.media.data,'image'):`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
     return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
   const inCall=proj.call&&proj.call.active;
+  const meInCall=_call&&_call.projId===proj.id;
+  const callLbl=meInCall?'En llamada':(inCall?('Unirme · '+(proj.call.participants||[]).length):'Llamada');
   return `<div class="proj-side">
     <div class="proj-side-head"><span style="font-weight:700;font-size:13px">Chat del grupo</span><div class="ph-spacer"></div>
-      <button class="btn ${inCall?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 11px" onclick="openCall('${proj.id}')">${svgIcon('video','icon icon-sm')} ${inCall?'En llamada · '+proj.call.participants.length:'Llamada'}</button></div>
+      <button class="btn ${meInCall||inCall?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 11px" onclick="openCall('${proj.id}')">${svgIcon('video','icon icon-sm')} ${esc(callLbl)}</button></div>
     <div class="proj-chat" id="projChatMsgs">${msgs||'<div style="margin:auto;color:var(--text-soft);font-size:13px;text-align:center;padding:24px">Escribí acá para coordinar mientras trabajan la pizarra.</div>'}</div>
     ${projPending?`<div class="chat-pending">${projPending.type==='video'?`<video src="${safeVid(projPending.data)}"></video>`:projPending.type==='image'?`<img src="${safeImg(projPending.data)}">`:`<span class="chat-file-ic">${svgIcon(fileIconFor(projPending.mime,projPending.filename),'icon icon-sm')}</span>`}<span>${projPending.type==='file'?esc(projPending.filename):(projPending.type==='video'?'Video':'Foto')+' listo'}</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="projPending=null;render()">Quitar</button></div>`:''}
     <div class="chat-input">
@@ -2161,55 +2163,101 @@ function canvasPanDown(e){
 function canvasPanMove(e){ if(!_pan)return; const wrap=$('#canvasWrap'); if(!wrap)return; wrap.scrollLeft=_pan.sl-(e.clientX-_pan.sx); wrap.scrollTop=_pan.st-(e.clientY-_pan.sy); }
 function canvasPanUp(){ document.removeEventListener('pointermove',canvasPanMove); document.removeEventListener('pointerup',canvasPanUp); const wrap=$('#canvasWrap'); if(wrap)wrap.classList.remove('panning'); _pan=null; }
 window.canvasPanDown=canvasPanDown;
-/* llamada del grupo (cámara local + presencia) */
-let _callStream=null;
-function openCall(projId){
+/* =====================================================================
+   LLAMADAS / VIDEOLLAMADAS DEL PROYECTO (Jitsi, flotante, atadas al proyecto)
+   - Video/audio grupal real + pantalla compartida (sin servidor propio).
+   - La ventana es flotante y vive FUERA del render: seguís trabajando y
+     navegando por la app sin cortar la llamada.
+   ===================================================================== */
+let _call=null;            // {projId, api} mientras estás en una llamada
+let _jitsiLoading=null;
+function loadJitsi(){
+  if(window.JitsiMeetExternalAPI) return Promise.resolve();
+  if(_jitsiLoading) return _jitsiLoading;
+  _jitsiLoading=new Promise((res,rej)=>{
+    const s=document.createElement('script'); s.src='https://meet.jit.si/external_api.js'; s.async=true;
+    s.onload=()=>res(); s.onerror=()=>{ _jitsiLoading=null; rej(new Error('jitsi')); };
+    document.head.appendChild(s);
+  });
+  return _jitsiLoading;
+}
+function ensureCallDock(){
+  let d=document.getElementById('callDock'); if(d) return d;
+  d=document.createElement('div'); d.id='callDock'; d.className='call-dock hidden';
+  d.innerHTML=`<div class="cd-head" id="cdHead" onpointerdown="cdDragStart(event)">
+      <span class="cd-title">${svgIcon('video','icon icon-sm')} <span id="cdName"></span></span>
+      <div class="ph-spacer"></div>
+      <button class="cd-btn" onclick="callDockToggleMin()" title="Minimizar / agrandar">${svgIcon('chevron','icon icon-sm')}</button>
+      <button class="cd-btn danger" onclick="callHangup()" title="Salir de la llamada">${svgIcon('x','icon icon-sm')}</button>
+    </div>
+    <div class="cd-body" id="cdBody"></div>`;
+  document.body.appendChild(d);
+  return d;
+}
+async function openCall(projId){
+  const m=me(); if(!m) return;
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
+  if(_call && _call.projId!==projId){ toast('Ya estás en otra llamada — salí de esa primero','err'); return; }
+  const dock=ensureCallDock(); dock.classList.remove('hidden','min');
+  $('#cdName').textContent=p.name;
+  if(_call && _call.projId===projId) return;   // ya estás en esta llamada: solo traer la ventana al frente
+  // presencia (para que los demás vean "En llamada" y reciban aviso)
   if(!p.call||!p.call.active) p.call={active:true,participants:[],by:SES.userId,at:now()};
   if(!p.call.participants.includes(SES.userId)) p.call.participants.push(SES.userId);
   audit('proyecto',`entró a la llamada de "${p.name}"`,p.sucursalId);
-  notify(p.memberIds.filter(i=>i!==SES.userId), `${me().name.split(' ')[0]} inició una llamada en "${p.name}"`,'video',{view:'proyectos'});
-  save(); callOverlay(projId);
-}
-function callOverlay(projId){
-  const p=DB.projects.find(x=>x.id===projId); if(!p||!p.call) return;
-  const parts=p.call.participants.map(id=>userById(id)).filter(Boolean);
-  openModal(`<div class="modal-head"><h3>${svgIcon('video','icon')} Llamada · ${esc(p.name)}</h3><button class="modal-close" onclick="leaveCall('${projId}')">${svgIcon('x','icon')}</button></div>
-    <div class="modal-body">
-      <div class="call-grid">
-        <div class="call-tile"><video id="callLocal" autoplay muted playsinline></video><span class="call-name">Vos</span></div>
-        ${parts.filter(u=>u.id!==SES.userId).map(u=>`<div class="call-tile other">${avatarHTML(u)}<span class="call-name">${esc((u.name||'').split(' ')[0])}</span></div>`).join('')}
-      </div>
-      <div style="display:flex;gap:8px;justify-content:center;margin-top:16px;flex-wrap:wrap">
-        <button class="btn btn-ghost" id="micBtn" style="flex:0 0 auto" onclick="toggleCall('audio')">${svgIcon('message','icon icon-sm')} Micrófono</button>
-        <button class="btn btn-ghost" id="camBtn" style="flex:0 0 auto" onclick="toggleCall('video')">${svgIcon('video','icon icon-sm')} Cámara</button>
-        <button class="btn btn-danger" style="flex:0 0 auto" onclick="leaveCall('${projId}')">Salir de la llamada</button>
-      </div>
-      <div class="tip" style="margin-top:16px"><b>Nota:</b> tu cámara y micrófono se encienden en este dispositivo. Para que la llamada conecte con personas en otros equipos en tiempo real se necesita la versión en la nube (servidor de llamadas).</div>
-    </div>`,true);
-  startCallMedia();
-}
-async function startCallMedia(){
+  notify(p.memberIds.filter(i=>i!==SES.userId), `${m.name.split(' ')[0]} inició una llamada en "${p.name}"`,'video',{view:'proyectos'});
+  save();
+  const body=$('#cdBody'); body.innerHTML='<div class="cd-load">Conectando la llamada…</div>';
   try{
-    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia) throw 0;
-    _callStream=await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-    const v=$('#callLocal'); if(v) v.srcObject=_callStream;
-  }catch(e){ const v=$('#callLocal'); if(v&&v.parentNode) v.parentNode.innerHTML='<div class="call-nomedia">No se pudo acceder a la cámara o el micrófono</div><span class="call-name">Vos</span>'; }
+    await loadJitsi();
+    body.innerHTML='';
+    const api=new JitsiMeetExternalAPI('meet.jit.si',{
+      roomName:'SaborTico-'+projId,            // sala única e impredecible (id de proyecto = UUID)
+      parentNode: body, width:'100%', height:'100%',
+      userInfo:{ displayName: m.name||'Invitado' },
+      configOverwrite:{ prejoinPageEnabled:false, disableDeepLinking:true, startWithAudioMuted:false, startWithVideoMuted:false },
+      interfaceConfigOverwrite:{ MOBILE_APP_PROMO:false, SHOW_JITSI_WATERMARK:false, SHOW_WATERMARK_FOR_GUESTS:false,
+        TOOLBAR_BUTTONS:['microphone','camera','desktop','tileview','raisehand','chat','fullscreen','hangup','settings'] }
+    });
+    api.addEventListener('readyToClose', ()=>callHangup());
+    _call={projId, api};
+    if(SES.userId) render();                   // refrescar el botón "En llamada"
+  }catch(e){
+    console.warn('jitsi', e);
+    body.innerHTML='<div class="cd-load">No se pudo cargar la llamada.<br>Revisá tu conexión a internet e intentá de nuevo.</div>';
+  }
 }
-function toggleCall(kind){
-  if(!_callStream) return;
-  const tr=_callStream.getTracks().find(t=>t.kind===kind); if(!tr) return;
-  tr.enabled=!tr.enabled;
-  const btn=$(kind==='audio'?'#micBtn':'#camBtn'); if(btn) btn.style.opacity=tr.enabled?'1':'.45';
+function callHangup(){
+  const projId=_call&&_call.projId;
+  if(_call&&_call.api){ try{ _call.api.dispose(); }catch(e){} }
+  _call=null;
+  const d=document.getElementById('callDock'); if(d){ d.classList.add('hidden'); d.classList.remove('min'); const b=$('#cdBody'); if(b) b.innerHTML=''; d.style.left=d.style.top=d.style.right=d.style.bottom=''; }
+  if(projId){
+    const p=DB.projects.find(x=>x.id===projId);
+    if(p&&p.call){ p.call.participants=(p.call.participants||[]).filter(i=>i!==SES.userId); if(!p.call.participants.length) p.call.active=false; }
+    if(p) audit('proyecto',`salió de la llamada de "${p.name}"`,p.sucursalId);
+    save();
+  }
+  if(SES.userId) render();
 }
-function leaveCall(projId){
-  const p=DB.projects.find(x=>x.id===projId);
-  if(p&&p.call){ p.call.participants=(p.call.participants||[]).filter(i=>i!==SES.userId); if(!p.call.participants.length) p.call.active=false; }
-  if(_callStream){ _callStream.getTracks().forEach(t=>t.stop()); _callStream=null; }
-  if(p) audit('proyecto',`salió de la llamada de "${p.name}"`,p.sucursalId);
-  save(); closeModal(); render();
+function leaveCall(projId){ callHangup(); }   // compatibilidad
+function callDockToggleMin(){ const d=document.getElementById('callDock'); if(d) d.classList.toggle('min'); }
+let _cdDrag=null;
+function cdDragStart(e){
+  if(e.target.closest('.cd-btn')) return;
+  const d=document.getElementById('callDock'); if(!d||d.classList.contains('min')) return;
+  const r=d.getBoundingClientRect(); _cdDrag={dx:e.clientX-r.left, dy:e.clientY-r.top};
+  document.addEventListener('pointermove',cdDragMove); document.addEventListener('pointerup',cdDragEnd); e.preventDefault();
 }
-window.openCall=openCall; window.toggleCall=toggleCall; window.leaveCall=leaveCall;
+function cdDragMove(e){
+  if(!_cdDrag) return; const d=document.getElementById('callDock'); const w=d.offsetWidth, h=d.offsetHeight;
+  let x=Math.max(6,Math.min(window.innerWidth-w-6, e.clientX-_cdDrag.dx));
+  let y=Math.max(6,Math.min(window.innerHeight-h-6, e.clientY-_cdDrag.dy));
+  d.style.left=x+'px'; d.style.top=y+'px'; d.style.right='auto'; d.style.bottom='auto';
+}
+function cdDragEnd(){ document.removeEventListener('pointermove',cdDragMove); document.removeEventListener('pointerup',cdDragEnd); _cdDrag=null; }
+window.openCall=openCall; window.callHangup=callHangup; window.leaveCall=leaveCall;
+window.callDockToggleMin=callDockToggleMin; window.cdDragStart=cdDragStart;
 window.addCard=addCard;
 
 function newProjectModal(){

@@ -901,6 +901,20 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .proj-side-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border-soft);background:var(--bg-elev)}
 .proj-chat{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
 .proj-side .chat-input{padding:12px;border-top:1px solid var(--border-soft)}
+/* ventana flotante de llamada (Jitsi) — vive fuera del render, seguís trabajando */
+.call-dock{position:fixed;right:18px;bottom:18px;width:440px;height:330px;min-width:280px;min-height:200px;z-index:120;display:flex;flex-direction:column;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--e3);overflow:hidden;resize:both}
+.call-dock.hidden{display:none}
+.call-dock.min{height:auto!important;width:260px!important;resize:none}
+.call-dock.min .cd-body{display:none}
+.cd-head{display:flex;align-items:center;gap:8px;padding:9px 12px;background:var(--bg-elev);border-bottom:1px solid var(--border-soft);cursor:move;user-select:none;touch-action:none}
+.cd-title{display:inline-flex;align-items:center;gap:7px;font-weight:700;font-size:13px;min-width:0;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.cd-btn{width:30px;height:30px;flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;border:none;background:var(--bg-soft);color:var(--text-soft);border-radius:8px;cursor:pointer;transition:background var(--t-fast),color var(--t-fast)}
+.cd-btn:hover{color:var(--text);background:var(--bg)}
+.cd-btn.danger:hover{background:var(--danger);color:#fff}
+.cd-body{flex:1;background:#000;min-height:0}
+.cd-body iframe{width:100%!important;height:100%!important;border:0;display:block}
+.cd-load{height:100%;display:flex;align-items:center;justify-content:center;text-align:center;padding:20px;color:var(--text-soft);font-size:13px;line-height:1.5}
+@media(max-width:560px){ .call-dock{right:8px;left:8px;width:auto;bottom:78px;height:58vh} .call-dock.min{left:auto;width:200px!important} }
 /* pantalla completa */
 .proj-work:fullscreen{background:var(--bg);padding:14px;gap:14px}
 .proj-work:fullscreen .canvas-wrap,.proj-work:fullscreen .proj-side{height:calc(100vh - 28px)}
