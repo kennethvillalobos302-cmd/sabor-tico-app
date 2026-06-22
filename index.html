@@ -901,7 +901,7 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .proj-side-head{display:flex;align-items:center;gap:8px;padding:12px 14px;border-bottom:1px solid var(--border-soft);background:var(--bg-elev)}
 .proj-chat{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px}
 .proj-side .chat-input{padding:12px;border-top:1px solid var(--border-soft)}
-/* ventana flotante de llamada (Jitsi) — vive fuera del render, seguís trabajando */
+/* ventana flotante de llamada (WebRTC) — vive fuera del render, seguís trabajando */
 .call-dock{position:fixed;right:18px;bottom:18px;width:440px;height:330px;min-width:280px;min-height:200px;z-index:120;display:flex;flex-direction:column;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--e3);overflow:hidden;resize:both}
 .call-dock.hidden{display:none}
 .call-dock.min{height:auto!important;width:260px!important;resize:none}
@@ -1150,6 +1150,11 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   body.chat-open .chat-wrap{flex:1;min-height:0;height:auto;background:var(--bg)}
   body.chat-open .chat-head{padding-top:calc(13px + env(safe-area-inset-top))}
   body.chat-open .chat-input{padding-bottom:calc(13px + env(safe-area-inset-bottom))}
+  /* en celular el chat usa todo el ancho: menos margen a los lados y burbujas más anchas */
+  .chat-msgs{padding:10px 8px}
+  .msg{max-width:90%}
+  body.chat-open .chat-head{padding-left:11px;padding-right:11px}
+  body.chat-open .chat-input{padding-left:9px;padding-right:9px}
   .board{justify-content:center}
   .bcard{width:100%;max-width:360px}
   .notif-panel,.user-menu{right:10px}

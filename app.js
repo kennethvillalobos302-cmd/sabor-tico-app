@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v36 · llamadas nativas (voz/video) en proyectos';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v37 · chat ancho + llamar WhatsApp + llamadas nativas';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1035,7 +1035,7 @@ function render(){
   try{
     v.innerHTML = de((map[SES.view]||viewInicio)());
     if(SES.view==='chat') afterChatRender(); else document.body.classList.remove('chat-open');
-    if(SES.view==='proyectos'){ const pc=$('#projChatMsgs'); if(pc) pc.scrollTop=pc.scrollHeight; applyZoom(); }
+    if(SES.view==='proyectos'){ const pc=$('#projChatMsgs'); if(pc) pc.scrollTop=pc.scrollHeight; applyZoom(); } else unwatchProjectCall();
   }catch(e){
     console.error('view '+SES.view, e);
     v.innerHTML=`<div class="card" style="max-width:560px;margin:30px auto;text-align:center">
@@ -1940,12 +1940,12 @@ function projSide(proj){
   const msgs=(proj.chat||[]).filter(m=>m&&!msgDeleted(m)).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
     const media=m.media?(m.media.type==='video'?mediaTag(m.media.mid||m.media.data,'video','controls'):m.media.type==='image'?mediaTag(m.media.mid||m.media.data,'image'):`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
     return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
-  const inCall=proj.call&&proj.call.active;
+  watchProjectCall(proj.id);                              // presencia EN VIVO desde signals/peers
+  const others=(_projPeers[proj.id]||[]).filter(id=>id!==SES.userId);
   const meInCall=_call&&_call.projId===proj.id;
-  const nCall=(proj.call&&proj.call.participants)?proj.call.participants.length:0;
   const callBtns = meInCall
     ? `<button class="btn btn-primary" style="flex:0 0 auto;padding:7px 11px" onclick="startCall('${proj.id}',false)" title="Volver a la llamada">${svgIcon('phone','icon icon-sm')} En llamada</button>`
-    : `<button class="btn ${inCall?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 10px" title="Llamada de voz" onclick="startCall('${proj.id}',false)">${svgIcon('phone','icon icon-sm')} ${inCall?('Unirse · '+nCall):'Llamada'}</button>
+    : `<button class="btn ${others.length?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 10px" title="Llamada de voz" onclick="startCall('${proj.id}',false)">${svgIcon('phone','icon icon-sm')} ${others.length?('Unirse · '+others.length):'Llamada'}</button>
        <button class="btn btn-ghost" style="flex:0 0 auto;padding:7px 10px" title="Videollamada" onclick="startCall('${proj.id}',true)">${svgIcon('video','icon icon-sm')}</button>`;
   return `<div class="proj-side">
     <div class="proj-side-head"><span style="font-weight:700;font-size:13px">Chat del grupo</span><div class="ph-spacer"></div>
@@ -2177,7 +2177,17 @@ window.canvasPanDown=canvasPanDown;
      (evita "glare"); los candidatos que llegan antes de la descripción se encolan.
    ===================================================================== */
 const RTC_CFG={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
-let _call=null;  // {projId,video,localStream,peers:{pid:{pc,stream,name,queue}},myId,base,muted,camOff,refs,listeners}
+let _call=null;  // {projId,video,localStream,peers:{pid:{pc,stream,name,queue,op}},myId,base,muted,camOff,refs,listeners}
+let _callStarting=false;            // evita doble inicio mientras se pide cámara/micrófono
+let _projPeers={}, _ppWatchRef=null, _ppWatchId=null;   // presencia EN VIVO de la llamada (de signals/peers, se autolimpia)
+function watchProjectCall(projId){
+  if(_ppWatchId===projId) return;
+  unwatchProjectCall();
+  if(!cloudOn||!fbdb||!projId) return;
+  _ppWatchId=projId; _ppWatchRef=fbdb.ref('signals/'+projId+'/peers');
+  _ppWatchRef.on('value', s=>{ const v=s.val()||{}; const ids=Object.keys(v); const prev=(_projPeers[projId]||[]).join(','); _projPeers[projId]=ids; if(ids.join(',')!==prev && SES.userId && SES.view==='proyectos') render(); });
+}
+function unwatchProjectCall(){ if(_ppWatchRef){ try{ _ppWatchRef.off(); }catch(e){} } _ppWatchRef=null; _ppWatchId=null; }
 function ensureCallDock(){
   let d=document.getElementById('callDock'); if(d) return d;
   d=document.createElement('div'); d.id='callDock'; d.className='call-dock hidden';
@@ -2211,12 +2221,16 @@ async function startCall(projId, video){
   const m=me(); if(!m) return;
   if(!cloudOn || !fbdb){ toast('Necesitás conexión a la nube para llamar','err'); return; }
   if(_call){ if(_call.projId===projId){ const d=ensureCallDock(); d.classList.remove('hidden','min'); return; } toast('Ya estás en otra llamada — salí de esa primero','err'); return; }
+  if(_callStarting) return;            // doble clic mientras pide cámara: ignorar el segundo
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
+  _callStarting=true;
   let stream;
   try{ stream=await navigator.mediaDevices.getUserMedia({audio:true, video: video?{width:{ideal:640},height:{ideal:480}}:false}); }
-  catch(e){ toast(video?'No se pudo usar la cámara o el micrófono':'No se pudo usar el micrófono','err'); return; }
+  catch(e){ _callStarting=false; toast(video?'No se pudo usar la cámara o el micrófono':'No se pudo usar el micrófono','err'); return; }
+  if(_call){ _callStarting=false; try{ stream.getTracks().forEach(t=>t.stop()); }catch(_){} return; }   // entró a otra llamada mientras pedía permisos
   const myId=SES.userId;
   _call={projId, video:!!video, localStream:stream, peers:{}, myId, base:fbdb.ref('signals/'+projId), muted:false, camOff:false, refs:null, listeners:null};
+  _callStarting=false;
   // ventana + tile propio
   const dock=ensureCallDock(); dock.classList.remove('hidden','min');
   $('#cdName').textContent=(video?'Videollamada · ':'Llamada · ')+p.name;
@@ -2224,12 +2238,9 @@ async function startCall(projId, video){
   const lv=document.getElementById('vid-local'); if(lv) lv.srcObject=stream;
   rtcShowVideo('local', !!video);
   renderCallBar();
-  // presencia en el estado (para el botón y el aviso a los demás)
-  if(!p.call||!p.call.active) p.call={active:true,participants:[],by:myId,at:now()};
-  if(!p.call.participants.includes(myId)) p.call.participants.push(myId);
-  audit('proyecto',`entró a la ${video?'videollamada':'llamada'} de "${p.name}"`,p.sucursalId);
+  // aviso a los demás (la presencia "en llamada" se ve EN VIVO desde signals/peers, que se autolimpia)
+  audit('proyecto',`entró a la ${video?'videollamada':'llamada'} de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
   notify(p.memberIds.filter(i=>i!==myId), `${m.name.split(' ')[0]} inició una ${video?'videollamada':'llamada'} en "${p.name}"`,'video',{view:'proyectos'});
-  save();
   // señalización por Firebase
   const base=_call.base, myPeerRef=base.child('peers').child(myId), inbox=base.child('msg').child(myId);
   try{ await myPeerRef.set({name:m.name||'', video:!!video, at:firebase.database.ServerValue.TIMESTAMP}); }
@@ -2242,7 +2253,7 @@ async function startCall(projId, video){
   Object.keys(existing).forEach(pid=>{ if(pid!==myId){ ensurePeer(pid, existing[pid]&&existing[pid].name); if(myId>pid) makeOffer(pid); } });
   const onAdd=base.child('peers').on('child_added', s=>{ if(!_call) return; const pid=s.key; if(pid===myId||_call.peers[pid]) return; const v=s.val()||{}; ensurePeer(pid, v.name); if(myId>pid) makeOffer(pid); });
   const onRem=base.child('peers').on('child_removed', s=>{ if(_call) closePeer(s.key); });
-  const onMsg=inbox.on('child_added', async s=>{ const msg=s.val(); try{ await s.ref.remove(); }catch(e){} if(_call&&msg) await handleSignal(msg); });
+  const onMsg=inbox.on('child_added', async s=>{ if(!_call) return; const msg=s.val(); try{ await s.ref.remove(); }catch(e){} if(_call&&msg) enqueueSignal(msg); });
   _call.listeners={onAdd,onRem,onMsg};
   if(SES.userId) render();
 }
@@ -2254,39 +2265,48 @@ function ensurePeer(pid, name){
   _call.peers[pid]=peer;
   try{ _call.localStream.getTracks().forEach(t=>pc.addTrack(t,_call.localStream)); }catch(e){}
   pc.onicecandidate=e=>{ if(e.candidate) sendSignal(pid,'candidate',e.candidate.toJSON()); };
-  pc.ontrack=e=>{ peer.stream=e.streams[0]; addRemoteTile(pid,peer); };
+  pc.ontrack=e=>{ peer.stream=e.streams[0]; if(e.track&&e.track.kind==='video'){ e.track.onmute=()=>rtcShowVideo(pid,false); e.track.onunmute=()=>rtcShowVideo(pid,true); } addRemoteTile(pid,peer); };
   pc.onconnectionstatechange=()=>{ if(['failed','closed'].includes(pc.connectionState)) closePeer(pid); };
   return peer;
 }
 async function makeOffer(pid){
   const peer=_call&&_call.peers[pid]; if(!peer) return;
-  try{ const off=await peer.pc.createOffer(); await peer.pc.setLocalDescription(off); sendSignal(pid,'offer',{type:off.type,sdp:off.sdp}); }catch(e){ console.warn('offer',e); }
+  try{ const off=await peer.pc.createOffer(); if(!_call||_call.peers[pid]!==peer) return; await peer.pc.setLocalDescription(off); sendSignal(pid,'offer',{type:off.type,sdp:off.sdp}); }catch(e){ console.warn('offer',e); }
 }
 function sendSignal(toId, kind, data){ if(!_call) return; try{ _call.base.child('msg').child(toId).push({from:_call.myId, kind, data}); }catch(e){} }
-async function handleSignal(msg){
+function enqueueSignal(msg){   // procesa los mensajes de un peer EN ORDEN (uno termina antes del siguiente): evita perder candidatos ICE
   if(!_call||!msg||!msg.from||msg.from===_call.myId) return;
-  const pid=msg.from, peer=ensurePeer(pid); if(!peer) return;
+  const peer=ensurePeer(msg.from); if(!peer) return;
+  peer.op=(peer.op||Promise.resolve()).then(()=>handleSignal(msg)).catch(e=>console.warn('sig',e));
+}
+async function handleSignal(msg){
+  if(!_call) return;
+  const pid=msg.from, peer=_call.peers[pid]; if(!peer) return;
+  const alive=()=> _call && _call.peers[pid]===peer && peer.pc.signalingState!=='closed';
   try{
     if(msg.kind==='offer'){
-      await peer.pc.setRemoteDescription(new RTCSessionDescription(msg.data));
-      await flushCands(peer);
-      const ans=await peer.pc.createAnswer(); await peer.pc.setLocalDescription(ans);
+      if(peer.pc.signalingState!=='stable' && peer.pc.signalingState!=='have-remote-offer') return;   // no pisar una negociación en curso
+      await peer.pc.setRemoteDescription(new RTCSessionDescription(msg.data)); if(!alive()) return;
+      await flushCands(peer); if(!alive()) return;
+      const ans=await peer.pc.createAnswer(); if(!alive()) return;
+      await peer.pc.setLocalDescription(ans); if(!alive()) return;
       sendSignal(pid,'answer',{type:ans.type,sdp:ans.sdp});
     } else if(msg.kind==='answer'){
-      await peer.pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+      if(peer.pc.signalingState!=='have-local-offer') return;     // answer fuera de orden: ignorar
+      await peer.pc.setRemoteDescription(new RTCSessionDescription(msg.data)); if(!alive()) return;
       await flushCands(peer);
     } else if(msg.kind==='candidate'){
       if(peer.pc.remoteDescription && peer.pc.remoteDescription.type){ try{ await peer.pc.addIceCandidate(new RTCIceCandidate(msg.data)); }catch(e){} }
-      else peer.queue.push(msg.data);
+      else (peer.queue=peer.queue||[]).push(msg.data);
     }
   }catch(e){ console.warn('signal',msg.kind,e); }
 }
-async function flushCands(peer){ const q=peer.queue||[]; peer.queue=[]; for(const c of q){ try{ await peer.pc.addIceCandidate(new RTCIceCandidate(c)); }catch(e){} } }
+async function flushCands(peer){ while(peer.queue && peer.queue.length){ const c=peer.queue.shift(); try{ await peer.pc.addIceCandidate(new RTCIceCandidate(c)); }catch(e){} } }   // drena en bucle: no pierde los que llegan durante el await
 function addRemoteTile(pid,peer){
   const grid=document.getElementById('rtcGrid'); if(!grid) return;
   if(!document.getElementById('tile-'+pid)) grid.insertAdjacentHTML('beforeend', rtcTile(pid,(peer.name||'…').split(' ')[0],false));
   const v=document.getElementById('vid-'+pid); if(v && v.srcObject!==peer.stream) v.srcObject=peer.stream;
-  const hasVid=peer.stream && peer.stream.getVideoTracks().some(t=>t.readyState==='live');
+  const hasVid=peer.stream && peer.stream.getVideoTracks().some(t=>t.readyState==='live' && !t.muted);
   rtcShowVideo(pid, !!hasVid);
 }
 function closePeer(pid){
@@ -2309,11 +2329,10 @@ function endCall(silent){
   _call=null;
   const d=document.getElementById('callDock'); if(d){ d.classList.add('hidden'); d.classList.remove('min'); d.style.left=d.style.top=d.style.right=d.style.bottom=''; const g=document.getElementById('rtcGrid'); if(g)g.innerHTML=''; const bar=document.getElementById('rtcBar'); if(bar)bar.innerHTML=''; }
   const p=projId&&DB.projects.find(x=>x.id===projId);
-  if(p&&p.call){ p.call.participants=(p.call.participants||[]).filter(i=>i!==myId); if(!p.call.participants.length) p.call.active=false; }
   if(p&&!silent) audit('proyecto',`salió de la llamada de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
-  else if(p) save();
   if(SES.userId) render();
 }
+window.addEventListener('pagehide', ()=>{ if(_call) endCall(true); });   // cerrar la cámara si se cierra la pestaña
 function callHangup(){ endCall(false); }
 function leaveCall(projId){ callHangup(); }   // compatibilidad
 function callDockToggleMin(){ const d=document.getElementById('callDock'); if(d) d.classList.toggle('min'); }
@@ -2476,6 +2495,7 @@ function viewChat(){
         </div>
         <div class="ph-spacer"></div>
         ${adminPeek?`<span class="admin-eye">👁️ Gerencia</span>`:''}
+        ${cur.type!=='group'?`<button class="icon-btn" style="width:36px;height:36px" title="Llamar por WhatsApp" onclick="waCall('${curMem.find(i=>i!==SES.userId)}')">${svgIcon('phone','icon icon-sm')}</button>`:''}
         ${cur.type==='group'?`<button class="icon-btn" style="width:36px;height:36px" title="Info del grupo" onclick="groupInfoModal('${cur.id}')">${svgIcon('info','icon icon-sm')}</button>`:''}
       </div>
       <div class="chat-msgs" id="chatMsgs">${msgsHtml||'<div style="margin:auto;color:var(--text-soft);font-size:13px">Escribí el primer mensaje 👋</div>'}</div>
@@ -2577,6 +2597,22 @@ function startDM(otherId){
   closeModal(); SES.activeChat=c.id; SES.view='chat'; render();
 }
 window.startDM=startDM;
+/* Llamar por WhatsApp al teléfono del perfil de la persona del chat directo */
+function waNormalize(raw){
+  let d=(raw||'').replace(/\D/g,'');            // dejar solo dígitos
+  if(!d) return '';
+  if(d.startsWith('00')) d=d.slice(2);          // 00 internacional -> quitar
+  if(d.length===8) d='506'+d;                   // Costa Rica: 8 dígitos locales -> anteponer 506
+  return d;
+}
+function waCall(userId){
+  const u=userById(userId);
+  if(!u){ toast('No se encontró la persona','err'); return; }
+  const phone=waNormalize(u.phone);
+  if(!phone){ toast('Esta persona no tiene teléfono en su perfil. Agregalo en Equipo → Editar.','err'); return; }
+  window.open('https://wa.me/'+phone, '_blank');   // abre WhatsApp con ese contacto (ahí tocás llamar)
+}
+window.waCall=waCall;
 
 function newGroupModal(){
   const people=scopedPeople(false);
