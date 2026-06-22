@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v27 · subir/recargar nube';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v28 · borrar sucursales/personas';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2521,10 +2521,13 @@ function viewEquipo(){
     <button class="btn btn-ghost" style="flex:0 0 auto" onclick="newSucModal()">+ Sucursal</button>
     <button class="btn btn-primary" style="flex:0 0 auto" onclick="newUserModal()">+ Usuario</button></div>`;
   html+=guide;
+  const validIds=new Set(['all',...DB.sucursales.map(s=>s.id)]);
+  const orphans=DB.users.filter(u=>!validIds.has(u.sucursalId)).sort(byDept);
   const groups=[{id:'all',name:'Todas las sucursales (global)'},...DB.sucursales];
+  if(orphans.length) groups.push({id:'__orphan',name:'Sin sucursal (revisar / eliminar)'});
   groups.forEach(g=>{
-    const people=DB.users.filter(u=>u.sucursalId===g.id).sort(byDept);
-    const editBtn=g.id!=='all'?`<button class="icon-btn" style="width:32px;height:32px" title="Renombrar sucursal" onclick="sucEditModal('${g.id}')">${svgIcon('edit','icon icon-sm')}</button>`:'';
+    const people=g.id==='__orphan'?orphans:DB.users.filter(u=>u.sucursalId===g.id).sort(byDept);
+    const editBtn=(g.id!=='all'&&g.id!=='__orphan')?`<button class="icon-btn" style="width:32px;height:32px" title="Renombrar sucursal" onclick="sucEditModal('${g.id}')">${svgIcon('edit','icon icon-sm')}</button><button class="icon-btn" style="width:32px;height:32px" title="Eliminar sucursal" onclick="delSuc('${g.id}')">${svgIcon('trash','icon icon-sm')}</button>`:'';
     html+=`<div class="page-head" style="margin:20px 0 10px;align-items:center"><div class="page-title" style="font-size:16px;display:flex;align-items:center;gap:8px">${svgIcon('pin','icon')} ${esc(g.name)}</div><div class="page-sub" style="margin:0 0 0 6px">· ${people.length} ${people.length===1?'persona':'personas'}</div><div class="ph-spacer"></div>${editBtn}</div>`;
     if(!people.length){ html+=`<div class="card" style="color:var(--text-soft);font-size:13px">Sin personas en esta sucursal.</div>`; return; }
     html+=`<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Teléfono</th><th>Estado</th><th></th></tr></thead><tbody>`;
@@ -2533,7 +2536,7 @@ function viewEquipo(){
       <td><span class="role-badge">${roleInfo(u.role).label}</span></td>
       <td>${esc(u.phone||'—')}</td>
       <td>${u.active?'<span class="pill hecha">Activo</span>':'<span class="pill rechazada">Inactivo</span>'}</td>
-      <td style="text-align:right"><button class="btn btn-ghost" style="padding:6px 10px" onclick="editUserModal('${u.id}')">Editar</button></td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn btn-ghost" style="padding:6px 10px" onclick="editUserModal('${u.id}')">Editar</button> <button class="icon-btn" style="width:30px;height:30px" title="Eliminar persona" onclick="delUser('${u.id}')">${svgIcon('trash','icon icon-sm')}</button></td>
     </tr>`).join('');
     html+=`</tbody></table></div></div>`;
   });
@@ -2591,7 +2594,25 @@ function saveSuc(id){ const n=$('#sName').value.trim(); if(!n){toast('Ponele nom
   if(id){ const s=DB.sucursales.find(x=>x.id===id); if(s){ s.name=n; s.updatedAt=now(); audit('equipo',`renombró una sucursal a "${n}"`); } }
   else { DB.sucursales.push({id:uid(),name:n,at:now(),updatedAt:now()}); audit('equipo',`creó la sucursal ${n}`); }
   closeModal(); toast('Sucursal guardada','ok'); render(); }
-window.newSucModal=newSucModal; window.sucEditModal=sucEditModal; window.saveSuc=saveSuc;
+async function delSuc(id){
+  if(!isAdmin()) return;
+  const s=DB.sucursales.find(x=>x.id===id); if(!s) return;
+  const ppl=DB.users.filter(u=>u.sucursalId===id).length;
+  if(!await confirmDialog(`Se elimina la sucursal "${s.name}".${ppl?` Las ${ppl} persona(s) de esta sucursal van a quedar "Sin sucursal" — reasignalas o borralas.`:''}`,{title:'¿Eliminar sucursal?',okText:'Sí, eliminar'})) return;
+  tomb(id); DB.sucursales=DB.sucursales.filter(x=>x.id!==id);
+  audit('equipo',`eliminó la sucursal "${s.name}"`); save(); render();
+  undoDelete('sucursales', s, 'Sucursal '+s.name);
+}
+async function delUser(id){
+  if(!isAdmin()) return;
+  const u=userById(id); if(!u) return;
+  if(id===SES.userId){ toast('No te podés eliminar a vos mismo','err'); return; }
+  if(!await confirmDialog(`Se elimina a ${u.name} del equipo. (Lo que haya hecho queda en el historial; podés volver a crearla si hace falta.)`,{title:'¿Eliminar persona?',okText:'Sí, eliminar'})) return;
+  tomb(id); DB.users=DB.users.filter(x=>x.id!==id);
+  audit('equipo',`eliminó al usuario ${u.name}`); save(); render();
+  undoDelete('users', u, u.name);
+}
+window.newSucModal=newSucModal; window.sucEditModal=sucEditModal; window.saveSuc=saveSuc; window.delSuc=delSuc; window.delUser=delUser;
 
 /* =====================================================================
    VISTA: AUDITORÍA (admin) — movimientos, anti-fraude
