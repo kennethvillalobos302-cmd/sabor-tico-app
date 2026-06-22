@@ -651,6 +651,13 @@ function openModal(html, wide){
 }
 function closeModal(){ $('#modalBg').classList.remove('on'); $('#modal').innerHTML=''; }
 $('#modalBg').addEventListener('click', e=>{ if(e.target.id==='modalBg') closeModal(); });
+// Escape: cerrar el modal abierto, o los paneles (notificaciones / menú de usuario)
+document.addEventListener('keydown', e=>{
+  if(e.key!=='Escape') return;
+  if($('#modalBg') && $('#modalBg').classList.contains('on')){ closeModal(); return; }
+  const np=$('#notifPanel'), um=$('#userMenu'), sw=$('#sucSwitch');
+  if(np) np.classList.remove('on'); if(um) um.classList.remove('on'); if(sw) sw.classList.remove('open');
+});
 
 async function confirmDialog(body, {title='¿Seguro?',okText='Sí',variant='danger',icon='⚠️'}={}){
   return new Promise(res=>{
@@ -4649,7 +4656,9 @@ impInput.addEventListener('change',async e=>{
    INIT
    ===================================================================== */
 (async function init(){
-  const t=localStorage.getItem('saborTico_theme'); if(t) document.documentElement.setAttribute('data-theme',t);
+  const t=localStorage.getItem('saborTico_theme');
+  if(t) document.documentElement.setAttribute('data-theme',t);
+  else { try{ const dark=window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches; document.documentElement.setAttribute('data-theme', dark?'dark':'light'); }catch(_){} }
   let ok=false; try{ ok=await cloudInit(); }catch(e){ console.warn('cloud init', e); }
   if(!ok) load();
   try{ await migratePins(); }catch(_){}   // pasar PIN viejos en texto a hash, una sola vez

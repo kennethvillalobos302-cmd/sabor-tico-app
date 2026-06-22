@@ -2,7 +2,7 @@
 <html lang="es" data-theme="dark">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#141010">
 <link rel="manifest" href="manifest.json">
 <link rel="icon" href="icon.svg">
@@ -1188,15 +1188,15 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
     <span id="cloudTag" class="cloud-tag hidden">Sincronizado</span>
     <div class="suc-switch" id="sucSwitch">
       <svg class="icon icon-sm" viewBox="0 0 24 24"><use href="#i-pin"/></svg>
-      <button type="button" class="suc-btn" id="sucBtn" onclick="toggleSucMenu(event)">
+      <button type="button" class="suc-btn" id="sucBtn" aria-label="Cambiar de sucursal" onclick="toggleSucMenu(event)">
         <span id="sucBtnLabel">Todas las sucursales</span>
         <svg class="icon icon-sm suc-chev" viewBox="0 0 24 24"><use href="#i-chevron"/></svg>
       </button>
       <div class="suc-menu" id="sucMenu"></div>
     </div>
     <div class="tb-spacer"></div>
-    <button class="icon-btn" id="notifBtn"><svg class="icon" viewBox="0 0 24 24"><use href="#i-bell"/></svg><span class="badge hidden" id="notifBadge">0</span></button>
-    <div class="tb-user" id="userBtn">
+    <button class="icon-btn" id="notifBtn" aria-label="Notificaciones" title="Notificaciones"><svg class="icon" viewBox="0 0 24 24"><use href="#i-bell"/></svg><span class="badge hidden" id="notifBadge">0</span></button>
+    <div class="tb-user" id="userBtn" role="button" tabindex="0" aria-label="Tu cuenta y opciones">
       <div class="av" id="tbAv"></div>
       <div><div class="nm" id="tbName"></div><div class="rl" id="tbRole"></div></div>
     </div>
