@@ -116,6 +116,34 @@ async function cloudPush(){
   }
   catch(e){ console.warn('cloud push', e); }
 }
+/* Reconciliar listas que SOLO CRECEN (mensajes de chat, chat de proyectos, comentarios):
+   unir por id lo local + lo remoto, en vez de que un blob pise al otro. Así, si dos personas
+   escriben casi al mismo tiempo, no se pierde ningún mensaje. Respeta el borrado (deleted) y
+   "ocultar para mí" (hiddenFor). Devuelve true si lo local tenía algo que el remoto no tenía. */
+function _unionMsgs(localArr, remoteArr, flags){
+  localArr=Array.isArray(localArr)?localArr:[]; remoteArr=Array.isArray(remoteArr)?remoteArr:[];
+  const byId={};
+  remoteArr.forEach(m=>{ if(m&&m.id) byId[m.id]=m; });
+  localArr.forEach(m=>{ if(!m||!m.id) return;
+    const e=byId[m.id];
+    if(e){
+      if(m.deleted && !e.deleted){ e.deleted=true; if(flags) flags.added=true; }   // borrado local que el remoto aún no tenía
+      const before=(e.hiddenFor||[]).length;
+      const hf=[...new Set([...(e.hiddenFor||[]),...(m.hiddenFor||[])])];
+      if(hf.length){ e.hiddenFor=hf; if(hf.length>before && flags) flags.added=true; } // "ocultar para mí" local no propagado
+    } else { byId[m.id]=m; if(flags) flags.added=true; }              // mensaje local que el remoto no tenía
+  });
+  return Object.keys(byId).map(k=>byId[k]).sort((a,b)=>((a.at||0)-(b.at||0)) || String(a.id).localeCompare(String(b.id)));
+}
+function mergeAppendOnly(localDB, remoteDB){
+  if(!localDB||!remoteDB) return false;
+  const flags={added:false};
+  (remoteDB.chats||[]).forEach(rc=>{ const lc=(localDB.chats||[]).find(x=>x&&x.id===rc.id); if(lc) rc.msgs=_unionMsgs(lc.msgs, rc.msgs, flags); });
+  (remoteDB.projects||[]).forEach(rp=>{ const lp=(localDB.projects||[]).find(x=>x&&x.id===rp.id); if(lp) rp.chat=_unionMsgs(lp.chat, rp.chat, flags); });
+  (remoteDB.tasks||[]).forEach(rt=>{ const lt=(localDB.tasks||[]).find(x=>x&&x.id===rt.id); if(lt) rt.comments=_unionMsgs(lt.comments, rt.comments, flags); });
+  (remoteDB.pedidos||[]).forEach(rp=>{ const lp=(localDB.pedidos||[]).find(x=>x&&x.id===rp.id); if(lp) rp.comments=_unionMsgs(lp.comments, rp.comments, flags); });
+  return flags.added;
+}
 async function cloudInit(){
   if(!FB || !FB.databaseURL) return false;
   if(!window.firebase){ console.warn('SDK de Firebase no cargó'); return false; }
@@ -135,24 +163,32 @@ async function cloudInit(){
       setTimeout(()=>{ try{ toast('Sin conexión a la nube: activá el inicio anónimo en Firebase (ver SEGURIDAD.md).','err'); }catch(_){} }, 1500);
     }
   }
-  if(val && val.data){ DB=val.data; }
+  let _bootMerged=false;
+  if(val && val.data){
+    // unir mensajes locales (de una sesión offline) con el estado del servidor para no perderlos
+    try{ const raw=localStorage.getItem(DB_KEY); if(raw){ const localDB=JSON.parse(raw); if(localDB && Array.isArray(localDB.users)) _bootMerged=mergeAppendOnly(localDB, val.data); } }catch(_){}
+    DB=val.data;
+  }
   else { const raw=localStorage.getItem(DB_KEY); try{ DB = raw?JSON.parse(raw):seed(); }catch(_){ DB=seed(); } }
   migrate();
   try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
   cloudOn=true;
-  if(!(val && val.data) || _migrateReset){ await cloudPush(); _migrateReset=false; }
+  if(!(val && val.data) || _migrateReset || _bootMerged){ await cloudPush(); _migrateReset=false; }
   try{
     fbdb.ref('state').on('value', (snap)=>{
       const v=snap.val(); if(!v || !v.data || v.client===CLIENT_ID) return;
       // Defensa: nunca dejar que un estado vacío o corrupto (sin usuarios) borre todo en cada dispositivo
       if(!Array.isArray(v.data.users) || v.data.users.length===0){ console.warn('estado remoto inválido, ignorado'); return; }
+      let needRepush=false;
       _applyingRemote=true;
       try{
+        needRepush = mergeAppendOnly(DB, v.data);   // unir mensajes/comentarios locales con los remotos (no perder nada)
         DB=v.data; migrate(); // normalizar datos entrantes para que nunca falten colecciones
         try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
         const modalOpen=$('#modalBg').classList.contains('on');
         if(me()){ if(!modalOpen) render(); try{ checkNotifPops(); }catch(_){} } else { renderLogin(); }
       } finally { _applyingRemote=false; }
+      if(needRepush) save();   // el remoto no tenía algunos de nuestros mensajes: reenviarlos para que lleguen a todos
     });
   }catch(e){ console.warn('cloud realtime', e); }
   return true;
@@ -979,7 +1015,7 @@ function taskDetail(id){
     const u=userById(l.byId);
     return `<div class="log-item"><b>${u?esc((u.name||'').split(' ')[0]):'—'}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`;
   }).join('');
-  const comments = (t.comments||[]).map(c=>{
+  const comments = (t.comments||[]).filter(c=>c&&!c.deleted).map(c=>{
     const u=userById(c.byId);
     return `<div class="comment">${avatarHTML(u)}<div class="cbody"><div class="cname">${u?esc(u.name):'—'}</div><div class="ctext">${esc(c.text)}</div><div class="ctime">${timeAgo(c.at)}</div></div></div>`;
   }).join('');
@@ -1302,7 +1338,7 @@ function pedidoDetail(id){
   const canManage = pedAreaMine(p.area) || isAdmin();
   const canEditPed = p.fromId===SES.userId || isAdmin();
   const logHtml=[...p.log].reverse().map(l=>{const u=userById(l.byId);return `<div class="log-item"><b>${u?esc((u.name||'').split(' ')[0]):'—'}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`;}).join('');
-  const comments=(p.comments||[]).map(c=>{const u=userById(c.byId);return `<div class="comment">${avatarHTML(u)}<div class="cbody"><div class="cname">${u?esc(u.name):''}</div><div class="ctext">${esc(c.text)}</div><div class="ctime">${timeAgo(c.at)}</div></div></div>`;}).join('');
+  const comments=(p.comments||[]).filter(c=>c&&!c.deleted).map(c=>{const u=userById(c.byId);return `<div class="comment">${avatarHTML(u)}<div class="cbody"><div class="cname">${u?esc(u.name):''}</div><div class="ctext">${esc(c.text)}</div><div class="ctime">${timeAgo(c.at)}</div></div></div>`;}).join('');
   const prodRow = p.productId?(()=>{const pr=DB.inventory.find(x=>x.id===p.productId);return `<div class="td-mrow"><span class="td-ml">Producto ligado</span><span class="td-mv">${pr?esc(pr.name)+' · '+pr.stock+' '+pr.unit:'(eliminado)'}</span></div>`;})():'';
   let actions='';
   if(canManage && p.status!=='entregado' && p.status!=='rechazado'){
@@ -1682,7 +1718,7 @@ function toggleBoardFull(){
 document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElement && boardFull){ boardFull=false; if(SES.userId&&SES.view==='proyectos') render(); } });
 window.toggleBoardFull=toggleBoardFull;
 function projSide(proj){
-  const msgs=(proj.chat||[]).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
+  const msgs=(proj.chat||[]).filter(m=>m&&!m.deleted).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
     const media=m.media?(m.media.type==='video'?mediaTag(m.media.mid||m.media.data,'video','controls'):m.media.type==='image'?mediaTag(m.media.mid||m.media.data,'image'):`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
     return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
   const inCall=proj.call&&proj.call.active;
@@ -1889,7 +1925,7 @@ async function delProjMsg(projId,msgId){
   const m=(p.chat||[]).find(x=>x.id===msgId); if(!m) return;
   if(!(m.byId===SES.userId||isAdmin())) return;
   if(!await confirmDialog('Se elimina este mensaje del chat.',{title:'¿Eliminar mensaje?',okText:'Sí, eliminar'})) return;
-  p.chat=p.chat.filter(x=>x.id!==msgId); audit('proyecto','eliminó un mensaje del chat',p.sucursalId); save(); render();
+  m.deleted=true; audit('proyecto','eliminó un mensaje del chat',p.sucursalId); save(); render();   // borrado suave (sobrevive la reconciliación)
 }
 window.delProjMsg=delProjMsg;
 /* mover el lienzo arrastrando el fondo */
@@ -2008,13 +2044,13 @@ function myChats(){
   return (DB.chats||[]).filter(c=> c && ((c.memberIds||[]).includes(SES.userId)||isAdmin()) )
     .sort((a,b)=>(lastMsgAt(b))-(lastMsgAt(a)));
 }
-function lastMsgAt(c){ const m=c.msgs||[]; return m.length?m[m.length-1].at:(c.createdAt||0); }
+function lastMsgAt(c){ const m=(c.msgs||[]).filter(x=>x&&!x.deleted); return m.length?m[m.length-1].at:(c.createdAt||0); }
 function unreadChats(){
   let n=0; myChats().forEach(c=>{ if(chatUnread(c)>0) n++; }); return n;
 }
 function chatUnread(c){
   const seen=(DB._seen&&DB._seen[SES.userId]&&DB._seen[SES.userId][c.id])||0;
-  return (c.msgs||[]).filter(m=>m.byId!==SES.userId && m.at>seen).length;
+  return (c.msgs||[]).filter(m=>m && !m.deleted && m.byId!==SES.userId && m.at>seen).length;
 }
 function markSeen(c){
   DB._seen=DB._seen||{}; DB._seen[SES.userId]=DB._seen[SES.userId]||{};
@@ -2041,7 +2077,7 @@ function viewChat(){
   const sel = SES.activeChat || (chats[0]&&chats[0].id);
   SES.activeChat=sel;
   const listHtml = chats.length? chats.map(c=>{
-    const msgs=c.msgs||[]; const last=msgs[msgs.length-1];
+    const msgs=c.msgs||[]; const last=[...msgs].reverse().find(m=> m && !m.deleted && !((m.hiddenFor||[]).includes(SES.userId)));
     const mem=c.memberIds||[];
     const u=c.type==='group'?null:userById(mem.find(i=>i!==SES.userId));
     const name=c.type==='group'?c.name:(u?u.name:'Chat');
@@ -2059,7 +2095,7 @@ function viewChat(){
     const curMem=cur.memberIds||[];
     const adminPeek = !curMem.includes(SES.userId) && isAdmin();
     const headName = cur.type==='group'?cur.name:(userById(curMem.find(i=>i!==SES.userId))?.name||'Chat');
-    const visibleMsgs=(cur.msgs||[]).filter(m=> !((m.hiddenFor||[]).includes(SES.userId)));
+    const visibleMsgs=(cur.msgs||[]).filter(m=> m && !m.deleted && !((m.hiddenFor||[]).includes(SES.userId)));
     const msgsHtml = visibleMsgs.map(m=>{
       const u=userById(m.byId); const mine=m.byId===SES.userId;
       const media = m.media ? (m.media.type==='video' ? mediaTag(m.media.mid||m.media.data,'video','controls') : mediaTag(m.media.mid||m.media.data,'image')) : '';
@@ -2150,7 +2186,7 @@ async function delMsg(chatId,msgId,scope){
   const m=(c.msgs||[]).find(x=>x.id===msgId); if(!m) return;
   if(scope==='all'){
     if(!(m.byId===SES.userId || isAdmin())) return;
-    c.msgs=(c.msgs||[]).filter(x=>x.id!==msgId);
+    m.deleted=true;   // borrado suave: sobrevive a la reconciliación entre dispositivos
     audit('chat','eliminó un mensaje para todos',c.sucursalId);
   } else {
     m.hiddenFor=m.hiddenFor||[]; if(!m.hiddenFor.includes(SES.userId)) m.hiddenFor.push(SES.userId);
