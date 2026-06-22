@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v26 · arreglo nube (SW no bloquea Firebase)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v27 · subir/recargar nube';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4562,6 +4562,7 @@ $('#userBtn').addEventListener('click',e=>{
     ${isAdmin()?`<button class="um-item" onclick="autoBackupsModal()">${svgIcon('clipboard')} Respaldos automáticos</button>`:''}
     ${isAdmin()?`<button class="um-item" onclick="errorsModal()">${svgIcon('info')} Errores recientes</button>`:''}
     ${isAdmin()?`<button class="um-item" onclick="reloadFromCloud()">${svgIcon('down')} Recargar desde la nube</button>`:''}
+    ${isAdmin()?`<button class="um-item" onclick="pushOverwrite()">${svgIcon('up')} Subir este equipo a la nube</button>`:''}
     <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>
     <div style="padding:8px 15px;font-size:10.5px;color:var(--text-dim);text-align:center;border-top:1px solid var(--border-soft)">${esc(APP_VERSION)}</div>`;
   m.classList.toggle('on');
@@ -4676,6 +4677,17 @@ async function reloadFromCloud(){
   location.reload();
 }
 window.reloadFromCloud=reloadFromCloud;
+// Hacer de ESTE equipo la fuente: reemplaza TODA la nube por los datos de este dispositivo (set completo, sin unir).
+// Usar desde el equipo que tiene los datos correctos; los demás luego usan "Recargar desde la nube".
+async function pushOverwrite(){
+  if(!isAdmin()) return; if($('#userMenu')) $('#userMenu').classList.remove('on');
+  if(!cloudOn || !fbdb){ toast('No hay conexión a la nube (esperá a "Sincronizado")','err'); return; }
+  if(!await confirmDialog('Esto REEMPLAZA todos los datos en la nube por los de ESTE dispositivo, para TODOS los equipos. Hacelo solo desde el equipo que tiene los datos correctos.',{title:'¿Subir y sobrescribir la nube?',okText:'Sí, sobrescribir'})) return;
+  try{ stampEdits(); }catch(_){}
+  try{ await fbdb.ref('state').set({ data:DB, client:CLIENT_ID, at:Date.now() }); rebuildEntSnap(); toast('Nube actualizada con los datos de este equipo ✓','ok'); }
+  catch(e){ toast('No se pudo subir: '+((e&&e.code)||e),'err'); }
+}
+window.pushOverwrite=pushOverwrite;
 
 /* ---- Búsqueda global (tareas, pedidos, reservas, inventario, personas…) ---- */
 function globalSearchModal(){
