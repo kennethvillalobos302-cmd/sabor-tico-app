@@ -4219,7 +4219,7 @@ function renderLogin(){
   // Paso 1: elegir sucursal (si hay más de una)
   if(!loginSuc && sucs.length>1){
     area.innerHTML=`<div class="login-label">Elegí la sucursal</div>
-      <div class="suc-pick">${sucs.map(s=>`<button class="suc-card" onclick="pickSuc('${s.id}')">${svgIcon('pin')} ${esc(s.name)}</button>`).join('')}</div>
+      <div class="suc-pick">${sucs.map(s=>`<button class="suc-card" onclick="pickLoginSuc('${s.id}')">${svgIcon('pin')} ${esc(s.name)}</button>`).join('')}</div>
       <div class="login-hint">Cada quien entra con su nombre y su PIN personal. No compartás tu PIN.</div>`;
     return;
   }
@@ -4238,8 +4238,8 @@ function renderLogin(){
   const lb=$('#loginBtn'); if(lb) lb.onclick=doLogin;
   const pi=$('#pinInput'); if(pi) pi.onkeydown=e=>{ if(e.key==='Enter') doLogin(); };
 }
-function pickSuc(id){ loginSuc=id; pickedUser=null; renderLogin(); }
-window.pickSuc=pickSuc;
+function pickLoginSuc(id){ loginSuc=id; pickedUser=null; renderLogin(); }
+window.pickLoginSuc=pickLoginSuc;
 function pickUser(id){
   pickedUser=id;
   document.querySelectorAll('.user-pick').forEach(b=>b.classList.toggle('sel',b.dataset.id===id));
