@@ -406,7 +406,7 @@ function migrate(){
   // unir puestos viejos de Contabilidad y Recursos en el rol combinado
   (DB.users||[]).forEach(u=>{ if(u.role==='contabilidad'||u.role==='rrhh'){ u.role='contarh'; ch=true; } });
   // asegurar que las colecciones base existan (datos sincronizados pueden venir incompletos)
-  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients','souvenirs','souvSales'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
+  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients','souvenirs','souvSales','attendance'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
   const s=DB.sucursales||[]; const s1=s[0]?s[0].id:'all'; const s2=s[1]?s[1].id:s1;
   if(DB.inventory===undefined){ DB.inventory=seedInventory(s1,s2); ch=true; }
   if(DB.invMoves===undefined){ DB.invMoves=[]; ch=true; }
@@ -841,6 +841,7 @@ function render(){
   if(!me()){ return; }
   try{
   checkShiftReminders();
+  try{ checkReservReminders(); }catch(_){}
   try{ checkNotifPops(); }catch(_){}   // avisar (popup+sonido) lo nuevo, p.ej. recordatorios de turno
   const ct=$('#cloudTag'); if(ct) ct.classList.toggle('hidden',!cloudOn);
   // topbar
@@ -921,6 +922,7 @@ function viewInicio(){
     <div class="page-sub">${roleInfo(u.role).label}${isAdmin()?' · viendo '+sucName(SES.sucFilter):' · '+sucName(u.sucursalId)}</div></div></div>`;
 
   html += todayShiftCard();
+  html += attendanceCard();
   html += reservTodayCard();
 
   html += `<div class="kpi-row">
@@ -2572,6 +2574,7 @@ function viewInventario(){
 }
 function invRow(p){
   const editor=canInvEditArea(p.area||'cocina'); const lw=lowStock(p);
+  const sug=lw?suggestReorder(p):0;
   const pct=p.minStock>0 ? Math.max(4,Math.min(100,Math.round(p.stock/(p.minStock*1.5)*100))) : 100;
   return `<div class="inv-card ${lw?'low':''}">
     <div class="inv-stock">
@@ -2581,13 +2584,13 @@ function invRow(p){
     </div>
     <div class="inv-info">
       <div class="inv-name">${esc(p.name)} <span class="inv-area">${INV_AREA_LABEL[p.area||'cocina']}</span>${lw?' <span class="pill atrasada">Reponer</span>':''}</div>
-      <div class="inv-meta">${esc(p.category)} · ${money(p.cost)}/${esc(p.unit)}${p.supplier?' · '+esc(p.supplier):''} · ${esc(sucName(p.sucursalId))}</div>
+      <div class="inv-meta">${esc(p.category)} · ${money(p.cost)}/${esc(p.unit)}${p.supplier?' · '+esc(p.supplier):''} · ${esc(sucName(p.sucursalId))}${lw&&sug?` · <b style="color:var(--warn)">Sugerido pedir ${sug} ${esc(p.unit)}</b>`:''}</div>
     </div>
     <div class="inv-actions">
       ${editor?`<button class="ibtn ok" title="Entrada — sumar stock" onclick="invMoveModal('${p.id}','entrada')">${svgIcon('up','icon icon-sm')}<span>Entrada</span></button>
         <button class="ibtn danger" title="Salida — restar stock" onclick="invMoveModal('${p.id}','salida')">${svgIcon('down','icon icon-sm')}<span>Salida</span></button>
-        <button class="ibtn" title="Editar producto" onclick="invEditModal('${p.id}')">${svgIcon('edit','icon icon-sm')}</button>`
-       :`<button class="ibtn" title="Pedir a proveeduría" onclick="pedirProducto('${p.id}')">${svgIcon('box','icon icon-sm')}<span>Pedir</span></button>`}
+        <button class="ibtn" title="Editar producto" onclick="invEditModal('${p.id}')">${svgIcon('edit','icon icon-sm')}</button>${lw?`<button class="ibtn" title="Pedir reposición a proveeduría" onclick="pedirProducto('${p.id}',${sug||0})">${svgIcon('box','icon icon-sm')}<span>Pedir</span></button>`:''}`
+       :`<button class="ibtn" title="Pedir a proveeduría" onclick="pedirProducto('${p.id}',${sug||0})">${svgIcon('box','icon icon-sm')}<span>Pedir${lw&&sug?' '+sug:''}</span></button>`}
     </div>
   </div>`;
 }
@@ -2683,10 +2686,15 @@ function invMovesModal(){
   openModal(`<div class="modal-head"><h3>Movimientos de inventario</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">${moves.length?`<div class="log">${rows}</div>`:'<div class="empty"><div class="em-ico">📜</div><div class="em-d">Sin movimientos todavía.</div></div>'}</div>`,true);
 }
-function pedirProducto(pid){
+// Cuánto conviene pedir para llevar el stock a ~2× el mínimo
+function suggestReorder(p){ if(!p || !(+p.minStock>0)) return 0; const s=Math.ceil((+p.minStock*2)-(+p.stock||0)); return s>0?s:0; }
+function pedirProducto(pid, qty){
   newPedidoModal();
+  try{ if(typeof setNpArea==='function') setNpArea('proveeduria'); else if($('#npArea')) $('#npArea').value='proveeduria'; }catch(_){}
   const pr=DB.inventory.find(x=>x.id===pid); if(!pr) return;
-  $('#npArea').value='proveeduria'; $('#npProd').value=pid; $('#npItem').value=pr.name;
+  if($('#npProd')) $('#npProd').value=pid;
+  if($('#npItem')) $('#npItem').value=pr.name;
+  if(qty && +qty>0 && $('#npQty')) $('#npQty').value=+qty;
 }
 window.invMoveModal=invMoveModal; window.applyInvMove=applyInvMove; window.invNewModal=invNewModal;
 window.invEditModal=invEditModal; window.saveProduct=saveProduct; window.invMovesModal=invMovesModal; window.pedirProducto=pedirProducto;
@@ -3442,6 +3450,45 @@ function checkShiftReminders(){
   });
   if(ch) save();
 }
+// Recordatorio de reservas: un resumen al día para el salón ("Hoy hay N reservas").
+function checkReservReminders(){
+  if(!me() || !canReservView()) return;
+  const today=todayISO();
+  const hoy=(DB.reservations||[]).filter(r=> r && r.resDate===today && inScope(r.sucursalId) && !['cancelada','no_llego','llego'].includes(r.status));
+  if(!hoy.length) return;
+  DB._resvNotif=DB._resvNotif||{}; const key=SES.userId+'|'+today;
+  if(DB._resvNotif[key]) return;                  // ya avisé hoy
+  const n=hoy.length;
+  const next=hoy.slice().sort((a,b)=>(a.resTime||'').localeCompare(b.resTime||''))[0];
+  const txt=`Hoy hay ${n} reserva${n>1?'s':''}`+(next&&next.resTime?` · próxima ${fmt12(next.resTime)}${next.clientName?' ('+next.clientName+')':''}`:'');
+  DB.notifs.unshift({id:uid(),userId:SES.userId,text:txt,ico:'reserva',link:{view:'reservas'},at:now(),read:false});
+  DB._resvNotif[key]=n; save();
+}
+/* ---- Marca real de entrada / salida (asistencia) ---- */
+function fmtClock(ts){ try{ return new Date(ts).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'}); }catch(_){ return ''; } }
+function todayAttendance(){ const d=todayISO(); return (DB.attendance||[]).find(a=>a&&a.userId===SES.userId&&a.date===d); }
+function markIn(){
+  DB.attendance=DB.attendance||[]; let a=todayAttendance();
+  if(a && a.in){ toast('Ya marcaste entrada hoy','ok'); return; }
+  if(!a){ a={id:uid(),userId:SES.userId,date:todayISO(),in:now(),out:null,sucursalId:me().sucursalId}; DB.attendance.push(a); }
+  else { a.in=now(); }
+  audit('horarios',`marcó ENTRADA ${fmtClock(a.in)}`); toast('Entrada marcada ✓','ok'); render();
+}
+function markOut(){
+  const a=todayAttendance();
+  if(!a || !a.in){ toast('Primero marcá tu entrada','err'); return; }
+  if(a.out){ toast('Ya marcaste salida hoy','ok'); return; }
+  a.out=now(); audit('horarios',`marcó SALIDA ${fmtClock(a.out)}`); toast('Salida marcada ✓','ok'); render();
+}
+window.markIn=markIn; window.markOut=markOut;
+function attendanceCard(){
+  const a=todayAttendance();
+  let body, btn='';
+  if(!a || !a.in){ body='Todavía no marcaste tu entrada de hoy.'; btn=`<button class="btn btn-primary" style="flex:0 0 auto" onclick="markIn()">${svgIcon('clock','icon icon-sm')} Marcar entrada</button>`; }
+  else if(!a.out){ body=`Entrada a las <b>${fmtClock(a.in)}</b>. ¡Buen turno!`; btn=`<button class="btn btn-primary" style="flex:0 0 auto" onclick="markOut()">${svgIcon('clock','icon icon-sm')} Marcar salida</button>`; }
+  else { const mins=Math.max(0,Math.round((a.out-a.in)/60000)); const hrs=Math.floor(mins/60); body=`Entrada <b>${fmtClock(a.in)}</b> · Salida <b>${fmtClock(a.out)}</b> · ${hrs?hrs+'h ':''}${mins%60}m`; }
+  return `<div class="card sched-card"><span class="av" style="background:var(--bg-soft)">${svgIcon('clock')}</span><div style="flex:1;min-width:0"><div style="font-weight:700">Mi asistencia de hoy</div><div class="page-sub" style="margin:0">${body}</div></div>${btn}</div>`;
+}
 function todayShiftCard(){
   const iso=new Date().toISOString().slice(0,10);
   const mine=(DB.shifts||[]).filter(s=>s&&s.userId===SES.userId && s.date===iso).sort((a,b)=>(a.start||'').localeCompare(b.start||''));
@@ -3523,13 +3570,17 @@ function reportData(ym){
   const invVal=inv.reduce((s,p)=>s+p.stock*p.cost,0);
   const invLow=inv.filter(lowStock).length;
   const shifts=(DB.shifts||[]).filter(s=>s&&inScope(s.sucursalId)&&!s.off&&(s.date||'').startsWith(ym));
+  const att=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&(a.date||'').startsWith(ym)&&a.in);
   const prod=DB.users.filter(u=>u.active).map(u=>{
     const mine=tMonth.filter(t=>(t.toIds||[]).includes(u.id));
     const h=mine.filter(t=>t.status==='hecha').length, a=mine.filter(t=>t.status==='atrasada').length, rj=mine.filter(t=>t.status==='rechazada').length;
     const dias=shifts.filter(s=>s.userId===u.id).length;
+    const myAtt=att.filter(x=>x.userId===u.id);
+    const presente=myAtt.length;                                              // días con marca real de entrada
+    const horas=Math.round(myAtt.reduce((s,x)=>s+((x.out&&x.in)?Math.max(0,(x.out-x.in)/3600000):0),0)*10)/10;  // horas reales trabajadas
     const pct=mine.length?Math.round(h/mine.length*100):0;
-    return {u,total:mine.length,h,a,rj,dias,pct};
-  }).filter(x=>x.total>0||x.dias>0).sort((a,b)=>b.pct-a.pct||b.h-a.h||b.dias-a.dias);
+    return {u,total:mine.length,h,a,rj,dias,presente,horas,pct};
+  }).filter(x=>x.total>0||x.dias>0||x.presente>0).sort((a,b)=>b.pct-a.pct||b.h-a.h||b.presente-a.presente);
   const r=monthRange(ym);
   const salesDay=[]; for(let dd=1;dd<=r.days;dd++){ const v=sales.filter(s=>new Date(s.at).getDate()===dd).reduce((a,b)=>a+(+b.price||0)*(+b.qty||0),0); salesDay.push({day:dd,value:v}); }
   const catVal={}; inv.forEach(p=>{ catVal[p.category]=(catVal[p.category]||0)+p.stock*p.cost; });
@@ -3569,12 +3620,11 @@ function viewReportes(){
       ${d.sales.length?repVBars(d.salesDay.map(x=>({lbl:(x.day%5===0||x.day===1)?x.day:'',value:x.value,title:`Día ${x.day}: ${money(x.value)}`}))):'<div class="chart-empty">Sin ventas de souvenirs este mes.</div>'}</div>
   </div>`;
   html+=`<div class="card"><div class="rep-tbl-title">${svgIcon('users','icon icon-sm')} Cumplimiento y asistencia por persona</div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Días trab.</th><th>Asign.</th><th>Hechas</th><th>Atras.</th><th>Rech.</th><th>%</th></tr></thead><tbody>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th title="Días con turno planificado">Días plan.</th><th title="Días que marcó entrada">Presente</th><th title="Horas reales (entrada→salida)">Horas</th><th>Asign.</th><th>Hechas</th><th>Atras.</th><th>%</th></tr></thead><tbody>
     ${d.prod.map(x=>`<tr><td><div style="display:flex;align-items:center;gap:8px">${avatarHTML(x.u)}<span style="font-weight:600">${esc(x.u.name)}</span></div></td>
-      <td>${roleInfo(x.u.role).short}</td><td><b>${x.dias}</b></td><td>${x.total}</td><td style="color:var(--success);font-weight:700">${x.h}</td>
+      <td>${roleInfo(x.u.role).short}</td><td>${x.dias}</td><td style="font-weight:700">${x.presente}</td><td><b>${x.horas?x.horas+'h':'—'}</b></td><td>${x.total}</td><td style="color:var(--success);font-weight:700">${x.h}</td>
       <td style="color:${x.a?'var(--warn)':'inherit'};font-weight:${x.a?700:400}">${x.a}</td>
-      <td style="color:${x.rj?'var(--danger)':'inherit'};font-weight:${x.rj?700:400}">${x.rj}</td>
-      <td><b>${x.pct}%</b></td></tr>`).join('') || '<tr><td colspan="8" style="color:var(--text-soft)">Sin actividad registrada en el mes.</td></tr>'}
+      <td><b>${x.pct}%</b></td></tr>`).join('') || '<tr><td colspan="9" style="color:var(--text-soft)">Sin actividad registrada en el mes.</td></tr>'}
     </tbody></table></div></div>`;
   if(isAdmin()){
     const sucAct=DB.sucursales.map(s=>({s,n:(DB.audit||[]).filter(a=>a.sucursalId===s.id&&inMonth(a.at,ym)).length}));
