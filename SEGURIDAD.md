@@ -25,10 +25,19 @@ deja de entrar. Por eso, seguí este orden exacto:
        "state": {
          ".read": "auth != null",
          ".write": "auth != null && newData.hasChildren(['data','client','at'])"
+       },
+       "media": {
+         ".read": "auth != null",
+         "$id": {
+           ".write": "auth != null",
+           ".validate": "newData.isString() && newData.val().length < 12000000"
+         }
        }
      }
    }
    ```
+   > La rama **media** guarda las fotos/PDF/videos aparte (cada archivo con tope ~8 MB) para que NO inflen
+   > la base ni se re-descarguen en cada cambio. Es obligatoria desde la versión que mueve los binarios a un nodo aparte.
    Apenas publiques, abrí la app y comprobá que entra y que se guardan cambios. Si algo falla,
    volvé a las reglas anteriores (mientras revisás que el paso 2 quedó bien activado).
 

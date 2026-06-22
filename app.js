@@ -588,14 +588,92 @@ function readImages(fileList){
   })));
 }
 // Abre una imagen a pantalla completa leyendo el src ya validado del elemento (sin document.write ni datos en el onclick)
-function openImgFromEl(el){
-  const s=safeImg(el && el.getAttribute && el.getAttribute('src')); if(!s) return;
+function showImgWindow(s){
+  if(!s) return;
   const w=window.open('','_blank'); if(!w) return;
   try{ w.document.title='Imagen'; w.document.body.style.margin='0'; w.document.body.style.background='#000';
     const i=w.document.createElement('img'); i.src=s; i.style.maxWidth='100%'; i.style.display='block'; i.style.margin='0 auto';
     w.document.body.appendChild(i); }catch(_){}
 }
+function openImgFromEl(el){
+  const s=safeImg(el && el.getAttribute && el.getAttribute('src'));
+  if(s){ showImgWindow(s); return; }
+  // aún no cargó (carga diferida): resolver por su id y abrir cuando llegue
+  const mid = el && el.getAttribute && el.getAttribute('data-mid');
+  if(mid){ toast('Cargando imagen…','ok'); fetchMediaData(mid).then(d=>{ const ss=safeImg(d); if(ss) showImgWindow(ss); else toast('No se pudo abrir la imagen','err'); }); }
+}
 window.openImgFromEl=openImgFromEl;
+
+/* =====================================================================
+   MEDIOS (fotos / PDF / video) en nodo aparte 'media/<id>'
+   Los binarios NO viven dentro del blob 'state' (eso hacía que se
+   re-descargara todo en cada cambio). En 'state' guardamos solo un id;
+   el binario se carga bajo demanda desde media/<id> y se cachea.
+   Compatibilidad: si el valor ya es un data: URI viejo, se usa directo.
+   ===================================================================== */
+const mediaCache = {};     // id -> dataURI (en memoria)
+const mediaPending = {};   // id -> true mientras se carga
+function isDataUri(s){ return typeof s==='string' && s.indexOf('data:')===0; }
+const MEDIA_LS='stm_';     // prefijo en localStorage para modo local / respaldo
+// Sube un binario (data: URI) a media/<id> y devuelve el id. Si ya es id/legado, lo devuelve igual.
+// Si la subida a la nube falla (reglas sin publicar, sin red, archivo enorme), devuelve el data: URI
+// inline como respaldo: así el adjunto SIGUE llegando a todos (más pesado) en vez de romperse para los demás.
+let _mediaWarned=false;
+async function putMedia(dataURI){
+  if(!isDataUri(dataURI)) return dataURI||'';
+  const id=uid();
+  if(cloudOn && fbdb){
+    try{ await fbdb.ref('media/'+id).set(dataURI); mediaCache[id]=dataURI; return id; }
+    catch(e){
+      console.warn('media put', e&&e.code);
+      if(!_mediaWarned){ _mediaWarned=true; toast('No se pudo subir el adjunto a la nube (revisá las reglas/inicio anónimo). Por ahora viaja dentro de la base.','err'); }
+      return dataURI; // respaldo inline: no se pierde para nadie
+    }
+  }
+  // modo local: guardar en localStorage; si no cabe, dejarlo inline
+  mediaCache[id]=dataURI;
+  try{ localStorage.setItem(MEDIA_LS+id,dataURI); return id; }catch(_){ return dataURI; }
+}
+// Devuelve el dataURI si ya está disponible; si no, dispara la carga y devuelve undefined.
+function mediaData(ref){
+  if(isDataUri(ref)) return ref;            // legado inline
+  if(!ref) return '';
+  if(mediaCache[ref]!==undefined) return mediaCache[ref];
+  loadMedia(ref); return undefined;          // aún no disponible
+}
+function loadMedia(id){
+  if(!id || isDataUri(id) || mediaCache[id]!==undefined || mediaPending[id]) return;
+  mediaPending[id]=true;
+  const done=d=>{ mediaCache[id]=d||''; delete mediaPending[id]; applyMediaToDom(id); };
+  let local=null; try{ local=localStorage.getItem(MEDIA_LS+id); }catch(_){}
+  if(local!=null) return done(local);
+  if(cloudOn && fbdb){ fbdb.ref('media/'+id).get().then(s=>done(s&&s.exists()?s.val():'')).catch(()=>done('')); }
+  else done('');
+}
+function applyMediaToDom(id){
+  const d=mediaCache[id]||''; const safe=d.indexOf('data:video')===0?safeVid(d):safeImg(d);
+  let sel; try{ sel='[data-mid="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]'; }catch(_){ sel='[data-mid="'+id+'"]'; }
+  document.querySelectorAll(sel).forEach(el=>{
+    if(safe){ el.src=safe; el.classList.remove('media-loading'); } else { el.classList.remove('media-loading'); el.classList.add('media-broken'); }
+  });
+}
+// Construye <img>/<video> por referencia (id o data: legado). Si aún no cargó, deja data-mid y lo completa al llegar.
+function mediaTag(ref, kind, attrs){
+  attrs=attrs||''; const tag = kind==='video'?'video':'img';
+  const d=mediaData(ref);
+  if(d!==undefined){ const safe = kind==='video'?safeVid(d):safeImg(d); return safe?`<${tag} src="${safe}" ${attrs}></${tag}>`:''; }
+  return `<${tag} data-mid="${esc(ref)}" class="media-loading" ${attrs}></${tag}>`;
+}
+// Para abrir/descargar: espera a tener el dataURI (resuelve id o legado).
+async function fetchMediaData(ref){
+  if(isDataUri(ref)) return ref;
+  if(!ref) return '';
+  if(mediaCache[ref]!==undefined) return mediaCache[ref];
+  let local=null; try{ local=localStorage.getItem(MEDIA_LS+ref); }catch(_){}
+  if(local!=null){ mediaCache[ref]=local; return local; }
+  if(cloudOn && fbdb){ try{ const s=await fbdb.ref('media/'+ref).get(); const d=s&&s.exists()?s.val():''; mediaCache[ref]=d; return d; }catch(_){ return ''; } }
+  return '';
+}
 
 /* =====================================================================
    NAVEGACIÓN
@@ -896,7 +974,7 @@ function taskDetail(id){
   const amResp = t.toIds.includes(SES.userId);
   const canManage = amResp || t.fromId===SES.userId || isAdmin();
 
-  const imgs = (t.images||[]).map(s=>safeImg(s)).filter(Boolean).map(s=>`<img src="${s}" style="cursor:zoom-in" onclick="openImgFromEl(this)">`).join('');
+  const imgs = (t.images||[]).map(ref=>mediaTag(ref,'image','style="cursor:zoom-in" onclick="openImgFromEl(this)"')).join('');
   const logHtml = [...t.log].reverse().map(l=>{
     const u=userById(l.byId);
     return `<div class="log-item"><b>${u?esc((u.name||'').split(' ')[0]):'—'}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`;
@@ -1080,9 +1158,10 @@ function readTaskForm(){
   return { title, desc:$('#ntDesc').value.trim(), toIds, sucursalId:$('#ntSuc').value,
     prio:($('#ntPrio')?$('#ntPrio').value:'media'), due };
 }
-function createTask(){
+async function createTask(){
   const d=readTaskForm(); if(!d) return;
-  const t={ id:uid(), ...d, fromId:SES.userId, status:'pendiente', images:newImgs, createdAt:now(), comments:[],
+  const images = await Promise.all((newImgs||[]).map(putMedia));   // subir fotos al nodo aparte, guardar solo ids
+  const t={ id:uid(), ...d, fromId:SES.userId, status:'pendiente', images, createdAt:now(), comments:[],
     log:[{at:now(),byId:SES.userId,text:'creó la tarea'}] };
   DB.tasks.unshift(t);
   audit('tarea',`creó "${d.title}" → ${d.toIds.map(i=>userById(i)?.name.split(' ')[0]).join(', ')}`,t.sucursalId);
@@ -1532,8 +1611,8 @@ window.clearDrawings=clearDrawings;
 function fmtFileSize(b){ b=+b||0; return b>=1048576?(b/1048576).toFixed(1)+' MB':b>=1024?Math.round(b/1024)+' KB':b+' B'; }
 function fileIconFor(mime,name){ const n=(name||'').toLowerCase(); if((mime||'').includes('pdf')||n.endsWith('.pdf'))return 'clipboard'; if((mime||'').startsWith('image'))return 'image'; return 'clip'; }
 function blobUrlFromData(data,mime){ const b64=(data||'').split(',')[1]||''; const bin=atob(b64); const arr=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i); return URL.createObjectURL(new Blob([arr],{type:mime||'application/octet-stream'})); }
-function openFileData(f){ if(!f||!f.data){ toast('Archivo no disponible','err'); return; } try{ const url=blobUrlFromData(f.data,f.mime); window.open(url,'_blank'); setTimeout(()=>URL.revokeObjectURL(url),60000); }catch(e){ window.open(f.data,'_blank'); } }
-function downloadFileData(f){ if(!f||!f.data){ toast('Archivo no disponible','err'); return; } try{ const url=blobUrlFromData(f.data,f.mime); const a=document.createElement('a'); a.href=url; a.download=f.filename||'archivo'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000); }catch(e){ const a=document.createElement('a'); a.href=f.data; a.download=f.filename||'archivo'; a.click(); } }
+async function openFileData(f){ if(!f){ toast('Archivo no disponible','err'); return; } const data=await fetchMediaData(f.mid||f.data); if(!data){ toast('Archivo no disponible','err'); return; } try{ const url=blobUrlFromData(data,f.mime); window.open(url,'_blank'); setTimeout(()=>URL.revokeObjectURL(url),60000); }catch(e){ window.open(data,'_blank'); } }
+async function downloadFileData(f){ if(!f){ toast('Archivo no disponible','err'); return; } const data=await fetchMediaData(f.mid||f.data); if(!data){ toast('Archivo no disponible','err'); return; } try{ const url=blobUrlFromData(data,f.mime); const a=document.createElement('a'); a.href=url; a.download=f.filename||'archivo'; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),60000); }catch(e){ const a=document.createElement('a'); a.href=data; a.download=f.filename||'archivo'; a.click(); } }
 function projCardFile(projId,cardId){ const p=DB.projects.find(x=>x.id===projId); const c=p&&p.cards.find(x=>x.id===cardId); return c?c.file:null; }
 function openProjFile(projId,cardId){ openFileData(projCardFile(projId,cardId)); }
 function downloadProjFile(projId,cardId){ downloadFileData(projCardFile(projId,cardId)); }
@@ -1561,11 +1640,13 @@ async function pickFileCard(input){
   const t=$('#fcTitle'); if(t && !t.value) t.value=f.name.replace(/\.[^.]+$/,'');
 }
 window.pickFileCard=pickFileCard;
-function addFileCard(projId){
+async function addFileCard(projId){
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
   if(!fileCardPending){ toast('Elegí un archivo','err'); return; }
+  const mid=await putMedia(fileCardPending.data);   // archivo al nodo aparte
+  const file={mid,filename:fileCardPending.filename,mime:fileCardPending.mime,size:fileCardPending.size};
   const i=p.cards.length;
-  p.cards.push({id:uid(),type:'file',text:($('#fcTitle')?$('#fcTitle').value.trim():'')||fileCardPending.filename,file:fileCardPending,byId:SES.userId,at:now(),x:40+(i%5)*250,y:40+Math.floor(i/5)*215});
+  p.cards.push({id:uid(),type:'file',text:($('#fcTitle')?$('#fcTitle').value.trim():'')||fileCardPending.filename,file,byId:SES.userId,at:now(),x:40+(i%5)*250,y:40+Math.floor(i/5)*215});
   audit('proyecto',`subió el archivo "${fileCardPending.filename}" a "${p.name}"`,p.sucursalId);
   notify(p.memberIds.filter(x=>x!==SES.userId), `${me().name.split(' ')[0]} subió un archivo a "${p.name}"`,'clipboard',{view:'proyectos'});
   fileCardPending=null; closeModal(); toast('Archivo agregado a la pizarra','ok'); save(); render();
@@ -1602,7 +1683,7 @@ document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElemen
 window.toggleBoardFull=toggleBoardFull;
 function projSide(proj){
   const msgs=(proj.chat||[]).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
-    const media=m.media?(m.media.type==='video'?`<video src="${safeVid(m.media.data)}" controls></video>`:m.media.type==='image'?`<img src="${safeImg(m.media.data)}">`:`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
+    const media=m.media?(m.media.type==='video'?mediaTag(m.media.mid||m.media.data,'video','controls'):m.media.type==='image'?mediaTag(m.media.mid||m.media.data,'image'):`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
     return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
   const inCall=proj.call&&proj.call.active;
   return `<div class="proj-side">
@@ -1645,7 +1726,7 @@ function boardCard(projId,c){
   return `<div class="bcard note${c.parentId?' reply':''}" style="left:${c.x||20}px;top:${c.y||20}px;${c.color?`background:${c.color}`:''}" onpointerdown="bcardDown(event,'${projId}','${c.id}')">
     ${canEdit?`<button class="bc-btn bc-del" title="Quitar" onclick="delCard('${projId}','${c.id}')">${svgIcon('x','icon icon-sm')}</button>`:''}
     ${c.parentId?'<div class="reply-tag">↳ respuesta</div>':''}
-    ${c.img?`<img src="${safeImg(c.img)}" draggable="false">`:''}
+    ${c.img?mediaTag(c.img,'image','draggable="false"'):''}
     ${c.text?`<div class="bc-text">${esc(c.text)}</div>`:''}
     <div class="bc-foot"><span class="bc-meta">${u?esc((u.name||'').split(' ')[0]):'—'} · ${timeAgo(c.at)}</span>
       <button class="bc-btn bc-reply" title="Responder con una nota" onclick="replyModal('${projId}','${c.id}')">${svgIcon('message','icon icon-sm')} Responder</button></div>
@@ -1685,7 +1766,7 @@ function cardDetailModal(projId,cardId){
     <div class="modal-body">
       ${c.type==='file'?`<div class="fc-detail"><span class="fc-card-ic">${svgIcon(fileIconFor(f.mime,f.filename),'icon')}</span><div class="fc-card-tx"><div class="fc-card-name">${esc(c.text||f.filename||'Archivo')}</div><div class="fc-card-sub">${esc(f.filename||'')}${f.size?' · '+fmtFileSize(f.size):''}</div></div></div>
         <div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap"><button class="btn btn-primary" style="flex:1 1 140px" onclick="openProjFile('${projId}','${cardId}')">${svgIcon('search','icon icon-sm')} Abrir</button><button class="btn btn-ghost" style="flex:1 1 140px" onclick="downloadProjFile('${projId}','${cardId}')">${svgIcon('save','icon icon-sm')} Descargar</button></div>`:''}
-      ${c.img?`<img src="${safeImg(c.img)}" style="width:100%;border-radius:var(--r-md);margin-bottom:12px">`:''}
+      ${c.img?mediaTag(c.img,'image','style="width:100%;border-radius:var(--r-md);margin-bottom:12px"'):''}
       ${c.text&&c.type!=='file'?`<div style="font-size:${c.type==='title'?'20px;font-weight:800':'14px'};line-height:1.6;white-space:pre-wrap">${esc(c.text)}</div>`:''}
       <div class="page-sub" style="margin:10px 0 2px">${u?esc(u.name):'—'} · ${fmtDateTime(c.at)}${kids.length?' · '+kids.length+' respuesta(s)':''}</div>
       <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
@@ -1763,16 +1844,17 @@ function addCardModal(projId,type){
 window.addCardModal=addCardModal;
 async function pickCardImg(input){ const a=await readImages(input.files); cardImg=a[0]||null; $('#cardImgPrev').innerHTML=cardImg?`<img src="${safeImg(cardImg)}">`:''; }
 window.pickCardImg=pickCardImg;
-function addCard(projId,type){
+async function addCard(projId,type){
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
   const text=$('#cardText').value.trim();
   if((type==='text'||type==='title')&&!text){ toast('Escribí algo','err'); return; }
   if(type==='image'&&!cardImg){ toast('Elegí una imagen','err'); return; }
+  const img = type==='title'?null:(cardImg?await putMedia(cardImg):null);   // imagen al nodo aparte
   const i=p.cards.length;
-  p.cards.push({id:uid(),type,text,img:type==='title'?null:cardImg,color:type==='title'?null:cardColor,byId:SES.userId,at:now(),x:40+(i%5)*250,y:40+Math.floor(i/5)*215});
+  p.cards.push({id:uid(),type,text,img,color:type==='title'?null:cardColor,byId:SES.userId,at:now(),x:40+(i%5)*250,y:40+Math.floor(i/5)*215});
   audit('proyecto',`agregó ${type==='title'?'un título':type==='text'?'una nota':'una imagen'} a "${p.name}"`,p.sucursalId);
   notify(p.memberIds, `${me().name.split(' ')[0]} agregó algo a "${p.name}"`, 'clipboard', {view:'proyectos'});
-  closeModal(); toast('Agregado a la pizarra','ok'); render();
+  closeModal(); toast('Agregado a la pizarra','ok'); save(); render();
 }
 window.addCard=addCard;
 /* chat del grupo (lateral) */
@@ -1789,11 +1871,13 @@ function projChatFile(projId,msgId){ const p=DB.projects.find(x=>x.id===projId);
 function openProjChatFile(projId,msgId){ openFileData(projChatFile(projId,msgId)); }
 function downloadProjChatFile(projId,msgId){ downloadFileData(projChatFile(projId,msgId)); }
 window.openProjChatFile=openProjChatFile; window.downloadProjChatFile=downloadProjChatFile;
-function sendProjMsg(projId){
+async function sendProjMsg(projId){
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
   const inp=$('#projMsg'); const v=inp?inp.value.trim():'';
   if(!v && !projPending) return;
-  const m={id:uid(),byId:SES.userId,text:v,at:now()}; if(projPending) m.media=projPending;
+  const m={id:uid(),byId:SES.userId,text:v,at:now()};
+  if(projPending){ const mid=await putMedia(projPending.data); m.media={type:projPending.type,mid};
+    if(projPending.filename) m.media.filename=projPending.filename; if(projPending.mime) m.media.mime=projPending.mime; if(projPending.size!=null) m.media.size=projPending.size; }
   p.chat=p.chat||[]; p.chat.push(m);
   const prev=v?v.slice(0,40):(projPending?(projPending.type==='video'?'envió un video':projPending.type==='file'?'envió un archivo':'envió una foto'):'');
   notify(p.memberIds.filter(i=>i!==SES.userId), `${me().name.split(' ')[0]} en "${p.name}": ${prev}`,'clipboard',{view:'proyectos'});
@@ -1978,7 +2062,7 @@ function viewChat(){
     const visibleMsgs=(cur.msgs||[]).filter(m=> !((m.hiddenFor||[]).includes(SES.userId)));
     const msgsHtml = visibleMsgs.map(m=>{
       const u=userById(m.byId); const mine=m.byId===SES.userId;
-      const media = m.media ? (m.media.type==='video' ? `<video src="${safeVid(m.media.data)}" controls></video>` : `<img src="${safeImg(m.media.data)}">`) : '';
+      const media = m.media ? (m.media.type==='video' ? mediaTag(m.media.mid||m.media.data,'video','controls') : mediaTag(m.media.mid||m.media.data,'image')) : '';
       return `<div class="msg ${mine?'mine':''}">${(!mine&&cur.type==='group')?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})} <button class="msg-del" title="Eliminar" onclick="delMsgMenu('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button></div></div>`;
     }).join('');
     paneHtml=`<div class="chat-pane" id="chatPane">
@@ -2036,12 +2120,12 @@ async function chatAttachPick(chatId){
   render();
 }
 window.chatAttachPick=chatAttachPick;
-function sendMsg(chatId){
+async function sendMsg(chatId){
   const c=DB.chats.find(x=>x.id===chatId); if(!c) return;
   const f=$('#chatField'); const txt=f?f.value.trim():'';
   if(!txt && !chatPending) return;
   const m={id:uid(),byId:SES.userId,text:txt,at:now()};
-  if(chatPending) m.media=chatPending;
+  if(chatPending){ const mid=await putMedia(chatPending.data); m.media={type:chatPending.type,mid}; }
   c.msgs.push(m);
   const preview = txt? txt.slice(0,40) : (chatPending? (chatPending.type==='video'?'envió un video':'envió una foto') : '');
   notify(c.memberIds.filter(i=>i!==SES.userId), `${me().name.split(' ')[0]} (${c.type==='group'?c.name:'directo'}): ${preview}`, 'msg', {view:'chat',chatId});
@@ -4182,11 +4266,29 @@ function toggleTheme(){
 }
 window.toggleTheme=toggleTheme;
 
-function exportData(){
-  const blob=new Blob([JSON.stringify(DB,null,2)],{type:'application/json'});
+// Junta todos los ids de medios referenciados en la base (para incluirlos en el respaldo)
+function collectMediaIds(db){
+  const ids=new Set();
+  const add=ref=>{ if(typeof ref==='string' && ref && !isDataUri(ref)) ids.add(ref); };
+  (db.tasks||[]).forEach(t=>(t.images||[]).forEach(add));
+  (db.projects||[]).forEach(p=>{
+    (p.cards||[]).forEach(c=>{ if(c.img) add(c.img); if(c.file&&c.file.mid) add(c.file.mid); });
+    (p.chat||[]).forEach(m=>{ if(m.media&&m.media.mid) add(m.media.mid); });
+  });
+  (db.chats||[]).forEach(c=>(c.msgs||[]).forEach(m=>{ if(m.media&&m.media.mid) add(m.media.mid); }));
+  return [...ids];
+}
+async function exportData(){
+  $('#userMenu').classList.remove('on');
+  toast('Preparando respaldo…','ok');
+  const ids=collectMediaIds(DB); const media={};
+  for(const id of ids){ try{ const d=await fetchMediaData(id); if(d) media[id]=d; }catch(_){} }  // incluir las fotos/PDF
+  const payload={ app:'saborTico', v:2, exportedAt:now(), data:DB, media };
+  const blob=new Blob([JSON.stringify(payload)],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='sabor-tico-respaldo-'+new Date().toISOString().slice(0,10)+'.json'; a.click();
-  toast('Respaldo descargado 💾','ok'); $('#userMenu').classList.remove('on');
+  setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+  toast('Respaldo descargado 💾 (incluye fotos)','ok');
 }
 window.exportData=exportData;
 
@@ -4309,11 +4411,21 @@ document.body.appendChild(impInput);
 impInput.addEventListener('change',async e=>{
   const f=e.target.files[0]; e.target.value=''; if(!f) return;          // permitir re-importar el mismo archivo
   if(!isAdmin()){ toast('Solo Gerencia puede restaurar respaldos','err'); return; }
-  if(f.size>15*1024*1024){ toast('El archivo es demasiado grande','err'); return; }
-  let d; try{ d=JSON.parse(await f.text()); }catch(_){ toast('Ese archivo no me sirve','err'); return; }
+  if(f.size>80*1024*1024){ toast('El archivo es demasiado grande','err'); return; }
+  let raw; try{ raw=JSON.parse(await f.text()); }catch(_){ toast('Ese archivo no me sirve','err'); return; }
+  // Formato nuevo {v:2, data, media} o respaldo viejo (la base directa con data: inline)
+  const d = (raw && raw.data && Array.isArray(raw.data.users)) ? raw.data : raw;
+  const media = (raw && raw.media && typeof raw.media==='object') ? raw.media : null;
   if(!d || typeof d!=='object' || !Array.isArray(d.users) || d.users.length===0){ toast('Ese respaldo no tiene el formato correcto','err'); return; }
   if(!await confirmDialog('Esto REEMPLAZA todos los datos actuales (en todos los dispositivos) por los del archivo "'+(f.name||'respaldo')+'". No se puede deshacer.',{title:'¿Restaurar respaldo?',okText:'Sí, restaurar'})) return;
   try{ localStorage.setItem(DB_KEY+'_prevbackup', JSON.stringify(DB)); }catch(_){}  // copia de seguridad por si acaso
+  // Restaurar los medios (fotos/PDF) conservando sus ids originales
+  if(media){
+    for(const id in media){ const uri=media[id]; if(!isDataUri(uri)) continue; mediaCache[id]=uri;
+      if(cloudOn && fbdb){ try{ await fbdb.ref('media/'+id).set(uri); }catch(_){ try{ localStorage.setItem(MEDIA_LS+id,uri); }catch(__){} } }
+      else { try{ localStorage.setItem(MEDIA_LS+id,uri); }catch(_){} }
+    }
+  }
   DB=d; ensureCollections(); migrate(); save(); toast('Respaldo restaurado','ok'); render();
 });
 

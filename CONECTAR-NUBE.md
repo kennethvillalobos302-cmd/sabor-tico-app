@@ -22,6 +22,13 @@ Tiempo aprox: 10 minutos, una sola vez.
     "state": {
       ".read": "auth != null",
       ".write": "auth != null && newData.hasChildren(['data','client','at'])"
+    },
+    "media": {
+      ".read": "auth != null",
+      "$id": {
+        ".write": "auth != null",
+        ".validate": "newData.isString() && newData.val().length < 12000000"
+      }
     }
   }
 }
