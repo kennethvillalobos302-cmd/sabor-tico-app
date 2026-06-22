@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v30 · login compacto + deptos juntos';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v31 · asistencia con varias marcas + reporte';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -184,6 +184,20 @@ function _unionMsgs(localArr, remoteArr, flags){
   });
   return Object.keys(byId).map(k=>byId[k]).sort((a,b)=>((a.at||0)-(b.at||0)) || String(a.id).localeCompare(String(b.id)));
 }
+/* Unir las SESIONES de asistencia (entrada/salida) de un mismo día sin que un equipo pise al otro:
+   se unen por id (clave de respaldo: la hora de entrada). Si la misma sesión está abierta en un equipo
+   y cerrada en otro, gana la SALIDA más reciente. Así marcar entrada en un equipo y salida en otro
+   conviven en vez de perderse. Acepta registros viejos {in,out} (se normalizan con attSessions). */
+function _unionSessions(localArr, remoteArr, flags){
+  const norm=arr=>(Array.isArray(arr)?arr:[]).filter(s=>s&&s.in).map(s=>({id:s.id||('s'+s.in), in:s.in, out:s.out||null}));
+  const L=norm(localArr), R=norm(remoteArr); const byId={};
+  R.forEach(s=>{ byId[s.id]=s; });
+  L.forEach(s=>{ const e=byId[s.id];
+    if(e){ if((s.out||0)>(e.out||0)){ e.out=s.out; if(flags) flags.added=true; } }   // cerrar una sesión que el otro tenía abierta
+    else { byId[s.id]=s; if(flags) flags.added=true; }                                 // sesión que el remoto no tenía
+  });
+  return Object.keys(byId).map(k=>byId[k]).sort((a,b)=>(a.in||0)-(b.in||0));
+}
 function mergeAppendOnly(localDB, remoteDB){
   if(!localDB||!remoteDB) return false;
   const flags={added:false};
@@ -191,6 +205,7 @@ function mergeAppendOnly(localDB, remoteDB){
   (remoteDB.projects||[]).forEach(rp=>{ const lp=(localDB.projects||[]).find(x=>x&&x.id===rp.id); if(lp) rp.chat=_unionMsgs(lp.chat, rp.chat, flags); });
   (remoteDB.tasks||[]).forEach(rt=>{ const lt=(localDB.tasks||[]).find(x=>x&&x.id===rt.id); if(lt) rt.comments=_unionMsgs(lt.comments, rt.comments, flags); });
   (remoteDB.pedidos||[]).forEach(rp=>{ const lp=(localDB.pedidos||[]).find(x=>x&&x.id===rp.id); if(lp) rp.comments=_unionMsgs(lp.comments, rp.comments, flags); });
+  (remoteDB.attendance||[]).forEach(ra=>{ const la=(localDB.attendance||[]).find(x=>x&&x.id===ra.id); if(la){ const u=_unionSessions(attSessions(la), attSessions(ra), flags); if(u.length){ ra.sessions=u; attSyncLegacy(ra); } } });
   return flags.added;
 }
 /* Reconciliación a nivel de OBJETO: une por id los objetos nuevos local+remoto (sin perder los que
@@ -225,10 +240,11 @@ function reconcileEntities(localDB, remoteDB){
       if(idx<0){ out.push({...o}); added=true; }                              // objeto local nuevo: conservar
       else if(_stamp(o) > _stamp(out[idx])){                                  // edición local más reciente: gana
         const rem=out[idx], merged={...o};
-        // preservar las sublistas remotas (mensajes/comentarios) para que la unión posterior no las pierda
+        // preservar las sublistas remotas (mensajes/comentarios/sesiones) para que la unión posterior no las pierda
         if(Array.isArray(rem.comments)) merged.comments=rem.comments;
         if(Array.isArray(rem.msgs)) merged.msgs=rem.msgs;
         if(Array.isArray(rem.chat)) merged.chat=rem.chat;
+        if(coll==='attendance'){ const u=_unionSessions(attSessions(merged), attSessions(rem)); if(u.length) merged.sessions=u; }   // unir marcas local+remoto (mergeAppendOnly lo reafirma; unión idempotente)
         out[idx]=merged; added=true;
       }
     });
@@ -3399,12 +3415,12 @@ const HOR_DEPTS=[
   {label:'Gerencia',roles:['admin','gerencia_exp','gerencia_data']},
   {label:'Administración',roles:['proveeduria','contarh']},
 ];
-let horMode='mia', horDay='';
+let horMode='mia', horDay='', attDay='';
 function viewHorarios(){
   const manage=canShiftManage();
   const todayISO=new Date().toISOString().slice(0,10);
   if(!horDay) horDay=todayISO;
-  if(!manage && horMode==='lista') horMode='mia';
+  if(!manage && !['mia','general'].includes(horMode)) horMode='mia';
   const today=new Date(); today.setHours(0,0,0,0);
   const days=[...Array(7)].map((_,d)=>{const x=new Date(today);x.setDate(today.getDate()+d);return x;});
   const guide=sectionGuide('horarios','¿Cómo funcionan los Horarios?',`
@@ -3414,11 +3430,46 @@ function viewHorarios(){
     <div class="ph-spacer"></div>${manage?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="shiftNewModal()">${svgIcon('plus','icon icon-sm')} Asignar turno</button>`:''}</div>`;
   html+=guide;
   const modes=manage
-    ? [['mia','Mi semana'],['general','Vista general'],['lista','Lista por día']]
+    ? [['mia','Mi semana'],['general','Vista general'],['asistencia','Asistencia'],['lista','Lista por día']]
     : [['mia','Mi semana'],['general','Ver equipo']];
   html+=`<div class="hor-modes">${modes.map(([k,l])=>`<button class="chip ${horMode===k?'on':''}" onclick="horMode='${k}';render()">${l}</button>`).join('')}</div>`;
-  html+= horMode==='mia' ? horMine(days) : horMode==='general' ? horTimeline(days) : horList(days,manage);
+  html+= horMode==='mia' ? horMine(days) : horMode==='general' ? horTimeline(days) : horMode==='asistencia' ? horAsistencia() : horList(days,manage);
   return html;
+}
+/* Reporte de marcas reales de entrada/salida (encargados). Muestra los últimos 7 días;
+   por persona lista todas las sesiones del día y el total trabajado, agrupado por área. */
+function horAsistencia(){
+  const base=new Date(); base.setHours(12,0,0,0);   // mediodía local: evita saltos de día por zona horaria
+  const past=[...Array(7)].map((_,d)=>{ const x=new Date(base); x.setDate(base.getDate()-d); return x; }); // hoy, ayer, ...
+  const tISO=todayISO();
+  if(!past.some(d=>isoLocal(d)===attDay)) attDay=tISO;
+  const chips=past.map((d,di)=>{
+    const iso=isoLocal(d);
+    const n=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&a.date===iso&&attSessions(a).length&&userById(a.userId)).length;
+    const lbl=(di===0?'Hoy':di===1?'Ayer':d.toLocaleDateString('es-CR',{weekday:'short'}).replace('.','')+' '+d.getDate());
+    return `<button class="chip ${attDay===iso?'on':''}" onclick="attDay='${iso}';render()">${lbl}${n?`<span class="chip-dot">${n}</span>`:''}</button>`;
+  }).join('');
+  let html=`<div class="toolbar" style="overflow-x:auto">${chips}</div>`;
+  const day=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&a.date===attDay&&attSessions(a).length);
+  if(!day.length) return html+emptyState('','Sin marcas ese día','Cuando alguien marque entrada o salida, su registro aparece acá.');
+  let body='', totMin=0, totPpl=0;
+  HOR_DEPTS.forEach(dept=>{
+    const rows=day.filter(a=>{const u=userById(a.userId); return u && dept.roles.includes(u.role);})
+      .sort((x,y)=>(userById(x.userId)?.name||'').localeCompare(userById(y.userId)?.name||''));
+    if(!rows.length) return;
+    body+=`<div class="tl-dept">${dept.label}</div>`;
+    rows.forEach(a=>{
+      const u=userById(a.userId); const ss=attSessions(a); const open=attOpen(a); const m=attWorkedMin(a);
+      totMin+=m; totPpl++;
+      body+=`<div class="sched-row">${avatarHTML(u)}
+        <div class="tk-main"><div class="tk-title">${u?esc(u.name):'—'} ${open?'<span class="pill proceso">en turno</span>':''}</div>
+          ${attSegsHTML(ss)}</div>
+        <div class="att-total">${m?fmtDur(m):'—'}</div></div>`;
+    });
+  });
+  if(!body) return html+emptyState('','Sin marcas ese día','Cuando alguien marque entrada o salida, su registro aparece acá.');
+  const summary=`<div class="tl-summary"><span class="tl-sum-num">${totPpl}</span> ${totPpl===1?'persona marcó':'personas marcaron'} · ${fmtDur(totMin)} en total</div>`;
+  return html+summary+`<div class="card">${body}</div>`;
 }
 function horMine(days){
   const todayISO=new Date().toISOString().slice(0,10);
@@ -3656,26 +3707,52 @@ function checkReservReminders(){
 /* ---- Marca real de entrada / salida (asistencia) ---- */
 function fmtClock(ts){ try{ return new Date(ts).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'}); }catch(_){ return ''; } }
 function todayAttendance(){ const d=todayISO(); return (DB.attendance||[]).find(a=>a&&a.userId===SES.userId&&a.date===d); }
+/* Marcas del día en SESIONES: permite varias entradas/salidas en un mismo día (quiebre de turno).
+   Compatibilidad: registros viejos traían in/out sueltos -> se leen como una sola sesión. */
+function attSessions(a){
+  if(!a) return [];
+  if(Array.isArray(a.sessions)) return a.sessions;
+  if(a.in) return [{in:a.in, out:a.out||null}];
+  return [];
+}
+function attOpen(a){ return attSessions(a).find(s=>s && s.in && !s.out); }   // sesión abierta (entró y no salió)
+function attWorkedMin(a){ return attSessions(a).reduce((s,x)=>s+((x.in&&x.out)?Math.max(0,Math.round((x.out-x.in)/60000)):0),0); }
+function attSyncLegacy(a){ const ss=attSessions(a); a.in = ss.length?ss[0].in:null; a.out = (ss.length && ss.every(s=>s.out))? ss[ss.length-1].out : null; } // resumen para vistas/reportes viejos
+function attNormSessions(a){ return attSessions(a).map(s=>({id:s.id||uid(), in:s.in, out:s.out||null})); } // ids estables + copia mutable (migra in/out viejos)
 function markIn(){
+  const m=me(); if(!m){ toast('Tu sesión no es válida — volvé a entrar','err'); return; }
   DB.attendance=DB.attendance||[]; let a=todayAttendance();
-  if(a && a.in){ toast('Ya marcaste entrada hoy','ok'); return; }
-  if(!a){ a={id:uid(),userId:SES.userId,date:todayISO(),in:now(),out:null,sucursalId:me().sucursalId}; DB.attendance.push(a); }
-  else { a.in=now(); }
-  audit('horarios',`marcó ENTRADA ${fmtClock(a.in)}`); toast('Entrada marcada ✓','ok'); render();
+  // id determinista por persona+día: si dos equipos marcan sin haber sincronizado, crean el MISMO id y la nube los une (no se duplica el día).
+  if(!a){ a={id:'att_'+m.id+'_'+todayISO(), userId:m.id, date:todayISO(), sucursalId:m.sucursalId, sessions:[], updatedAt:now()}; DB.attendance.push(a); }
+  a.sessions=attNormSessions(a);
+  if(attOpen(a)){ toast('Ya tenés una entrada abierta — marcá la salida primero','ok'); return; }
+  const t=now(); a.sessions.push({id:uid(),in:t,out:null}); attSyncLegacy(a);
+  audit('horarios',`marcó ENTRADA ${fmtClock(t)}`); toast('Entrada marcada ✓','ok'); render();
 }
 function markOut(){
   const a=todayAttendance();
-  if(!a || !a.in){ toast('Primero marcá tu entrada','err'); return; }
-  if(a.out){ toast('Ya marcaste salida hoy','ok'); return; }
-  a.out=now(); audit('horarios',`marcó SALIDA ${fmtClock(a.out)}`); toast('Salida marcada ✓','ok'); render();
+  if(!a || !attSessions(a).length){ toast('Primero marcá tu entrada','err'); return; }
+  a.sessions=attNormSessions(a);
+  const open=attOpen(a);
+  if(!open){ toast('No tenés una entrada abierta — marcá entrada primero','err'); return; }
+  open.out=now(); attSyncLegacy(a);
+  audit('horarios',`marcó SALIDA ${fmtClock(open.out)}`); toast('Salida marcada ✓','ok'); render();
 }
 window.markIn=markIn; window.markOut=markOut;
+function attSegsHTML(ss){
+  return `<div class="att-segs">${ss.map(s=>`<span class="att-seg${s.out?'':' open'}">${fmtClock(s.in)} <span class="att-arrow">→</span> ${s.out?fmtClock(s.out):'en turno'}</span>`).join('')}</div>`;
+}
 function attendanceCard(){
-  const a=todayAttendance();
-  let body, btn='';
-  if(!a || !a.in){ body='Todavía no marcaste tu entrada de hoy.'; btn=`<button class="btn btn-primary" style="flex:0 0 auto" onclick="markIn()">${svgIcon('clock','icon icon-sm')} Marcar entrada</button>`; }
-  else if(!a.out){ body=`Entrada a las <b>${fmtClock(a.in)}</b>. ¡Buen turno!`; btn=`<button class="btn btn-primary" style="flex:0 0 auto" onclick="markOut()">${svgIcon('clock','icon icon-sm')} Marcar salida</button>`; }
-  else { const mins=Math.max(0,Math.round((a.out-a.in)/60000)); const hrs=Math.floor(mins/60); body=`Entrada <b>${fmtClock(a.in)}</b> · Salida <b>${fmtClock(a.out)}</b> · ${hrs?hrs+'h ':''}${mins%60}m`; }
+  const a=todayAttendance(); const ss=attSessions(a); const open=attOpen(a);
+  const inBtn=`<button class="btn btn-primary" style="flex:0 0 auto" onclick="markIn()">${svgIcon('clock','icon icon-sm')} Marcar entrada</button>`;
+  const outBtn=`<button class="btn btn-primary" style="flex:0 0 auto" onclick="markOut()">${svgIcon('clock','icon icon-sm')} Marcar salida</button>`;
+  let body, btn;
+  if(!ss.length){ body='Todavía no marcaste tu entrada de hoy.'; btn=inBtn; }
+  else {
+    const tot=attWorkedMin(a);
+    body=`${attSegsHTML(ss)}<div style="margin-top:6px">${tot?`Trabajado hoy: <b>${fmtDur(tot)}</b>`:''}${open?`${tot?' · ':''}<b style="color:var(--accent)">en turno ahora</b>`:''}</div>`;
+    btn = open ? outBtn : inBtn;     // ya cerró una sesión -> puede volver a entrar (quiebre de turno)
+  }
   return `<div class="card sched-card"><span class="av" style="background:var(--bg-soft)">${svgIcon('clock')}</span><div style="flex:1;min-width:0"><div style="font-weight:700">Mi asistencia de hoy</div><div class="page-sub" style="margin:0">${body}</div></div>${btn}</div>`;
 }
 function todayShiftCard(){
@@ -3759,14 +3836,14 @@ function reportData(ym){
   const invVal=inv.reduce((s,p)=>s+p.stock*p.cost,0);
   const invLow=inv.filter(lowStock).length;
   const shifts=(DB.shifts||[]).filter(s=>s&&inScope(s.sucursalId)&&!s.off&&(s.date||'').startsWith(ym));
-  const att=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&(a.date||'').startsWith(ym)&&a.in);
+  const att=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&(a.date||'').startsWith(ym)&&attSessions(a).length);
   const prod=DB.users.filter(u=>u.active).map(u=>{
     const mine=tMonth.filter(t=>(t.toIds||[]).includes(u.id));
     const h=mine.filter(t=>t.status==='hecha').length, a=mine.filter(t=>t.status==='atrasada').length, rj=mine.filter(t=>t.status==='rechazada').length;
     const dias=shifts.filter(s=>s.userId===u.id).length;
     const myAtt=att.filter(x=>x.userId===u.id);
     const presente=myAtt.length;                                              // días con marca real de entrada
-    const horas=Math.round(myAtt.reduce((s,x)=>s+((x.out&&x.in)?Math.max(0,(x.out-x.in)/3600000):0),0)*10)/10;  // horas reales trabajadas
+    const horas=Math.round(myAtt.reduce((s,x)=>s+attWorkedMin(x),0)/60*10)/10;  // horas reales trabajadas (suma todas las sesiones del día)
     const pct=mine.length?Math.round(h/mine.length*100):0;
     return {u,total:mine.length,h,a,rj,dias,presente,horas,pct};
   }).filter(x=>x.total>0||x.dias>0||x.presente>0).sort((a,b)=>b.pct-a.pct||b.h-a.h||b.presente-a.presente);
@@ -3905,6 +3982,7 @@ let resvTab='lista', resvFilter='proximas', resvEstado='todos', resvSearch='', c
 function reservScoped(){ return (DB.reservations||[]).filter(r=>r&&inScope(r.sucursalId)); }
 function clientById(id){ return (DB.clients||[]).find(c=>c.id===id); }
 function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
+function isoLocal(dt){ const d=new Date(dt); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); } // fecha local (igual base que todayISO) para cualquier día
 function starsHTML(score,cid){
   let s=''; for(let i=1;i<=5;i++){ s+=`<button class="star ${i<=(score||0)?'on':''}" ${cid?`onclick="event.stopPropagation();setScore('${cid}',${i})"`:'disabled'} title="${i} de 5">${svgIcon('star','icon icon-sm')}</button>`; }
   return `<span class="stars">${s}</span>`;
