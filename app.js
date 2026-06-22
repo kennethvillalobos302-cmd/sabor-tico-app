@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v22 · pantalla completa + chat WhatsApp';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v23 · sincroniza nombres de sucursal';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -164,9 +164,11 @@ function mergeAppendOnly(localDB, remoteDB){
   return flags.added;
 }
 /* Reconciliación a nivel de OBJETO: une por id los objetos nuevos local+remoto (sin perder los que
-   el otro aún no tenía), respetando los borrados con "tombstones" (marcas) para que un borrado no reviva.
-   Las ediciones del MISMO objeto siguen siendo "último que escribe gana" (se conserva la copia remota). */
-const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory'];
+   el otro aún no tenía), respetando los borrados con "tombstones". Para un objeto que existe en ambos
+   lados, gana la EDICIÓN MÁS RECIENTE (por updatedAt), no "el último que sube"; así un cambio (p.ej.
+   renombrar una sucursal) se propaga a todos y no lo revierte un dispositivo con datos viejos. */
+const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory','sucursales'];
+const _stamp=o=>(o&&(o.updatedAt||o.at||o.createdAt))||0;   // marca de tiempo para "edición más reciente gana"
 // REGLA: cualquier BORRADO DURO de una colección de RECON_COLLS DEBE marcar tomb(id) antes de filtrar,
 // o el borrado "revivirá" desde otro dispositivo. Usá delEntity(coll,id) para no olvidarlo nunca.
 // Borrado = marca en _tomb; "Deshacer" = marca en _revive. Gana la marca MÁS RECIENTE (delete vs revive).
@@ -185,10 +187,14 @@ function reconcileEntities(localDB, remoteDB){
   RECON_COLLS.forEach(coll=>{
     const rArr=Array.isArray(remoteDB[coll])?remoteDB[coll]:[];
     const lArr=Array.isArray(localDB[coll])?localDB[coll]:[];
-    const rIds={}; rArr.forEach(o=>{ if(o&&o.id) rIds[o.id]=true; });
-    let out=rArr;
-    if(rArr.some(o=>o&&o.id&&_isDel(tombs,revs,o.id))){ out=rArr.filter(o=>!(o&&o.id&&_isDel(tombs,revs,o.id))); added=true; }  // propagar borrados (salvo revividos)
-    lArr.forEach(o=>{ if(o&&o.id && !rIds[o.id] && !_isDel(tombs,revs,o.id)){ out.push({...o}); added=true; } });             // conservar objetos locales nuevos (clon para evitar aliasing)
+    let out=rArr.filter(o=>!(o&&o.id&&_isDel(tombs,revs,o.id)));   // quitar borrados (salvo revividos)
+    if(out.length!==rArr.length) added=true;
+    lArr.forEach(o=>{
+      if(!o||!o.id || _isDel(tombs,revs,o.id)) return;
+      const idx=out.findIndex(x=>x&&x.id===o.id);
+      if(idx<0){ out.push({...o}); added=true; }                              // objeto local nuevo: conservar
+      else if(_stamp(o) > _stamp(out[idx])){ out[idx]={...o}; added=true; }    // edición local más reciente: gana
+    });
     remoteDB[coll]=out;
   });
   return added;
@@ -2508,12 +2514,12 @@ async function saveUser(id){
   const pinRaw=($('#uPin')?$('#uPin').value.trim():'');
   if(id){
     const u=userById(id); if(!u) return;
-    u.name=name; u.role=role; u.sucursalId=sucursalId; u.phone=phone; u.active=$('#uActive').value==='1';
+    u.name=name; u.role=role; u.sucursalId=sucursalId; u.phone=phone; u.active=$('#uActive').value==='1'; u.updatedAt=now();
     if(pinRaw){ if(!/^\d{4}$/.test(pinRaw)){ toast('El PIN debe ser de 4 dígitos','err'); return; } await setUserPin(u,pinRaw); u.mustChangePin=false; }
     audit('equipo',`editó al usuario ${name}`);
   } else {
     if(!/^\d{4}$/.test(pinRaw)){ toast('Poné un PIN de 4 dígitos para el nuevo usuario','err'); return; }
-    const u={id:uid(),name,role,sucursalId,phone,active:true,mustChangePin:true};
+    const u={id:uid(),name,role,sucursalId,phone,active:true,mustChangePin:true,at:now(),updatedAt:now()};
     await setUserPin(u,pinRaw);
     DB.users.push(u);
     audit('equipo',`agregó al usuario ${name} (${roleInfo(role).short})`);
@@ -2529,8 +2535,8 @@ function sucForm(title,s){
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveSuc('${s?s.id:''}')">${s?'Guardar':'Crear'}</button></div>`;
 }
 function saveSuc(id){ const n=$('#sName').value.trim(); if(!n){toast('Ponele nombre','err');return;}
-  if(id){ const s=DB.sucursales.find(x=>x.id===id); if(s){ s.name=n; audit('equipo',`renombró una sucursal a "${n}"`); } }
-  else { DB.sucursales.push({id:uid(),name:n}); audit('equipo',`creó la sucursal ${n}`); }
+  if(id){ const s=DB.sucursales.find(x=>x.id===id); if(s){ s.name=n; s.updatedAt=now(); audit('equipo',`renombró una sucursal a "${n}"`); } }
+  else { DB.sucursales.push({id:uid(),name:n,at:now(),updatedAt:now()}); audit('equipo',`creó la sucursal ${n}`); }
   closeModal(); toast('Sucursal guardada','ok'); render(); }
 window.newSucModal=newSucModal; window.sucEditModal=sucEditModal; window.saveSuc=saveSuc;
 
