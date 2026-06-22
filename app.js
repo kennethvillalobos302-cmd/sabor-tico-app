@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v37 · chat ancho + llamar WhatsApp + llamadas nativas';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v38 · reuniones en proyectos (renombrado)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1944,9 +1944,9 @@ function projSide(proj){
   const others=(_projPeers[proj.id]||[]).filter(id=>id!==SES.userId);
   const meInCall=_call&&_call.projId===proj.id;
   const callBtns = meInCall
-    ? `<button class="btn btn-primary" style="flex:0 0 auto;padding:7px 11px" onclick="startCall('${proj.id}',false)" title="Volver a la llamada">${svgIcon('phone','icon icon-sm')} En llamada</button>`
-    : `<button class="btn ${others.length?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 10px" title="Llamada de voz" onclick="startCall('${proj.id}',false)">${svgIcon('phone','icon icon-sm')} ${others.length?('Unirse · '+others.length):'Llamada'}</button>
-       <button class="btn btn-ghost" style="flex:0 0 auto;padding:7px 10px" title="Videollamada" onclick="startCall('${proj.id}',true)">${svgIcon('video','icon icon-sm')}</button>`;
+    ? `<button class="btn btn-primary" style="flex:0 0 auto;padding:7px 11px" onclick="startCall('${proj.id}',false)" title="Volver a la reunión">${svgIcon('phone','icon icon-sm')} En reunión</button>`
+    : `<button class="btn ${others.length?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 10px" title="Reunión (solo audio)" onclick="startCall('${proj.id}',false)">${svgIcon('phone','icon icon-sm')} ${others.length?('Unirse · '+others.length):'Reunión'}</button>
+       <button class="btn btn-ghost" style="flex:0 0 auto;padding:7px 10px" title="Reunión con video" onclick="startCall('${proj.id}',true)">${svgIcon('video','icon icon-sm')}</button>`;
   return `<div class="proj-side">
     <div class="proj-side-head"><span style="font-weight:700;font-size:13px">Chat del grupo</span><div class="ph-spacer"></div>
       ${callBtns}</div>
@@ -2195,7 +2195,7 @@ function ensureCallDock(){
       <span class="cd-title">${svgIcon('video','icon icon-sm')} <span id="cdName"></span></span>
       <div class="ph-spacer"></div>
       <button class="cd-btn" onclick="callDockToggleMin()" title="Minimizar / agrandar">${svgIcon('chevron','icon icon-sm')}</button>
-      <button class="cd-btn danger" onclick="callHangup()" title="Salir de la llamada">${svgIcon('x','icon icon-sm')}</button>
+      <button class="cd-btn danger" onclick="callHangup()" title="Salir de la reunión">${svgIcon('x','icon icon-sm')}</button>
     </div>
     <div class="cd-body" id="cdBody"><div class="rtc-grid" id="rtcGrid"></div><div class="rtc-bar" id="rtcBar"></div></div>`;
   document.body.appendChild(d);
@@ -2215,12 +2215,12 @@ function renderCallBar(){
   const micOn=!_call.muted, camOn=_call.video&&!_call.camOff;
   bar.innerHTML=`<button class="rtc-cbtn ${micOn?'':'off'}" onclick="callToggleMic()">${svgIcon(micOn?'mic':'mic-off','icon')}<span>${micOn?'Silenciar':'Activar'}</span></button>
     ${_call.video?`<button class="rtc-cbtn ${camOn?'':'off'}" onclick="callToggleCam()">${svgIcon('video','icon')}<span>${camOn?'Apagar cám.':'Prender cám.'}</span></button>`:''}
-    <button class="rtc-cbtn end" onclick="callHangup()">${svgIcon('phone','icon')}<span>Colgar</span></button>`;
+    <button class="rtc-cbtn end" onclick="callHangup()">${svgIcon('phone','icon')}<span>Salir</span></button>`;
 }
 async function startCall(projId, video){
   const m=me(); if(!m) return;
-  if(!cloudOn || !fbdb){ toast('Necesitás conexión a la nube para llamar','err'); return; }
-  if(_call){ if(_call.projId===projId){ const d=ensureCallDock(); d.classList.remove('hidden','min'); return; } toast('Ya estás en otra llamada — salí de esa primero','err'); return; }
+  if(!cloudOn || !fbdb){ toast('Necesitás conexión a la nube para la reunión','err'); return; }
+  if(_call){ if(_call.projId===projId){ const d=ensureCallDock(); d.classList.remove('hidden','min'); return; } toast('Ya estás en otra reunión — salí de esa primero','err'); return; }
   if(_callStarting) return;            // doble clic mientras pide cámara: ignorar el segundo
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
   _callStarting=true;
@@ -2233,14 +2233,14 @@ async function startCall(projId, video){
   _callStarting=false;
   // ventana + tile propio
   const dock=ensureCallDock(); dock.classList.remove('hidden','min');
-  $('#cdName').textContent=(video?'Videollamada · ':'Llamada · ')+p.name;
+  $('#cdName').textContent='Reunión · '+p.name;
   $('#rtcGrid').innerHTML=rtcTile('local', (m.name||'Vos').split(' ')[0], true);
   const lv=document.getElementById('vid-local'); if(lv) lv.srcObject=stream;
   rtcShowVideo('local', !!video);
   renderCallBar();
   // aviso a los demás (la presencia "en llamada" se ve EN VIVO desde signals/peers, que se autolimpia)
-  audit('proyecto',`entró a la ${video?'videollamada':'llamada'} de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
-  notify(p.memberIds.filter(i=>i!==myId), `${m.name.split(' ')[0]} inició una ${video?'videollamada':'llamada'} en "${p.name}"`,'video',{view:'proyectos'});
+  audit('proyecto',`entró a la reunión de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
+  notify(p.memberIds.filter(i=>i!==myId), `${m.name.split(' ')[0]} inició una reunión en "${p.name}"`,'video',{view:'proyectos'});
   // señalización por Firebase
   const base=_call.base, myPeerRef=base.child('peers').child(myId), inbox=base.child('msg').child(myId);
   try{ await myPeerRef.set({name:m.name||'', video:!!video, at:firebase.database.ServerValue.TIMESTAMP}); }
@@ -2329,7 +2329,7 @@ function endCall(silent){
   _call=null;
   const d=document.getElementById('callDock'); if(d){ d.classList.add('hidden'); d.classList.remove('min'); d.style.left=d.style.top=d.style.right=d.style.bottom=''; const g=document.getElementById('rtcGrid'); if(g)g.innerHTML=''; const bar=document.getElementById('rtcBar'); if(bar)bar.innerHTML=''; }
   const p=projId&&DB.projects.find(x=>x.id===projId);
-  if(p&&!silent) audit('proyecto',`salió de la llamada de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
+  if(p&&!silent) audit('proyecto',`salió de la reunión de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
   if(SES.userId) render();
 }
 window.addEventListener('pagehide', ()=>{ if(_call) endCall(true); });   // cerrar la cámara si se cierra la pestaña
