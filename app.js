@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v35 · llamadas reales en proyectos (flotante)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v36 · llamadas nativas (voz/video) en proyectos';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1942,10 +1942,14 @@ function projSide(proj){
     return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
   const inCall=proj.call&&proj.call.active;
   const meInCall=_call&&_call.projId===proj.id;
-  const callLbl=meInCall?'En llamada':(inCall?('Unirme · '+(proj.call.participants||[]).length):'Llamada');
+  const nCall=(proj.call&&proj.call.participants)?proj.call.participants.length:0;
+  const callBtns = meInCall
+    ? `<button class="btn btn-primary" style="flex:0 0 auto;padding:7px 11px" onclick="startCall('${proj.id}',false)" title="Volver a la llamada">${svgIcon('phone','icon icon-sm')} En llamada</button>`
+    : `<button class="btn ${inCall?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 10px" title="Llamada de voz" onclick="startCall('${proj.id}',false)">${svgIcon('phone','icon icon-sm')} ${inCall?('Unirse · '+nCall):'Llamada'}</button>
+       <button class="btn btn-ghost" style="flex:0 0 auto;padding:7px 10px" title="Videollamada" onclick="startCall('${proj.id}',true)">${svgIcon('video','icon icon-sm')}</button>`;
   return `<div class="proj-side">
     <div class="proj-side-head"><span style="font-weight:700;font-size:13px">Chat del grupo</span><div class="ph-spacer"></div>
-      <button class="btn ${meInCall||inCall?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 11px" onclick="openCall('${proj.id}')">${svgIcon('video','icon icon-sm')} ${esc(callLbl)}</button></div>
+      ${callBtns}</div>
     <div class="proj-chat" id="projChatMsgs">${msgs||'<div style="margin:auto;color:var(--text-soft);font-size:13px;text-align:center;padding:24px">Escribí acá para coordinar mientras trabajan la pizarra.</div>'}</div>
     ${projPending?`<div class="chat-pending">${projPending.type==='video'?`<video src="${safeVid(projPending.data)}"></video>`:projPending.type==='image'?`<img src="${safeImg(projPending.data)}">`:`<span class="chat-file-ic">${svgIcon(fileIconFor(projPending.mime,projPending.filename),'icon icon-sm')}</span>`}<span>${projPending.type==='file'?esc(projPending.filename):(projPending.type==='video'?'Video':'Foto')+' listo'}</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="projPending=null;render()">Quitar</button></div>`:''}
     <div class="chat-input">
@@ -2164,23 +2168,16 @@ function canvasPanMove(e){ if(!_pan)return; const wrap=$('#canvasWrap'); if(!wra
 function canvasPanUp(){ document.removeEventListener('pointermove',canvasPanMove); document.removeEventListener('pointerup',canvasPanUp); const wrap=$('#canvasWrap'); if(wrap)wrap.classList.remove('panning'); _pan=null; }
 window.canvasPanDown=canvasPanDown;
 /* =====================================================================
-   LLAMADAS / VIDEOLLAMADAS DEL PROYECTO (Jitsi, flotante, atadas al proyecto)
-   - Video/audio grupal real + pantalla compartida (sin servidor propio).
-   - La ventana es flotante y vive FUERA del render: seguís trabajando y
-     navegando por la app sin cortar la llamada.
+   LLAMADAS / VIDEOLLAMADAS DEL PROYECTO — nativas (WebRTC P2P)
+   - "Llamada" = solo voz · "Videollamada" = con cámara. UI propia de la app.
+   - Conexión DIRECTA entre dispositivos; la señalización (ofertas/candidatos)
+     pasa por tu Firebase (nodo "signals"), no por terceros.
+   - Ventana flotante que vive FUERA del render: seguís trabajando sin cortar.
+   - Malla P2P (ideal 2–4 personas). Para iniciar quien tenga el id MAYOR ofrece
+     (evita "glare"); los candidatos que llegan antes de la descripción se encolan.
    ===================================================================== */
-let _call=null;            // {projId, api} mientras estás en una llamada
-let _jitsiLoading=null;
-function loadJitsi(){
-  if(window.JitsiMeetExternalAPI) return Promise.resolve();
-  if(_jitsiLoading) return _jitsiLoading;
-  _jitsiLoading=new Promise((res,rej)=>{
-    const s=document.createElement('script'); s.src='https://meet.jit.si/external_api.js'; s.async=true;
-    s.onload=()=>res(); s.onerror=()=>{ _jitsiLoading=null; rej(new Error('jitsi')); };
-    document.head.appendChild(s);
-  });
-  return _jitsiLoading;
-}
+const RTC_CFG={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
+let _call=null;  // {projId,video,localStream,peers:{pid:{pc,stream,name,queue}},myId,base,muted,camOff,refs,listeners}
 function ensureCallDock(){
   let d=document.getElementById('callDock'); if(d) return d;
   d=document.createElement('div'); d.id='callDock'; d.className='call-dock hidden';
@@ -2190,56 +2187,134 @@ function ensureCallDock(){
       <button class="cd-btn" onclick="callDockToggleMin()" title="Minimizar / agrandar">${svgIcon('chevron','icon icon-sm')}</button>
       <button class="cd-btn danger" onclick="callHangup()" title="Salir de la llamada">${svgIcon('x','icon icon-sm')}</button>
     </div>
-    <div class="cd-body" id="cdBody"></div>`;
+    <div class="cd-body" id="cdBody"><div class="rtc-grid" id="rtcGrid"></div><div class="rtc-bar" id="rtcBar"></div></div>`;
   document.body.appendChild(d);
   return d;
 }
-async function openCall(projId){
-  const m=me(); if(!m) return;
-  const p=DB.projects.find(x=>x.id===projId); if(!p) return;
-  if(_call && _call.projId!==projId){ toast('Ya estás en otra llamada — salí de esa primero','err'); return; }
-  const dock=ensureCallDock(); dock.classList.remove('hidden','min');
-  $('#cdName').textContent=p.name;
-  if(_call && _call.projId===projId) return;   // ya estás en esta llamada: solo traer la ventana al frente
-  // presencia (para que los demás vean "En llamada" y reciban aviso)
-  if(!p.call||!p.call.active) p.call={active:true,participants:[],by:SES.userId,at:now()};
-  if(!p.call.participants.includes(SES.userId)) p.call.participants.push(SES.userId);
-  audit('proyecto',`entró a la llamada de "${p.name}"`,p.sucursalId);
-  notify(p.memberIds.filter(i=>i!==SES.userId), `${m.name.split(' ')[0]} inició una llamada en "${p.name}"`,'video',{view:'proyectos'});
-  save();
-  const body=$('#cdBody'); body.innerHTML='<div class="cd-load">Conectando la llamada…</div>';
-  try{
-    await loadJitsi();
-    body.innerHTML='';
-    const api=new JitsiMeetExternalAPI('meet.jit.si',{
-      roomName:'SaborTico-'+projId,            // sala única e impredecible (id de proyecto = UUID)
-      parentNode: body, width:'100%', height:'100%',
-      userInfo:{ displayName: m.name||'Invitado' },
-      configOverwrite:{ prejoinPageEnabled:false, disableDeepLinking:true, startWithAudioMuted:false, startWithVideoMuted:false },
-      interfaceConfigOverwrite:{ MOBILE_APP_PROMO:false, SHOW_JITSI_WATERMARK:false, SHOW_WATERMARK_FOR_GUESTS:false,
-        TOOLBAR_BUTTONS:['microphone','camera','desktop','tileview','raisehand','chat','fullscreen','hangup','settings'] }
-    });
-    api.addEventListener('readyToClose', ()=>callHangup());
-    _call={projId, api};
-    if(SES.userId) render();                   // refrescar el botón "En llamada"
-  }catch(e){
-    console.warn('jitsi', e);
-    body.innerHTML='<div class="cd-load">No se pudo cargar la llamada.<br>Revisá tu conexión a internet e intentá de nuevo.</div>';
-  }
+function rtcTile(uid,name,me_){
+  const ini=esc((name||'?').trim().slice(0,1).toUpperCase()||'?');
+  return `<div class="rtc-tile${me_?' me':''}" id="tile-${uid}">
+    <video id="vid-${uid}" autoplay playsinline ${me_?'muted':''}></video>
+    <div class="rtc-av" id="av-${uid}"><div class="rtc-av-c">${ini}</div></div>
+    <span class="rtc-name">${esc(name||'')}${me_?' (vos)':''}</span>
+  </div>`;
 }
-function callHangup(){
-  const projId=_call&&_call.projId;
-  if(_call&&_call.api){ try{ _call.api.dispose(); }catch(e){} }
-  _call=null;
-  const d=document.getElementById('callDock'); if(d){ d.classList.add('hidden'); d.classList.remove('min'); const b=$('#cdBody'); if(b) b.innerHTML=''; d.style.left=d.style.top=d.style.right=d.style.bottom=''; }
-  if(projId){
-    const p=DB.projects.find(x=>x.id===projId);
-    if(p&&p.call){ p.call.participants=(p.call.participants||[]).filter(i=>i!==SES.userId); if(!p.call.participants.length) p.call.active=false; }
-    if(p) audit('proyecto',`salió de la llamada de "${p.name}"`,p.sucursalId);
-    save();
-  }
+function rtcShowVideo(uid,on){ const v=document.getElementById('vid-'+uid), a=document.getElementById('av-'+uid); if(v)v.style.display=on?'block':'none'; if(a)a.style.display=on?'none':'flex'; }
+function renderCallBar(){
+  const bar=document.getElementById('rtcBar'); if(!bar||!_call) return;
+  const micOn=!_call.muted, camOn=_call.video&&!_call.camOff;
+  bar.innerHTML=`<button class="rtc-cbtn ${micOn?'':'off'}" onclick="callToggleMic()">${svgIcon(micOn?'mic':'mic-off','icon')}<span>${micOn?'Silenciar':'Activar'}</span></button>
+    ${_call.video?`<button class="rtc-cbtn ${camOn?'':'off'}" onclick="callToggleCam()">${svgIcon('video','icon')}<span>${camOn?'Apagar cám.':'Prender cám.'}</span></button>`:''}
+    <button class="rtc-cbtn end" onclick="callHangup()">${svgIcon('phone','icon')}<span>Colgar</span></button>`;
+}
+async function startCall(projId, video){
+  const m=me(); if(!m) return;
+  if(!cloudOn || !fbdb){ toast('Necesitás conexión a la nube para llamar','err'); return; }
+  if(_call){ if(_call.projId===projId){ const d=ensureCallDock(); d.classList.remove('hidden','min'); return; } toast('Ya estás en otra llamada — salí de esa primero','err'); return; }
+  const p=DB.projects.find(x=>x.id===projId); if(!p) return;
+  let stream;
+  try{ stream=await navigator.mediaDevices.getUserMedia({audio:true, video: video?{width:{ideal:640},height:{ideal:480}}:false}); }
+  catch(e){ toast(video?'No se pudo usar la cámara o el micrófono':'No se pudo usar el micrófono','err'); return; }
+  const myId=SES.userId;
+  _call={projId, video:!!video, localStream:stream, peers:{}, myId, base:fbdb.ref('signals/'+projId), muted:false, camOff:false, refs:null, listeners:null};
+  // ventana + tile propio
+  const dock=ensureCallDock(); dock.classList.remove('hidden','min');
+  $('#cdName').textContent=(video?'Videollamada · ':'Llamada · ')+p.name;
+  $('#rtcGrid').innerHTML=rtcTile('local', (m.name||'Vos').split(' ')[0], true);
+  const lv=document.getElementById('vid-local'); if(lv) lv.srcObject=stream;
+  rtcShowVideo('local', !!video);
+  renderCallBar();
+  // presencia en el estado (para el botón y el aviso a los demás)
+  if(!p.call||!p.call.active) p.call={active:true,participants:[],by:myId,at:now()};
+  if(!p.call.participants.includes(myId)) p.call.participants.push(myId);
+  audit('proyecto',`entró a la ${video?'videollamada':'llamada'} de "${p.name}"`,p.sucursalId);
+  notify(p.memberIds.filter(i=>i!==myId), `${m.name.split(' ')[0]} inició una ${video?'videollamada':'llamada'} en "${p.name}"`,'video',{view:'proyectos'});
+  save();
+  // señalización por Firebase
+  const base=_call.base, myPeerRef=base.child('peers').child(myId), inbox=base.child('msg').child(myId);
+  try{ await myPeerRef.set({name:m.name||'', video:!!video, at:firebase.database.ServerValue.TIMESTAMP}); }
+  catch(e){ console.warn('signals denied',e); toast('Falta activar las llamadas en Firebase (reglas "signals"). Ver CONECTAR-NUBE.md','err'); endCall(true); return; }
+  try{ myPeerRef.onDisconnect().remove(); inbox.onDisconnect().remove(); }catch(e){}
+  _call.refs={myPeerRef, inbox};
+  let existing={};
+  try{ const snap=await base.child('peers').get(); existing=snap.val()||{}; }catch(e){}
+  if(!_call){ return; }                          // por si colgó mientras esperaba
+  Object.keys(existing).forEach(pid=>{ if(pid!==myId){ ensurePeer(pid, existing[pid]&&existing[pid].name); if(myId>pid) makeOffer(pid); } });
+  const onAdd=base.child('peers').on('child_added', s=>{ if(!_call) return; const pid=s.key; if(pid===myId||_call.peers[pid]) return; const v=s.val()||{}; ensurePeer(pid, v.name); if(myId>pid) makeOffer(pid); });
+  const onRem=base.child('peers').on('child_removed', s=>{ if(_call) closePeer(s.key); });
+  const onMsg=inbox.on('child_added', async s=>{ const msg=s.val(); try{ await s.ref.remove(); }catch(e){} if(_call&&msg) await handleSignal(msg); });
+  _call.listeners={onAdd,onRem,onMsg};
   if(SES.userId) render();
 }
+function ensurePeer(pid, name){
+  if(!_call) return null;
+  if(_call.peers[pid]) return _call.peers[pid];
+  const pc=new RTCPeerConnection(RTC_CFG);
+  const peer={pc, name:name||(userById(pid)&&userById(pid).name)||'', stream:null, queue:[]};
+  _call.peers[pid]=peer;
+  try{ _call.localStream.getTracks().forEach(t=>pc.addTrack(t,_call.localStream)); }catch(e){}
+  pc.onicecandidate=e=>{ if(e.candidate) sendSignal(pid,'candidate',e.candidate.toJSON()); };
+  pc.ontrack=e=>{ peer.stream=e.streams[0]; addRemoteTile(pid,peer); };
+  pc.onconnectionstatechange=()=>{ if(['failed','closed'].includes(pc.connectionState)) closePeer(pid); };
+  return peer;
+}
+async function makeOffer(pid){
+  const peer=_call&&_call.peers[pid]; if(!peer) return;
+  try{ const off=await peer.pc.createOffer(); await peer.pc.setLocalDescription(off); sendSignal(pid,'offer',{type:off.type,sdp:off.sdp}); }catch(e){ console.warn('offer',e); }
+}
+function sendSignal(toId, kind, data){ if(!_call) return; try{ _call.base.child('msg').child(toId).push({from:_call.myId, kind, data}); }catch(e){} }
+async function handleSignal(msg){
+  if(!_call||!msg||!msg.from||msg.from===_call.myId) return;
+  const pid=msg.from, peer=ensurePeer(pid); if(!peer) return;
+  try{
+    if(msg.kind==='offer'){
+      await peer.pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+      await flushCands(peer);
+      const ans=await peer.pc.createAnswer(); await peer.pc.setLocalDescription(ans);
+      sendSignal(pid,'answer',{type:ans.type,sdp:ans.sdp});
+    } else if(msg.kind==='answer'){
+      await peer.pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+      await flushCands(peer);
+    } else if(msg.kind==='candidate'){
+      if(peer.pc.remoteDescription && peer.pc.remoteDescription.type){ try{ await peer.pc.addIceCandidate(new RTCIceCandidate(msg.data)); }catch(e){} }
+      else peer.queue.push(msg.data);
+    }
+  }catch(e){ console.warn('signal',msg.kind,e); }
+}
+async function flushCands(peer){ const q=peer.queue||[]; peer.queue=[]; for(const c of q){ try{ await peer.pc.addIceCandidate(new RTCIceCandidate(c)); }catch(e){} } }
+function addRemoteTile(pid,peer){
+  const grid=document.getElementById('rtcGrid'); if(!grid) return;
+  if(!document.getElementById('tile-'+pid)) grid.insertAdjacentHTML('beforeend', rtcTile(pid,(peer.name||'…').split(' ')[0],false));
+  const v=document.getElementById('vid-'+pid); if(v && v.srcObject!==peer.stream) v.srcObject=peer.stream;
+  const hasVid=peer.stream && peer.stream.getVideoTracks().some(t=>t.readyState==='live');
+  rtcShowVideo(pid, !!hasVid);
+}
+function closePeer(pid){
+  const peer=_call&&_call.peers[pid]; if(!peer) return;
+  try{ peer.pc.ontrack=peer.pc.onicecandidate=peer.pc.onconnectionstatechange=null; peer.pc.close(); }catch(e){}
+  delete _call.peers[pid];
+  const t=document.getElementById('tile-'+pid); if(t) t.remove();
+}
+function callToggleMic(){ if(!_call) return; const tr=_call.localStream.getAudioTracks()[0]; if(!tr) return; tr.enabled=!tr.enabled; _call.muted=!tr.enabled; renderCallBar(); }
+function callToggleCam(){ if(!_call||!_call.video) return; const tr=_call.localStream.getVideoTracks()[0]; if(!tr) return; tr.enabled=!tr.enabled; _call.camOff=!tr.enabled; rtcShowVideo('local', tr.enabled); renderCallBar(); }
+function openCall(projId){ startCall(projId, false); }   // compatibilidad (voz)
+function endCall(silent){
+  if(!_call) return;
+  const projId=_call.projId, myId=_call.myId, base=_call.base;
+  try{ Object.keys(_call.peers).forEach(pid=>closePeer(pid)); }catch(e){}
+  try{ _call.localStream.getTracks().forEach(t=>t.stop()); }catch(e){}
+  try{ base.child('peers').off(); base.child('msg').child(myId).off(); }catch(e){}
+  try{ if(_call.refs){ _call.refs.myPeerRef.onDisconnect().cancel(); _call.refs.inbox.onDisconnect().cancel(); } }catch(e){}
+  try{ base.child('peers').child(myId).remove(); base.child('msg').child(myId).remove(); }catch(e){}
+  _call=null;
+  const d=document.getElementById('callDock'); if(d){ d.classList.add('hidden'); d.classList.remove('min'); d.style.left=d.style.top=d.style.right=d.style.bottom=''; const g=document.getElementById('rtcGrid'); if(g)g.innerHTML=''; const bar=document.getElementById('rtcBar'); if(bar)bar.innerHTML=''; }
+  const p=projId&&DB.projects.find(x=>x.id===projId);
+  if(p&&p.call){ p.call.participants=(p.call.participants||[]).filter(i=>i!==myId); if(!p.call.participants.length) p.call.active=false; }
+  if(p&&!silent) audit('proyecto',`salió de la llamada de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
+  else if(p) save();
+  if(SES.userId) render();
+}
+function callHangup(){ endCall(false); }
 function leaveCall(projId){ callHangup(); }   // compatibilidad
 function callDockToggleMin(){ const d=document.getElementById('callDock'); if(d) d.classList.toggle('min'); }
 let _cdDrag=null;
@@ -2256,7 +2331,8 @@ function cdDragMove(e){
   d.style.left=x+'px'; d.style.top=y+'px'; d.style.right='auto'; d.style.bottom='auto';
 }
 function cdDragEnd(){ document.removeEventListener('pointermove',cdDragMove); document.removeEventListener('pointerup',cdDragEnd); _cdDrag=null; }
-window.openCall=openCall; window.callHangup=callHangup; window.leaveCall=leaveCall;
+window.startCall=startCall; window.openCall=openCall; window.callHangup=callHangup; window.leaveCall=leaveCall;
+window.callToggleMic=callToggleMic; window.callToggleCam=callToggleCam;
 window.callDockToggleMin=callDockToggleMin; window.cdDragStart=cdDragStart;
 window.addCard=addCard;
 

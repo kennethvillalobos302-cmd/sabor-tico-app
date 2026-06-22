@@ -29,10 +29,18 @@ Tiempo aprox: 10 minutos, una sola vez.
         ".write": "auth != null",
         ".validate": "newData.isString() && newData.val().length < 12000000"
       }
+    },
+    "signals": {
+      "$proj": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
     }
   }
 }
 ```
+> La rama **signals** habilita las **llamadas y videollamadas** de los proyectos (señalización
+> efímera entre los dispositivos para conectar la llamada). Si no la pegás, las llamadas no conectan.
 > **Orden importante (para no quedar bloqueado):** primero publicá la app con el código nuevo, después activá *Anonymous* (paso 4) y por último publicá estas reglas (paso 5). Si publicás las reglas antes, la app no podrá entrar hasta que actives *Anonymous*. Ver **SEGURIDAD.md**.
 
 ## Paso 3 — Registrar la app web y copiar la configuración

@@ -32,10 +32,19 @@ deja de entrar. Por eso, seguí este orden exacto:
            ".write": "auth != null",
            ".validate": "newData.isString() && newData.val().length < 12000000"
          }
+       },
+       "signals": {
+         "$proj": {
+           ".read": "auth != null",
+           ".write": "auth != null"
+         }
        }
      }
    }
    ```
+   > La rama **signals** es para las **llamadas/videollamadas** de los proyectos (señalización
+   > efímera entre dispositivos). Sin esta rama, las llamadas no conectan. Es obligatoria desde la
+   > versión con llamadas nativas.
    > La rama **media** guarda las fotos/PDF/videos aparte (cada archivo con tope ~8 MB) para que NO inflen
    > la base ni se re-descarguen en cada cambio. Es obligatoria desde la versión que mueve los binarios a un nodo aparte.
    Apenas publiques, abrí la app y comprobá que entra y que se guardan cambios. Si algo falla,
@@ -62,12 +71,12 @@ Con esos pasos, la app pasa de “cualquiera en internet podía ver y borrar tod
 - **Inicio de sesión anónimo de Firebase:** la app entra a la base autenticada (necesario para las reglas cerradas).
 - **Cabeceras de seguridad web (vercel.json):** Content-Security-Policy, anti-clickjacking
   (no se puede meter la app en un iframe), HSTS, no-sniff, Referrer-Policy y Permissions-Policy.
-- **Llamadas/videollamadas (Jitsi):** las llamadas de los proyectos usan el servicio externo
-  **meet.jit.si**. Por eso la CSP permite cargar su reproductor y la Permissions-Policy habilita
-  cámara/micrófono **solo** para ese dominio (y para la propia app). La sala se llama
-  `SaborTico-<id-de-proyecto>` con un id aleatorio (UUID), imposible de adivinar desde afuera.
-  El audio/video de la llamada viaja por los servidores de Jitsi, no por tu Firebase; el resto de
-  los datos del restaurante siguen solo en tu base.
+- **Llamadas/videollamadas (nativas, WebRTC):** las llamadas de los proyectos conectan **directo
+  entre los dispositivos** (peer-to-peer), sin servicios de terceros. La cámara/micrófono solo se
+  habilitan para tu propia app. Lo único que pasa por tu Firebase es la **señalización** (ofertas y
+  candidatos para conectar) bajo el nodo `signals/<id-de-proyecto>`: son datos efímeros, legibles y
+  escribibles solo por usuarios autenticados de la app. El audio/video NO se guarda en ningún lado.
+  Nota: en redes muy restrictivas la conexión directa puede fallar (no hay servidor de relevo/TURN).
 - **Anti-XSS:** todo lo que escriben las personas se “escapa” correctamente y las imágenes/videos
   solo se aceptan si son archivos reales (se bloquea texto malicioso disfrazado de imagen).
 - **Lectura de facturas más segura:** modelo más barato, límite de tamaño de archivo, control de
