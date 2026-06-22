@@ -158,6 +158,36 @@ function mergeAppendOnly(localDB, remoteDB){
   (remoteDB.pedidos||[]).forEach(rp=>{ const lp=(localDB.pedidos||[]).find(x=>x&&x.id===rp.id); if(lp) rp.comments=_unionMsgs(lp.comments, rp.comments, flags); });
   return flags.added;
 }
+/* Reconciliación a nivel de OBJETO: une por id los objetos nuevos local+remoto (sin perder los que
+   el otro aún no tenía), respetando los borrados con "tombstones" (marcas) para que un borrado no reviva.
+   Las ediciones del MISMO objeto siguen siendo "último que escribe gana" (se conserva la copia remota). */
+const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory'];
+// REGLA: cualquier BORRADO DURO de una colección de RECON_COLLS DEBE marcar tomb(id) antes de filtrar,
+// o el borrado "revivirá" desde otro dispositivo. Usá delEntity(coll,id) para no olvidarlo nunca.
+function tomb(id){ if(!id) return; DB._tomb=DB._tomb||{}; DB._tomb[id]=now(); }
+function delEntity(coll,id){ tomb(id); if(Array.isArray(DB[coll])) DB[coll]=DB[coll].filter(x=>!x||x.id!==id); }
+function reconcileEntities(localDB, remoteDB){
+  let added=false;
+  const tombs=Object.assign({}, remoteDB._tomb||{});
+  const lt=localDB._tomb||{}; for(const k in lt){ tombs[k]=Math.max(tombs[k]||0, lt[k]||0); }  // unir tombstones (marca más reciente)
+  remoteDB._tomb=tombs;
+  RECON_COLLS.forEach(coll=>{
+    const rArr=Array.isArray(remoteDB[coll])?remoteDB[coll]:[];
+    const lArr=Array.isArray(localDB[coll])?localDB[coll]:[];
+    const rIds={}; rArr.forEach(o=>{ if(o&&o.id) rIds[o.id]=true; });
+    let out=rArr;
+    if(rArr.some(o=>o&&o.id&&tombs[o.id])){ out=rArr.filter(o=>!(o&&o.id&&tombs[o.id])); added=true; }  // propagar borrados
+    lArr.forEach(o=>{ if(o&&o.id && !rIds[o.id] && !tombs[o.id]){ out.push({...o}); added=true; } });     // conservar objetos locales nuevos (clon para evitar aliasing)
+    remoteDB[coll]=out;
+  });
+  return added;
+}
+function reconcile(localDB, remoteDB){
+  if(!localDB||!remoteDB) return false;
+  const a=reconcileEntities(localDB, remoteDB);
+  const b=mergeAppendOnly(localDB, remoteDB);   // une mensajes/comentarios dentro de los objetos compartidos
+  return a || b;
+}
 async function cloudInit(){
   if(!FB || !FB.databaseURL) return false;
   if(!window.firebase){ console.warn('SDK de Firebase no cargó'); return false; }
@@ -181,7 +211,7 @@ async function cloudInit(){
   let _bootMerged=false;
   if(val && val.data){
     // unir mensajes locales (de una sesión offline) con el estado del servidor para no perderlos
-    try{ const raw=localStorage.getItem(DB_KEY); if(raw){ const localDB=JSON.parse(raw); if(localDB && Array.isArray(localDB.users)) _bootMerged=mergeAppendOnly(localDB, val.data); } }catch(_){}
+    try{ const raw=localStorage.getItem(DB_KEY); if(raw){ const localDB=JSON.parse(raw); if(localDB && Array.isArray(localDB.users)) _bootMerged=reconcile(localDB, val.data); } }catch(_){}
     DB=val.data;
   }
   else { const raw=localStorage.getItem(DB_KEY); try{ DB = raw?JSON.parse(raw):seed(); }catch(_){ DB=seed(); } }
@@ -200,8 +230,8 @@ async function cloudInit(){
       let needRepush=false;
       _applyingRemote=true;
       try{
-        needRepush = mergeAppendOnly(DB, v.data);   // unir mensajes/comentarios locales con los remotos (no perder nada)
-        DB=v.data; migrate(); // normalizar datos entrantes para que nunca falten colecciones
+        needRepush = reconcile(DB, v.data);   // unir objetos nuevos + mensajes/comentarios locales (no perder nada)
+        DB=v.data; migrate(true); // normalizar datos entrantes (sin la limpieza destructiva) para que nunca falten colecciones
         try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
         const modalOpen=$('#modalBg').classList.contains('on');
         if(me()){ if(!modalOpen) render(); try{ checkNotifPops(); }catch(_){} } else { renderLogin(); }
@@ -383,12 +413,14 @@ const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','use
 function ensureCollections(){ if(!DB||typeof DB!=='object') return; DB_COLLECTIONS.forEach(k=>{ if(!Array.isArray(DB[k])) DB[k]=[]; }); if(!DB.invCats||typeof DB.invCats!=='object') DB.invCats=JSON.parse(JSON.stringify(DEFAULT_CATS)); }
 
 /* ---------------- Migración de DBs existentes ---------------- */
-function migrate(){
+function migrate(remote){
   let ch=false;
   // Limpieza única para empezar a usarlo en real. Importante: CONSERVA el equipo,
   // las sucursales y los chats reales que ya existan; solo borra los datos
   // operativos de ejemplo. Si no hay equipo aún (instalación nueva), siembra limpio.
-  if((DB._dataVersion||0) < DATA_VERSION){
+  // NUNCA correr esta rama destructiva sobre datos ENTRANTES de la nube (remote=true):
+  // un dispositivo viejo con _dataVersion<actual podría vaciar el estado de todos.
+  if(!remote && (DB._dataVersion||0) < DATA_VERSION){
     if(!Array.isArray(DB.users) || DB.users.length===0){
       DB = seed(); // instalación nueva: datos limpios de fábrica
     } else {
@@ -431,6 +463,8 @@ function migrate(){
   if((DB.audit||[]).length>2000){ DB.audit=DB.audit.slice(0,2000); ch=true; }
   if((DB.notifs||[]).length>400){ DB.notifs=DB.notifs.slice(0,400); ch=true; }
   if((DB.invMoves||[]).length>3000){ DB.invMoves=DB.invMoves.slice(0,3000); ch=true; }
+  // Podar tombstones viejos (>60 días): para entonces el borrado ya se sincronizó en todos lados
+  if(DB._tomb){ const cut=now()-60*86400000; for(const k in DB._tomb){ if(DB._tomb[k]<cut){ delete DB._tomb[k]; ch=true; } } }
   if(ch) save();
 }
 
@@ -1097,7 +1131,7 @@ async function delTask(id){
   const t=DB.tasks.find(x=>x.id===id); if(!t) return;
   if(!(t.fromId===SES.userId||isAdmin())){ toast('Solo quien la asignó o Administración puede eliminarla','err'); return; }
   if(!await confirmDialog(`Se elimina la tarea "${t.title}" con su historial y comentarios. No se puede deshacer.`,{title:'¿Eliminar tarea?',okText:'Sí, eliminar'})) return;
-  DB.tasks=DB.tasks.filter(x=>x.id!==id);
+  tomb(id); DB.tasks=DB.tasks.filter(x=>x.id!==id);
   audit('tarea',`eliminó la tarea "${t.title}"`,t.sucursalId);
   closeModal(); toast('Tarea eliminada','ok'); save(); render();
 }
@@ -1549,7 +1583,7 @@ async function delPedido(id){
   const p=DB.pedidos.find(x=>x.id===id); if(!p) return;
   if(!(p.fromId===SES.userId||isAdmin())){ toast('Solo quien pidió o Administración puede eliminarlo','err'); return; }
   if(!await confirmDialog(`Se elimina el pedido "${p.item}" con su historial. No se puede deshacer.`,{title:'¿Eliminar pedido?',okText:'Sí, eliminar'})) return;
-  DB.pedidos=DB.pedidos.filter(x=>x.id!==id);
+  tomb(id); DB.pedidos=DB.pedidos.filter(x=>x.id!==id);
   audit('pedido',`eliminó el pedido "${p.item}"`,p.sucursalId);
   closeModal(); toast('Pedido eliminado','ok'); save(); render();
 }
@@ -2336,7 +2370,7 @@ async function leaveGroup(id){
 async function delGroup(id){
   const c=DB.chats.find(x=>x.id===id); if(!c||!canManageGroup(c)) return;
   if(!await confirmDialog(`Se elimina el grupo "${c.name}" y todos sus mensajes, para todos. No se puede deshacer.`,{title:'¿Eliminar grupo?',okText:'Sí, eliminar'})) return;
-  DB.chats=DB.chats.filter(x=>x.id!==id);
+  tomb(id); DB.chats=DB.chats.filter(x=>x.id!==id);
   audit('chat',`eliminó el grupo "${c.name}"`,c.sucursalId);
   closeModal(); SES.activeChat=null; toast('Grupo eliminado','ok'); save(); render();
 }
@@ -3010,7 +3044,7 @@ async function delRecipe(id){
   if(!canRecipeEdit()) return;
   const r=DB.recipes.find(x=>x.id===id); if(!r) return;
   if(!await confirmDialog(`Se elimina la receta "${r.name}" del menú. No se puede deshacer.`,{title:'¿Eliminar receta?',okText:'Sí, eliminar'})) return;
-  DB.recipes=DB.recipes.filter(x=>x.id!==id);
+  tomb(id); DB.recipes=DB.recipes.filter(x=>x.id!==id);
   audit('inventario',`eliminó la receta "${r.name}"`,r.sucursalId);
   closeModal(); toast('Receta eliminada','ok'); save(); render();
 }
@@ -3433,7 +3467,7 @@ window.saveShiftOff=saveShiftOff;
 async function delShift(id){
   const s=DB.shifts.find(x=>x.id===id); if(!s) return;
   if(!await confirmDialog('Se quita este turno del horario.',{title:'¿Quitar turno?',okText:'Sí, quitar'})) return;
-  DB.shifts=DB.shifts.filter(x=>x.id!==id);
+  tomb(id); DB.shifts=DB.shifts.filter(x=>x.id!==id);
   audit('horarios',`quitó un turno`,s.sucursalId); save(); render();
 }
 function checkShiftReminders(){
@@ -3823,7 +3857,7 @@ async function delClient(id){
   const c=clientById(id); if(!c) return;
   const n=(DB.reservations||[]).filter(r=>r.clientId===id).length;
   if(!await confirmDialog(`Se elimina ${c.name}.${n?` Sus ${n} reserva(s) registradas se conservan, pero quedan sin cliente vinculado.`:''}`,{title:`¿Eliminar ${c.type==='agencia'?'agencia':'cliente'}?`,okText:'Sí, eliminar'})) return;
-  DB.clients=DB.clients.filter(x=>x.id!==id);
+  tomb(id); DB.clients=DB.clients.filter(x=>x.id!==id);
   audit('reserva',`eliminó ${c.type==='agencia'?'agencia':'cliente'} ${c.name}`);
   closeModal(); toast('Eliminado','ok'); save(); render();
 }
@@ -3946,7 +3980,7 @@ async function delReserv(id){
   const r=DB.reservations.find(x=>x.id===id); if(!r) return;
   if(!await confirmDialog('Se elimina esta reservación.',{title:'¿Eliminar reserva?',okText:'Sí, eliminar'})) return;
   if(r.counted){ const c=clientById(r.clientId); if(c)c.visits=Math.max(0,(c.visits||0)-1); }
-  DB.reservations=DB.reservations.filter(x=>x.id!==id); audit('reserva','eliminó una reserva',r.sucursalId);
+  tomb(id); DB.reservations=DB.reservations.filter(x=>x.id!==id); audit('reserva','eliminó una reserva',r.sucursalId);
   closeModal(); toast('Reserva eliminada','ok'); render();
 }
 function newClientModal(){ openModal(clientForm('Nuevo cliente / agencia',null), true); }
@@ -4223,7 +4257,7 @@ async function souvDelSale(id){
   if(!await confirmDialog(`Se anula la venta de ${(+v.qty||0)}× ${v.name} y se devuelve el inventario.`,{title:'¿Anular esta venta?',okText:'Sí, anular'})) return;
   const p=souvById(v.productId);
   if(p) p.stock=(+p.stock||0)+(+v.qty||0);
-  DB.souvSales=DB.souvSales.filter(x=>x.id!==id);
+  tomb(id); DB.souvSales=DB.souvSales.filter(x=>x.id!==id);
   audit('souvenir',`anuló venta de ${(+v.qty||0)}× ${v.name}`,v.sucursalId);
   toast('Venta anulada · inventario devuelto','ok'); save(); render();
 }
@@ -4307,7 +4341,7 @@ function souvAddStock(id){
 async function delSouv(id){
   if(!canSouvMoney())return; const p=souvById(id); if(!p) return;
   if(!await confirmDialog('Se elimina este souvenir del catálogo (las ventas ya registradas se conservan).',{title:'¿Eliminar producto?',okText:'Sí, eliminar'})) return;
-  DB.souvenirs=DB.souvenirs.filter(x=>x.id!==id); audit('souvenir',`eliminó souvenir ${p.name}`,p.sucursalId);
+  tomb(id); DB.souvenirs=DB.souvenirs.filter(x=>x.id!==id); audit('souvenir',`eliminó souvenir ${p.name}`,p.sucursalId);
   closeModal(); toast('Producto eliminado','ok'); save(); render();
 }
 window.viewSouvenir=viewSouvenir; window.souvSellModal=souvSellModal; window.souvSell=souvSell;
