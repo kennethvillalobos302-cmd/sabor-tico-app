@@ -134,6 +134,8 @@ async function cloudPush(){
    unir por id lo local + lo remoto, en vez de que un blob pise al otro. Así, si dos personas
    escriben casi al mismo tiempo, no se pierde ningún mensaje. Respeta el borrado (deleted) y
    "ocultar para mí" (hiddenFor). Devuelve true si lo local tenía algo que el remoto no tenía. */
+// Un mensaje está borrado si su marca de borrado (delAt, o el boolean viejo) es más reciente que la de restauración
+function msgDeleted(m){ if(!m) return false; const d=Math.max(m.delAt||0, m.deleted?1:0); return d>0 && !((m.revAt||0)>=d); }
 function _unionMsgs(localArr, remoteArr, flags){
   localArr=Array.isArray(localArr)?localArr:[]; remoteArr=Array.isArray(remoteArr)?remoteArr:[];
   const byId={};
@@ -141,7 +143,9 @@ function _unionMsgs(localArr, remoteArr, flags){
   localArr.forEach(m=>{ if(!m||!m.id) return;
     const e=byId[m.id];
     if(e){
-      if(m.deleted && !e.deleted){ e.deleted=true; if(flags) flags.added=true; }   // borrado local que el remoto aún no tenía
+      if((m.delAt||0)>(e.delAt||0)){ e.delAt=m.delAt; if(flags) flags.added=true; }   // borrado (marca temporal, gana la más reciente)
+      if((m.revAt||0)>(e.revAt||0)){ e.revAt=m.revAt; if(flags) flags.added=true; }   // restauración (Deshacer)
+      if(m.deleted && !e.deleted){ e.deleted=true; if(flags) flags.added=true; }       // legado (boolean viejo)
       const before=(e.hiddenFor||[]).length;
       const hf=[...new Set([...(e.hiddenFor||[]),...(m.hiddenFor||[])])];
       if(hf.length){ e.hiddenFor=hf; if(hf.length>before && flags) flags.added=true; } // "ocultar para mí" local no propagado
@@ -164,20 +168,26 @@ function mergeAppendOnly(localDB, remoteDB){
 const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory'];
 // REGLA: cualquier BORRADO DURO de una colección de RECON_COLLS DEBE marcar tomb(id) antes de filtrar,
 // o el borrado "revivirá" desde otro dispositivo. Usá delEntity(coll,id) para no olvidarlo nunca.
+// Borrado = marca en _tomb; "Deshacer" = marca en _revive. Gana la marca MÁS RECIENTE (delete vs revive).
 function tomb(id){ if(!id) return; DB._tomb=DB._tomb||{}; DB._tomb[id]=now(); }
+function reviveId(id){ if(!id) return; DB._revive=DB._revive||{}; DB._revive[id]=now(); }
+function _isDel(tombs, revs, id){ const t=tombs&&tombs[id]; if(!t) return false; const r=(revs&&revs[id])||0; return !(r>=t); }
+function isDel(id){ return _isDel(DB._tomb, DB._revive, id); }
 function delEntity(coll,id){ tomb(id); if(Array.isArray(DB[coll])) DB[coll]=DB[coll].filter(x=>!x||x.id!==id); }
+function _mergeMax(remoteMap, localMap, flags){ const out=Object.assign({}, remoteMap||{}); const lm=localMap||{}; for(const k in lm){ if(!(k in out) || lm[k]>out[k]){ out[k]=lm[k]; if(flags) flags.a=true; } } return out; }
 function reconcileEntities(localDB, remoteDB){
-  let added=false;
-  const tombs=Object.assign({}, remoteDB._tomb||{});
-  const lt=localDB._tomb||{}; for(const k in lt){ tombs[k]=Math.max(tombs[k]||0, lt[k]||0); }  // unir tombstones (marca más reciente)
-  remoteDB._tomb=tombs;
+  const flags={a:false};
+  const tombs=_mergeMax(remoteDB._tomb, localDB._tomb, flags);
+  const revs=_mergeMax(remoteDB._revive, localDB._revive, flags);
+  remoteDB._tomb=tombs; remoteDB._revive=revs;
+  let added=flags.a;
   RECON_COLLS.forEach(coll=>{
     const rArr=Array.isArray(remoteDB[coll])?remoteDB[coll]:[];
     const lArr=Array.isArray(localDB[coll])?localDB[coll]:[];
     const rIds={}; rArr.forEach(o=>{ if(o&&o.id) rIds[o.id]=true; });
     let out=rArr;
-    if(rArr.some(o=>o&&o.id&&tombs[o.id])){ out=rArr.filter(o=>!(o&&o.id&&tombs[o.id])); added=true; }  // propagar borrados
-    lArr.forEach(o=>{ if(o&&o.id && !rIds[o.id] && !tombs[o.id]){ out.push({...o}); added=true; } });     // conservar objetos locales nuevos (clon para evitar aliasing)
+    if(rArr.some(o=>o&&o.id&&_isDel(tombs,revs,o.id))){ out=rArr.filter(o=>!(o&&o.id&&_isDel(tombs,revs,o.id))); added=true; }  // propagar borrados (salvo revividos)
+    lArr.forEach(o=>{ if(o&&o.id && !rIds[o.id] && !_isDel(tombs,revs,o.id)){ out.push({...o}); added=true; } });             // conservar objetos locales nuevos (clon para evitar aliasing)
     remoteDB[coll]=out;
   });
   return added;
@@ -463,8 +473,10 @@ function migrate(remote){
   if((DB.audit||[]).length>2000){ DB.audit=DB.audit.slice(0,2000); ch=true; }
   if((DB.notifs||[]).length>400){ DB.notifs=DB.notifs.slice(0,400); ch=true; }
   if((DB.invMoves||[]).length>3000){ DB.invMoves=DB.invMoves.slice(0,3000); ch=true; }
-  // Podar tombstones viejos (>60 días): para entonces el borrado ya se sincronizó en todos lados
-  if(DB._tomb){ const cut=now()-60*86400000; for(const k in DB._tomb){ if(DB._tomb[k]<cut){ delete DB._tomb[k]; ch=true; } } }
+  // Podar marcas de borrado/restauración viejas (>60 días): para entonces ya se sincronizaron en todos lados
+  { const cut=now()-60*86400000;
+    if(DB._tomb){ for(const k in DB._tomb){ if(DB._tomb[k]<cut){ delete DB._tomb[k]; ch=true; } } }
+    if(DB._revive){ for(const k in DB._revive){ if(DB._revive[k]<cut){ delete DB._revive[k]; ch=true; } } } }
   if(ch) save();
 }
 
@@ -641,6 +653,25 @@ function toast(text, kind=''){
   t.className='toast '+kind; t.textContent=de(text); w.appendChild(t);
   requestAnimationFrame(()=>t.classList.add('show'));
   setTimeout(()=>{ t.classList.remove('show'); setTimeout(()=>t.remove(),300); },3000);
+}
+// Aviso "Eliminado · Deshacer" por unos segundos (red de seguridad al borrar)
+function undoToast(text, onUndo){
+  const w=$('#toastWrap'); if(!w) return;
+  const t=document.createElement('div'); t.className='toast toast-notif';
+  t.innerHTML=`<span class="tn-ico">${svgIcon('trash')}</span><div class="tn-body"><div class="tn-title">Eliminado</div><div class="tn-text">${esc(de(text))}</div></div><button class="tn-undo">Deshacer</button>`;
+  let done=false; const dismiss=()=>{ if(done)return; done=true; t.classList.remove('show'); setTimeout(()=>t.remove(),300); };
+  t.querySelector('.tn-undo').onclick=e=>{ e.stopPropagation(); dismiss(); try{ onUndo(); }catch(_){} };
+  w.appendChild(t); requestAnimationFrame(()=>t.classList.add('show'));
+  setTimeout(dismiss, 6000);
+}
+// Re-inserta un objeto borrado y le quita el tombstone (para el "Deshacer")
+function undoDelete(coll, obj, label, after){
+  undoToast(label, ()=>{
+    reviveId(obj.id);   // marca de restauración (gana sobre el borrado en todos los dispositivos)
+    DB[coll]=DB[coll]||[]; if(!DB[coll].some(x=>x&&x.id===obj.id)) DB[coll].push(obj);
+    if(typeof after==='function'){ try{ after(); }catch(_){} }
+    save(); render(); toast('Restaurado','ok');
+  });
 }
 
 /* ---------------- Modal ---------------- */
@@ -1140,7 +1171,7 @@ async function delTask(id){
   if(!await confirmDialog(`Se elimina la tarea "${t.title}" con su historial y comentarios. No se puede deshacer.`,{title:'¿Eliminar tarea?',okText:'Sí, eliminar'})) return;
   tomb(id); DB.tasks=DB.tasks.filter(x=>x.id!==id);
   audit('tarea',`eliminó la tarea "${t.title}"`,t.sucursalId);
-  closeModal(); toast('Tarea eliminada','ok'); save(); render();
+  closeModal(); save(); render(); undoDelete('tasks', t, t.title);
 }
 window.delTask=delTask;
 
@@ -1592,7 +1623,7 @@ async function delPedido(id){
   if(!await confirmDialog(`Se elimina el pedido "${p.item}" con su historial. No se puede deshacer.`,{title:'¿Eliminar pedido?',okText:'Sí, eliminar'})) return;
   tomb(id); DB.pedidos=DB.pedidos.filter(x=>x.id!==id);
   audit('pedido',`eliminó el pedido "${p.item}"`,p.sucursalId);
-  closeModal(); toast('Pedido eliminado','ok'); save(); render();
+  closeModal(); save(); render(); undoDelete('pedidos', p, p.item);
 }
 window.delPedido=delPedido;
 
@@ -1791,7 +1822,7 @@ function toggleBoardFull(){
 document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElement && boardFull){ boardFull=false; if(SES.userId&&SES.view==='proyectos') render(); } });
 window.toggleBoardFull=toggleBoardFull;
 function projSide(proj){
-  const msgs=(proj.chat||[]).filter(m=>m&&!m.deleted).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
+  const msgs=(proj.chat||[]).filter(m=>m&&!msgDeleted(m)).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
     const media=m.media?(m.media.type==='video'?mediaTag(m.media.mid||m.media.data,'video','controls'):m.media.type==='image'?mediaTag(m.media.mid||m.media.data,'image'):`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
     return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
   const inCall=proj.call&&proj.call.active;
@@ -1998,7 +2029,8 @@ async function delProjMsg(projId,msgId){
   const m=(p.chat||[]).find(x=>x.id===msgId); if(!m) return;
   if(!(m.byId===SES.userId||isAdmin())) return;
   if(!await confirmDialog('Se elimina este mensaje del chat.',{title:'¿Eliminar mensaje?',okText:'Sí, eliminar'})) return;
-  m.deleted=true; audit('proyecto','eliminó un mensaje del chat',p.sucursalId); save(); render();   // borrado suave (sobrevive la reconciliación)
+  m.delAt=now(); audit('proyecto','eliminó un mensaje del chat',p.sucursalId); save(); render();   // borrado suave por marca temporal
+  undoToast('Mensaje', ()=>{ m.revAt=now(); save(); render(); toast('Restaurado','ok'); });
 }
 window.delProjMsg=delProjMsg;
 /* mover el lienzo arrastrando el fondo */
@@ -2117,13 +2149,13 @@ function myChats(){
   return (DB.chats||[]).filter(c=> c && ((c.memberIds||[]).includes(SES.userId)||isAdmin()) )
     .sort((a,b)=>(lastMsgAt(b))-(lastMsgAt(a)));
 }
-function lastMsgAt(c){ const m=(c.msgs||[]).filter(x=>x&&!x.deleted); return m.length?m[m.length-1].at:(c.createdAt||0); }
+function lastMsgAt(c){ const m=(c.msgs||[]).filter(x=>x&&!msgDeleted(x)); return m.length?m[m.length-1].at:(c.createdAt||0); }
 function unreadChats(){
   let n=0; myChats().forEach(c=>{ if(chatUnread(c)>0) n++; }); return n;
 }
 function chatUnread(c){
   const seen=(DB._seen&&DB._seen[SES.userId]&&DB._seen[SES.userId][c.id])||0;
-  return (c.msgs||[]).filter(m=>m && !m.deleted && m.byId!==SES.userId && m.at>seen).length;
+  return (c.msgs||[]).filter(m=>m && !msgDeleted(m) && m.byId!==SES.userId && m.at>seen).length;
 }
 function markSeen(c){
   DB._seen=DB._seen||{}; DB._seen[SES.userId]=DB._seen[SES.userId]||{};
@@ -2150,7 +2182,7 @@ function viewChat(){
   const sel = SES.activeChat || (chats[0]&&chats[0].id);
   SES.activeChat=sel;
   const listHtml = chats.length? chats.map(c=>{
-    const msgs=c.msgs||[]; const last=[...msgs].reverse().find(m=> m && !m.deleted && !((m.hiddenFor||[]).includes(SES.userId)));
+    const msgs=c.msgs||[]; const last=[...msgs].reverse().find(m=> m && !msgDeleted(m) && !((m.hiddenFor||[]).includes(SES.userId)));
     const mem=c.memberIds||[];
     const u=c.type==='group'?null:userById(mem.find(i=>i!==SES.userId));
     const name=c.type==='group'?c.name:(u?u.name:'Chat');
@@ -2168,7 +2200,7 @@ function viewChat(){
     const curMem=cur.memberIds||[];
     const adminPeek = !curMem.includes(SES.userId) && isAdmin();
     const headName = cur.type==='group'?cur.name:(userById(curMem.find(i=>i!==SES.userId))?.name||'Chat');
-    const visibleMsgs=(cur.msgs||[]).filter(m=> m && !m.deleted && !((m.hiddenFor||[]).includes(SES.userId)));
+    const visibleMsgs=(cur.msgs||[]).filter(m=> m && !msgDeleted(m) && !((m.hiddenFor||[]).includes(SES.userId)));
     const msgsHtml = visibleMsgs.map(m=>{
       const u=userById(m.byId); const mine=m.byId===SES.userId;
       const media = m.media ? (m.media.type==='video' ? mediaTag(m.media.mid||m.media.data,'video','controls') : mediaTag(m.media.mid||m.media.data,'image')) : '';
@@ -2259,12 +2291,13 @@ async function delMsg(chatId,msgId,scope){
   const m=(c.msgs||[]).find(x=>x.id===msgId); if(!m) return;
   if(scope==='all'){
     if(!(m.byId===SES.userId || isAdmin())) return;
-    m.deleted=true;   // borrado suave: sobrevive a la reconciliación entre dispositivos
+    m.delAt=now();   // borrado suave por marca temporal: sobrevive la reconciliación y permite Deshacer
     audit('chat','eliminó un mensaje para todos',c.sucursalId);
   } else {
     m.hiddenFor=m.hiddenFor||[]; if(!m.hiddenFor.includes(SES.userId)) m.hiddenFor.push(SES.userId);
   }
-  closeModal(); toast('Mensaje eliminado','ok'); save(); render();
+  closeModal(); save(); render();
+  undoToast('Mensaje', ()=>{ if(scope==='all') m.revAt=now(); else m.hiddenFor=(m.hiddenFor||[]).filter(u=>u!==SES.userId); save(); render(); toast('Restaurado','ok'); });
 }
 window.delMsgMenu=delMsgMenu; window.delMsg=delMsg;
 
@@ -2379,7 +2412,7 @@ async function delGroup(id){
   if(!await confirmDialog(`Se elimina el grupo "${c.name}" y todos sus mensajes, para todos. No se puede deshacer.`,{title:'¿Eliminar grupo?',okText:'Sí, eliminar'})) return;
   tomb(id); DB.chats=DB.chats.filter(x=>x.id!==id);
   audit('chat',`eliminó el grupo "${c.name}"`,c.sucursalId);
-  closeModal(); SES.activeChat=null; toast('Grupo eliminado','ok'); save(); render();
+  closeModal(); SES.activeChat=null; save(); render(); undoDelete('chats', c, 'Grupo '+c.name);
 }
 window.groupInfoModal=groupInfoModal; window.groupRename=groupRename; window.groupAddMembersModal=groupAddMembersModal;
 window.groupAddMembers=groupAddMembers; window.groupRemoveMember=groupRemoveMember; window.leaveGroup=leaveGroup; window.delGroup=delGroup;
@@ -3056,7 +3089,7 @@ async function delRecipe(id){
   if(!await confirmDialog(`Se elimina la receta "${r.name}" del menú. No se puede deshacer.`,{title:'¿Eliminar receta?',okText:'Sí, eliminar'})) return;
   tomb(id); DB.recipes=DB.recipes.filter(x=>x.id!==id);
   audit('inventario',`eliminó la receta "${r.name}"`,r.sucursalId);
-  closeModal(); toast('Receta eliminada','ok'); save(); render();
+  closeModal(); save(); render(); undoDelete('recipes', r, r.name);
 }
 window.delRecipe=delRecipe;
 function prepStep(d){ const el=$('#prepQty'); if(!el)return; let v=(parseInt(el.value,10)||1)+d; v=Math.max(1,v); el.value=v; }
@@ -3478,7 +3511,7 @@ async function delShift(id){
   const s=DB.shifts.find(x=>x.id===id); if(!s) return;
   if(!await confirmDialog('Se quita este turno del horario.',{title:'¿Quitar turno?',okText:'Sí, quitar'})) return;
   tomb(id); DB.shifts=DB.shifts.filter(x=>x.id!==id);
-  audit('horarios',`quitó un turno`,s.sucursalId); save(); render();
+  audit('horarios',`quitó un turno`,s.sucursalId); save(); render(); undoDelete('shifts', s, 'Turno');
 }
 function checkShiftReminders(){
   if(!me()) return;
@@ -3892,7 +3925,7 @@ async function delClient(id){
   if(!await confirmDialog(`Se elimina ${c.name}.${n?` Sus ${n} reserva(s) registradas se conservan, pero quedan sin cliente vinculado.`:''}`,{title:`¿Eliminar ${c.type==='agencia'?'agencia':'cliente'}?`,okText:'Sí, eliminar'})) return;
   tomb(id); DB.clients=DB.clients.filter(x=>x.id!==id);
   audit('reserva',`eliminó ${c.type==='agencia'?'agencia':'cliente'} ${c.name}`);
-  closeModal(); toast('Eliminado','ok'); save(); render();
+  closeModal(); save(); render(); undoDelete('clients', c, c.name);
 }
 window.delClient=delClient;
 const RV_COL={pendiente:'var(--text-soft)',confirmada:'var(--info)',llego:'var(--success)',noshow:'var(--warn)',cancelada:'var(--danger)'};
@@ -4014,7 +4047,7 @@ async function delReserv(id){
   if(!await confirmDialog('Se elimina esta reservación.',{title:'¿Eliminar reserva?',okText:'Sí, eliminar'})) return;
   if(r.counted){ const c=clientById(r.clientId); if(c)c.visits=Math.max(0,(c.visits||0)-1); }
   tomb(id); DB.reservations=DB.reservations.filter(x=>x.id!==id); audit('reserva','eliminó una reserva',r.sucursalId);
-  closeModal(); toast('Reserva eliminada','ok'); render();
+  closeModal(); render(); undoDelete('reservations', r, 'Reserva de '+(r.clientName||''), ()=>{ if(r.counted){ const c=clientById(r.clientId); if(c) c.visits=(c.visits||0)+1; } });
 }
 function newClientModal(){ openModal(clientForm('Nuevo cliente / agencia',null), true); }
 function editClientModal(id){ openModal(clientForm('Editar cliente',clientById(id)), true); }
@@ -4292,7 +4325,7 @@ async function souvDelSale(id){
   if(p) p.stock=(+p.stock||0)+(+v.qty||0);
   tomb(id); DB.souvSales=DB.souvSales.filter(x=>x.id!==id);
   audit('souvenir',`anuló venta de ${(+v.qty||0)}× ${v.name}`,v.sucursalId);
-  toast('Venta anulada · inventario devuelto','ok'); save(); render();
+  save(); render(); undoDelete('souvSales', v, 'Venta '+(v.name||''), ()=>{ const pp=souvById(v.productId); if(pp) pp.stock=Math.max(0,(+pp.stock||0)-(+v.qty||0)); });
 }
 
 /* ---- Alta / edición de producto (solo gerencia) ---- */
@@ -4375,7 +4408,7 @@ async function delSouv(id){
   if(!canSouvMoney())return; const p=souvById(id); if(!p) return;
   if(!await confirmDialog('Se elimina este souvenir del catálogo (las ventas ya registradas se conservan).',{title:'¿Eliminar producto?',okText:'Sí, eliminar'})) return;
   tomb(id); DB.souvenirs=DB.souvenirs.filter(x=>x.id!==id); audit('souvenir',`eliminó souvenir ${p.name}`,p.sucursalId);
-  closeModal(); toast('Producto eliminado','ok'); save(); render();
+  closeModal(); save(); render(); undoDelete('souvenirs', p, p.name);
 }
 window.viewSouvenir=viewSouvenir; window.souvSellModal=souvSellModal; window.souvSell=souvSell;
 window.souvNewModal=souvNewModal; window.souvEditModal=souvEditModal; window.saveSouv=saveSouv;
