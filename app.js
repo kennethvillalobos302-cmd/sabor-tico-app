@@ -57,6 +57,8 @@ const roleInfo = r => ROLES[r] || {label:r,short:r,color:'#777'};
 const $ = s => document.querySelector(s);
 function uid(){ try{ if(self.crypto && crypto.randomUUID) return crypto.randomUUID(); }catch(_){} return Date.now().toString(36)+Math.random().toString(36).slice(2,12); }
 const now = () => Date.now();
+// Carrera contra un tiempo límite: evita que el arranque se quede colgado sin internet
+function withTimeout(p, ms){ let t; const to=new Promise((_,rej)=>{ t=setTimeout(()=>rej(new Error('timeout')), ms); }); return Promise.race([ Promise.resolve(p).finally(()=>clearTimeout(t)), to ]); }
 // Escape para HTML. Incluye comilla simple y backtick: así también es seguro dentro de
 // atributos con comilla simple y de los onclick="...('...')" que usa la app. (de() NO escapa: solo quita emojis)
 const esc = s => (s==null?'':String(s)).replace(/[&<>"'`]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;','`':'&#96;'}[c]));
@@ -151,12 +153,13 @@ async function cloudInit(){
   // Iniciar sesión anónima ANTES de tocar la base: así las reglas seguras (auth != null)
   // dejan leer/escribir sin cambiar el login con PIN. Si la autenticación anónima aún no está
   // activada en Firebase, no bloqueamos: seguimos (compatibilidad mientras se publica el cambio).
-  try{ if(firebase.auth){ await firebase.auth().signInAnonymously(); } }
-  catch(e){ console.warn('auth anónima no disponible todavía', e && e.code); }
+  try{ if(firebase.auth){ await withTimeout(firebase.auth().signInAnonymously(), 6000); } }
+  catch(e){ console.warn('auth anónima no disponible todavía', e && (e.code||e.message)); }
   fbdb = firebase.database();
-  let val=null;
-  try{ const snap=await fbdb.ref('state').get(); val = snap && snap.exists() ? snap.val() : null; }
+  let val=null, getFailed=false;
+  try{ const snap=await withTimeout(fbdb.ref('state').get(), 6000); val = snap && snap.exists() ? snap.val() : null; }
   catch(e){
+    getFailed=true;
     console.warn('cloud load', e);
     // Permiso denegado = reglas cerradas pero falta activar el inicio anónimo en Firebase.
     if(e && (e.code==='PERMISSION_DENIED' || /permission/i.test(String(e.message||e)))){
@@ -173,7 +176,10 @@ async function cloudInit(){
   migrate();
   try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
   cloudOn=true;
-  if(!(val && val.data) || _migrateReset || _bootMerged){ await cloudPush(); _migrateReset=false; }
+  // Subir solo si el servidor está REALMENTE vacío (lectura OK sin datos) o tras migración/merge.
+  // NUNCA si la lectura falló/expiró (sin señal): así no se cuelga el arranque (set() offline nunca
+  // resuelve) ni se pisan datos buenos del servidor que no pudimos leer. Fire-and-forget (sin await).
+  if(!getFailed && (!(val && val.data) || _migrateReset || _bootMerged)){ cloudPush(); _migrateReset=false; }
   try{
     fbdb.ref('state').on('value', (snap)=>{
       const v=snap.val(); if(!v || !v.data || v.client===CLIENT_ID) return;
@@ -4529,4 +4535,10 @@ impInput.addEventListener('change',async e=>{
   if(ses && userById(ses)){ SES.userId=ses; notifBaseline(); $('#loginScreen').style.display='none'; $('#app').classList.add('on'); render(); maybeForcePinChange(); }
   requestAnimationFrame(()=>requestAnimationFrame(()=>document.body.classList.remove('app-loading')));
 })();
+
+/* Service worker: la app abre y muestra lo último cargado aunque no haya internet.
+   Solo en http(s) (en Vercel); en modo local (file://) no aplica. */
+if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
+  window.addEventListener('load', ()=>{ navigator.serviceWorker.register('sw.js').catch(e=>console.warn('SW', e)); });
+}
 /* Sabor Tico App — fin */
