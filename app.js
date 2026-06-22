@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v24 · cada cambio sincroniza';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v25 · sin datos de ejemplo offline';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -12,7 +12,7 @@ const DATA_VERSION = 2;
 let _migrateReset = false;
 const FB = (window.SABOR_CLOUD && window.SABOR_CLOUD.databaseURL) ? window.SABOR_CLOUD : null;
 const CLIENT_ID = Math.random().toString(36).slice(2);
-let fbdb=null, cloudOn=false, _applyingRemote=false, _saveTimer=null;
+let fbdb=null, cloudOn=false, _applyingRemote=false, _saveTimer=null, _cloudFailed=false;
 
 /* ---------------- Roles ---------------- */
 const ROLES = {
@@ -269,7 +269,14 @@ async function cloudInit(){
     try{ const raw=localStorage.getItem(DB_KEY); if(raw){ const localDB=JSON.parse(raw); if(localDB && Array.isArray(localDB.users)) _bootMerged=reconcile(localDB, val.data); } }catch(_){}
     DB=val.data;
   }
-  else { const raw=localStorage.getItem(DB_KEY); try{ DB = raw?JSON.parse(raw):seed(); }catch(_){ DB=seed(); } }
+  else {
+    const raw=localStorage.getItem(DB_KEY);
+    // Si NO se pudo leer la nube (sin conexión/auth/reglas) NO sembramos datos de ejemplo:
+    // usamos lo local si hay, o una base VACÍA, y esperamos a conectar (evita duplicados/contaminación).
+    if(raw){ try{ DB=JSON.parse(raw); }catch(_){ DB = getFailed?emptyDB():seed(); } }
+    else { DB = getFailed ? emptyDB() : seed(); }
+    if(getFailed) _cloudFailed=true;
+  }
   migrate();
   rebuildEntSnap();   // base para detectar ediciones locales futuras
   try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
@@ -364,6 +371,12 @@ function seed(){
   function card(text,byId){ return {id:uid(),type:'text',text,img:null,byId,at:now()-3600e3*10}; }
   function msg(byId,text){ return {id:uid(),byId,text,at:now()-3600e3*3}; }
 }
+
+// Base VACÍA (sin equipo ni datos de ejemplo): se usa cuando hay nube configurada pero NO se pudo
+// leer (sin conexión / auth / reglas). Evita inventar datos de ejemplo que contaminen la base real.
+function emptyDB(){ return { _dataVersion:DATA_VERSION, sucursales:[], users:[], inventory:[],
+  invCats:JSON.parse(JSON.stringify(DEFAULT_CATS)), invMoves:[], recipes:[], shifts:[], tasks:[], pedidos:[],
+  projects:[], chats:[], notifs:[], audit:[], clients:[], reservations:[], souvenirs:[], souvSales:[], attendance:[] }; }
 
 /* ---------------- Generadores de datos (inventario / recetas / turnos) ---------------- */
 const money = n => '₡'+Math.round(n||0).toLocaleString('es-CR');
@@ -4548,6 +4561,7 @@ $('#userBtn').addEventListener('click',e=>{
     <button class="um-item" onclick="document.getElementById('importFile').click()">${svgIcon('down')} Restaurar respaldo</button>
     ${isAdmin()?`<button class="um-item" onclick="autoBackupsModal()">${svgIcon('clipboard')} Respaldos automáticos</button>`:''}
     ${isAdmin()?`<button class="um-item" onclick="errorsModal()">${svgIcon('info')} Errores recientes</button>`:''}
+    ${isAdmin()?`<button class="um-item" onclick="reloadFromCloud()">${svgIcon('down')} Recargar desde la nube</button>`:''}
     <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>
     <div style="padding:8px 15px;font-size:10.5px;color:var(--text-dim);text-align:center;border-top:1px solid var(--border-soft)">${esc(APP_VERSION)}</div>`;
   m.classList.toggle('on');
@@ -4653,6 +4667,15 @@ function errorsModal(){
 }
 function clearErrors(){ try{ localStorage.removeItem(ERRLOG_KEY); }catch(_){} closeModal(); toast('Registro de errores borrado','ok'); }
 window.errorsModal=errorsModal; window.clearErrors=clearErrors;
+// Recargar desde la nube: descarta lo local de ESTE dispositivo y vuelve a leer todo del servidor.
+// Útil para limpiar duplicados/datos de ejemplo locales. No toca la nube.
+async function reloadFromCloud(){
+  if(!isAdmin()) return; if($('#userMenu')) $('#userMenu').classList.remove('on');
+  if(!await confirmDialog('Descarta los datos locales de ESTE dispositivo y vuelve a leer todo desde la nube (sirve para limpiar duplicados/datos de ejemplo de este equipo). No afecta los datos en la nube. Hacelo con conexión.',{title:'¿Recargar desde la nube?',okText:'Sí, recargar'})) return;
+  try{ localStorage.removeItem(DB_KEY); }catch(_){}
+  location.reload();
+}
+window.reloadFromCloud=reloadFromCloud;
 
 /* ---- Búsqueda global (tareas, pedidos, reservas, inventario, personas…) ---- */
 function globalSearchModal(){
@@ -4735,6 +4758,13 @@ function renderLogin(){
   ensureCollections();
   const area=$('#loginArea'); if(!area) return;
   const sucs=DB.sucursales||[];
+  // Sin conexión a la nube y sin datos: avisar claro (NO mostrar datos de ejemplo inventados)
+  if(_cloudFailed && !sucs.length && !(DB.users||[]).length){
+    area.innerHTML=`<div class="login-label">Sin conexión a la nube</div>
+      <div class="login-hint" style="text-align:left;line-height:1.7">No se pudo conectar a la base. Suele ser porque el dominio no está autorizado en Firebase (Authentication → Settings → Authorized domains) o no está activado el inicio anónimo. Revisá tu internet y la configuración (ver SEGURIDAD.md).</div>
+      <button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="location.reload()">Reintentar</button>`;
+    return;
+  }
   // Paso 1: elegir sucursal (si hay más de una)
   if(!loginSuc && sucs.length>1){
     area.innerHTML=`<div class="login-label">Elegí la sucursal</div>
