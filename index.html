@@ -1025,6 +1025,16 @@ img.media-loading,video.media-loading{min-width:120px;min-height:90px;border-rad
 img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:none;background:var(--bg-soft);
   position:relative}
 
+/* ---------- BÚSQUEDA GLOBAL ---------- */
+.gs-group{font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);padding:14px 2px 6px}
+.gs-row{display:flex;align-items:center;gap:11px;width:100%;text-align:left;padding:10px 11px;border-radius:var(--r-md);
+  background:var(--bg-soft);border:1px solid var(--border-soft);margin-bottom:6px;transition:border-color var(--t-fast),transform var(--t-fast)}
+.gs-row:hover{border-color:var(--accent-line);transform:translateY(-1px)}
+.gs-ico{flex:0 0 auto;width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;background:var(--accent-soft);color:var(--accent)}
+.gs-tx{min-width:0;display:flex;flex-direction:column;gap:1px}
+.gs-t{font-weight:650;font-size:13.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gs-s{font-size:11.5px;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
 /* ---------- NOTIF PANEL / USER MENU ---------- */
 .notif-panel{position:absolute;top:58px;right:18px;width:344px;max-width:calc(100vw - 36px);background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--e3);z-index:40;max-height:70vh;overflow-y:auto;display:none}
 .notif-panel.on{display:block;animation:pop .18s var(--ease-out) both}
@@ -1195,6 +1205,7 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
       <div class="suc-menu" id="sucMenu"></div>
     </div>
     <div class="tb-spacer"></div>
+    <button class="icon-btn" id="searchBtn" aria-label="Buscar" title="Buscar" onclick="globalSearchModal()"><svg class="icon" viewBox="0 0 24 24"><use href="#i-search"/></svg></button>
     <button class="icon-btn" id="notifBtn" aria-label="Notificaciones" title="Notificaciones"><svg class="icon" viewBox="0 0 24 24"><use href="#i-bell"/></svg><span class="badge hidden" id="notifBadge">0</span></button>
     <div class="tb-user" id="userBtn" role="button" tabindex="0" aria-label="Tu cuenta y opciones">
       <div class="av" id="tbAv"></div>

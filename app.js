@@ -4515,6 +4515,61 @@ function errorsModal(){
 function clearErrors(){ try{ localStorage.removeItem(ERRLOG_KEY); }catch(_){} closeModal(); toast('Registro de errores borrado','ok'); }
 window.errorsModal=errorsModal; window.clearErrors=clearErrors;
 
+/* ---- Búsqueda global (tareas, pedidos, reservas, inventario, personas…) ---- */
+function globalSearchModal(){
+  if($('#notifPanel')) $('#notifPanel').classList.remove('on'); if($('#userMenu')) $('#userMenu').classList.remove('on');
+  openModal(`<div class="modal-head"><h3>Buscar</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <input class="input" id="gsInput" placeholder="Buscar tareas, pedidos, reservas, productos, personas…" autocomplete="off" oninput="renderGlobalSearch()">
+      <div id="gsResults" style="margin-top:14px"><div class="page-sub">Escribí al menos 2 letras…</div></div>
+    </div>`, true);
+  const i=$('#gsInput'); if(i) i.focus();
+}
+function gsItem(ico, title, sub, onclick){
+  return `<button class="gs-row" onclick="${onclick}"><span class="gs-ico">${svgIcon(ico,'icon icon-sm')}</span><span class="gs-tx"><span class="gs-t">${esc(title)}</span>${sub?`<span class="gs-s">${esc(sub)}</span>`:''}</span></button>`;
+}
+function renderGlobalSearch(){
+  const box=$('#gsResults'); if(!box) return;
+  const q=($('#gsInput')?$('#gsInput').value:'').trim().toLowerCase();
+  if(q.length<2){ box.innerHTML=`<div class="page-sub">Escribí al menos 2 letras…</div>`; return; }
+  const hit=s=>String(s||'').toLowerCase().includes(q);
+  const cv=v=>(ROLE_NAV[me().role]||[]).includes(v);
+  let html='';
+  const tasks=(DB.tasks||[]).filter(t=>t&&inScope(t.sucursalId)&&(hit(t.title)||hit(t.desc))).slice(0,8);
+  if(tasks.length) html+=`<div class="gs-group">Tareas</div>`+tasks.map(t=>gsItem('check',t.title,statusLabel(t.status),`gsGo('tareas','taskDetail','${t.id}')`)).join('');
+  const peds=(DB.pedidos||[]).filter(p=>p&&inScope(p.sucursalId)&&(hit(p.item)||hit(p.desc))).slice(0,8);
+  if(peds.length) html+=`<div class="gs-group">Pedidos</div>`+peds.map(p=>gsItem('box',p.item,pedInfo(p.area).short,`gsGo('pedidos','pedidoDetail','${p.id}')`)).join('');
+  if(cv('reservas')){
+    const rvs=(DB.reservations||[]).filter(r=>r&&inScope(r.sucursalId)&&hit(r.clientName)).slice(0,8);
+    if(rvs.length) html+=`<div class="gs-group">Reservas</div>`+rvs.map(r=>gsItem('reserva',r.clientName,fmtResDate(r.resDate)+' '+fmt12(r.resTime),`gsGo('reservas','reservDetail','${r.id}')`)).join('');
+    const cls=(DB.clients||[]).filter(c=>c&&hit(c.name)).slice(0,6);
+    if(cls.length) html+=`<div class="gs-group">Clientes / Agencias</div>`+cls.map(c=>gsItem('users',c.name,c.type||'',`gsGo('reservas','','')`)).join('');
+  }
+  if(cv('inventario')){
+    const inv=(DB.inventory||[]).filter(p=>p&&inScope(p.sucursalId)&&hit(p.name)).slice(0,8);
+    if(inv.length) html+=`<div class="gs-group">Inventario</div>`+inv.map(p=>gsItem('box',p.name,p.stock+' '+p.unit,`gsGo('inventario','','')`)).join('');
+  }
+  if(cv('recetas')){
+    const recs=(DB.recipes||[]).filter(r=>r&&hit(r.name)).slice(0,6);
+    if(recs.length) html+=`<div class="gs-group">Recetas</div>`+recs.map(r=>gsItem('clipboard',r.name,'',`gsGo('recetas','','')`)).join('');
+  }
+  if(cv('personal')){
+    const ppl=(DB.users||[]).filter(u=>u&&u.active&&inScope(u.sucursalId)&&hit(u.name)).slice(0,6);
+    if(ppl.length) html+=`<div class="gs-group">Personas</div>`+ppl.map(u=>gsItem('users',u.name,roleInfo(u.role).short,`gsGo('personal','','')`)).join('');
+  }
+  if(cv('souvenir')){
+    const sv=(DB.souvenirs||[]).filter(p=>p&&inScope(p.sucursalId)&&hit(p.name)).slice(0,6);
+    if(sv.length) html+=`<div class="gs-group">Souvenirs</div>`+sv.map(p=>gsItem('box',p.name,'',`gsGo('souvenir','','')`)).join('');
+  }
+  box.innerHTML = html || `<div class="empty" style="padding:24px"><div class="em-ico">${svgIcon('search','icon icon-lg')}</div><div class="em-d">Nada encontrado para "${esc(q)}"</div></div>`;
+}
+function gsGo(view, detailFn, id){
+  closeModal();
+  if(view){ SES.view=view; render(); }
+  if(detailFn && id && typeof window[detailFn]==='function'){ try{ window[detailFn](id); }catch(_){} }
+}
+window.globalSearchModal=globalSearchModal; window.renderGlobalSearch=renderGlobalSearch; window.gsGo=gsGo;
+
 /* =====================================================================
    SUCURSAL switch
    ===================================================================== */
