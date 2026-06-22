@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v31 · asistencia con varias marcas + reporte';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v32 · Equipo unificado (con Personal y RRHH)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -896,7 +896,6 @@ const NAV_DEF = {
   inventario:{label:'Inventario',  ico:'chart' },
   recetas:  { label:'Recetas',     ico:'utensils' },
   horarios: { label:'Horarios',    ico:'calendar' },
-  personal: { label:'Personal',    ico:'user' },
   proyectos:{ label:'Proyectos',   ico:'clipboard' },
   chat:     { label:'Mensajes',    ico:'message' },
   reportes: { label:'Reportes',    ico:'trend' },
@@ -907,14 +906,14 @@ const NAV_DEF = {
 };
 // Menú personalizado por puesto
 const ROLE_NAV = {
-  admin:       ['inicio','tareas','pedidos','reservas','souvenir','inventario','recetas','horarios','personal','proyectos','chat','reportes','equipo','auditoria'],
+  admin:       ['inicio','tareas','pedidos','reservas','souvenir','inventario','recetas','horarios','proyectos','chat','reportes','equipo','auditoria'],
   chef:        ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
   cocinero:    ['inicio','tareas','pedidos','inventario','recetas','horarios','proyectos','chat'],
   jefe_salon:  ['inicio','tareas','pedidos','reservas','souvenir','inventario','horarios','proyectos','chat'],
   salonero:    ['inicio','tareas','pedidos','reservas','souvenir','horarios','proyectos','chat'],
   proveeduria: ['inicio','tareas','pedidos','inventario','horarios','proyectos','chat'],
-  contarh:     ['inicio','tareas','pedidos','inventario','personal','horarios','reportes','proyectos','chat'],
-  gerencia_exp:['inicio','tareas','pedidos','reservas','souvenir','horarios','personal','proyectos','chat','reportes'],
+  contarh:     ['inicio','tareas','pedidos','inventario','equipo','horarios','reportes','proyectos','chat'],
+  gerencia_exp:['inicio','tareas','pedidos','reservas','souvenir','horarios','equipo','proyectos','chat','reportes'],
   gerencia_data:['inicio','tareas','pedidos','reservas','souvenir','inventario','proyectos','chat','reportes'],
   bartender:   ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
 };
@@ -1029,7 +1028,7 @@ function render(){
 
   const v=$('#view');
   const map={ inicio:viewInicio, tareas:viewTareas, pedidos:viewPedidos, inventario:viewInventario,
-    recetas:viewRecetas, horarios:viewHorarios, personal:viewPersonal, proyectos:viewProyectos,
+    recetas:viewRecetas, horarios:viewHorarios, personal:viewEquipo, proyectos:viewProyectos,
     chat:viewChat, reportes:viewReportes, reservas:viewReservas, souvenir:viewSouvenir, equipo:viewEquipo, auditoria:viewAuditoria };
   // si el puesto no tiene acceso a la vista actual, volver a inicio
   if(!(ROLE_NAV[me().role]||[]).includes(SES.view)) SES.view='inicio';
@@ -2528,33 +2527,48 @@ window.groupAddMembers=groupAddMembers; window.groupRemoveMember=groupRemoveMemb
    VISTA: EQUIPO (admin)
    ===================================================================== */
 function viewEquipo(){
-  const guide=sectionGuide('equipo','Gestión del equipo',`
-    Acá <b>Administración</b> maneja los usuarios: quién entra, con qué puesto y en cuál sucursal.
-    <div class="tip"><b>Cuidado:</b> el puesto define qué puede ver y hacer cada quien. Asignalo con criterio.</div>`);
-  let html=`<div class="page-head"><div><div class="page-title">Equipo</div><div class="page-sub">${DB.users.filter(u=>u.active).length} personas · ${DB.sucursales.length} sucursales</div></div>
+  const manage=isAdmin();                                                   // crear / editar / borrar
+  const seeRRHH=hasRole('admin','contarh','gerencia_exp','gerencia_data');  // ver solicitudes a RRHH
+  const cols=manage?5:3;
+  const guide=sectionGuide('equipo','Equipo y Personal',`
+    Directorio del equipo <b>por sucursal y departamento</b>${seeRRHH?', y las <b>solicitudes a RRHH</b> (permisos, adelantos, vacaciones)':''}.
+    ${manage?'<div class="tip"><b>Administración:</b> creás, editás y eliminás usuarios y sucursales. El puesto define qué ve y hace cada quien — asignalo con criterio.</div>':'<div class="tip"><b>Tip:</b> es solo de consulta para tu rol. Para altas/cambios, escribile a Administración.</div>'}`);
+  const peopleScope=DB.users.filter(u=>u.active && inScope(u.sucursalId));
+  const sucScope=DB.sucursales.filter(s=>inScope(s.id));
+  let html=`<div class="page-head"><div><div class="page-title">Equipo</div><div class="page-sub">${peopleScope.length} personas · ${sucScope.length} ${sucScope.length===1?'sucursal':'sucursales'}</div></div>
     <div class="ph-spacer"></div>
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="newSucModal()">+ Sucursal</button>
-    <button class="btn btn-primary" style="flex:0 0 auto" onclick="newUserModal()">+ Usuario</button></div>`;
+    ${manage?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="newSucModal()">+ Sucursal</button>
+    <button class="btn btn-primary" style="flex:0 0 auto" onclick="newUserModal()">+ Persona</button>`:''}</div>`;
   html+=guide;
   const validIds=new Set(['all',...DB.sucursales.map(s=>s.id)]);
-  const orphans=DB.users.filter(u=>!validIds.has(u.sucursalId)).sort(byDept);
-  const groups=[{id:'all',name:'Todas las sucursales (global)'},...DB.sucursales];
+  const orphans=manage?DB.users.filter(u=>!validIds.has(u.sucursalId)).sort(byDept):[];
+  const groups=[{id:'all',name:'Todas las sucursales (global)'},...sucScope];
   if(orphans.length) groups.push({id:'__orphan',name:'Sin sucursal (revisar / eliminar)'});
   groups.forEach(g=>{
-    const people=g.id==='__orphan'?orphans:DB.users.filter(u=>u.sucursalId===g.id).sort(byDept);
-    const editBtn=(g.id!=='all'&&g.id!=='__orphan')?`<button class="icon-btn" style="width:32px;height:32px" title="Renombrar sucursal" onclick="sucEditModal('${g.id}')">${svgIcon('edit','icon icon-sm')}</button><button class="icon-btn" style="width:32px;height:32px" title="Eliminar sucursal" onclick="delSuc('${g.id}')">${svgIcon('trash','icon icon-sm')}</button>`:'';
+    const people=g.id==='__orphan'?orphans:DB.users.filter(u=>u.sucursalId===g.id && (manage||u.active)).sort(byDept);
+    if(g.id==='all' && !people.length) return;                              // no mostrar el grupo global vacío
+    const editBtn=(manage&&g.id!=='all'&&g.id!=='__orphan')?`<button class="icon-btn" style="width:32px;height:32px" title="Renombrar sucursal" onclick="sucEditModal('${g.id}')">${svgIcon('edit','icon icon-sm')}</button><button class="icon-btn" style="width:32px;height:32px" title="Eliminar sucursal" onclick="delSuc('${g.id}')">${svgIcon('trash','icon icon-sm')}</button>`:'';
     html+=`<div class="page-head" style="margin:20px 0 10px;align-items:center"><div class="page-title" style="font-size:16px;display:flex;align-items:center;gap:8px">${svgIcon('pin','icon')} ${esc(g.name)}</div><div class="page-sub" style="margin:0 0 0 6px">· ${people.length} ${people.length===1?'persona':'personas'}</div><div class="ph-spacer"></div>${editBtn}</div>`;
     if(!people.length){ html+=`<div class="card" style="color:var(--text-soft);font-size:13px">Sin personas en esta sucursal.</div>`; return; }
-    html+=`<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Teléfono</th><th>Estado</th><th></th></tr></thead><tbody>`;
-    html+=people.map(u=>`<tr>
-      <td><div style="display:flex;align-items:center;gap:10px">${avatarHTML(u)}<div><div style="font-weight:600">${esc(u.name)}</div><div style="font-size:11px;color:var(--text-soft)">${u.mustChangePin?'PIN temporal · sin definir':'PIN ••••'}</div></div></div></td>
+    html+=`<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Teléfono</th>${manage?'<th>Estado</th><th></th>':''}</tr></thead><tbody>`;
+    let lastD=-1;
+    html+=people.map(u=>{
+      const dr=deptRank(u.role); let head='';
+      if(dr!==lastD){ lastD=dr; head=`<tr class="grp-row"><td colspan="${cols}">${esc(deptLabel(u.role))}</td></tr>`; }
+      return head+`<tr>
+      <td><div style="display:flex;align-items:center;gap:10px">${avatarHTML(u)}<div><div style="font-weight:600">${esc(u.name)}</div>${manage?`<div style="font-size:11px;color:var(--text-soft)">${u.mustChangePin?'PIN temporal · sin definir':'PIN ••••'}</div>`:''}</div></div></td>
       <td><span class="role-badge">${roleInfo(u.role).label}</span></td>
       <td>${esc(u.phone||'—')}</td>
-      <td>${u.active?'<span class="pill hecha">Activo</span>':'<span class="pill rechazada">Inactivo</span>'}</td>
-      <td style="text-align:right;white-space:nowrap"><button class="btn btn-ghost" style="padding:6px 10px" onclick="editUserModal('${u.id}')">Editar</button> <button class="icon-btn" style="width:30px;height:30px" title="Eliminar persona" onclick="delUser('${u.id}')">${svgIcon('trash','icon icon-sm')}</button></td>
-    </tr>`).join('');
+      ${manage?`<td>${u.active?'<span class="pill hecha">Activo</span>':'<span class="pill rechazada">Inactivo</span>'}</td>
+      <td style="text-align:right;white-space:nowrap"><button class="btn btn-ghost" style="padding:6px 10px" onclick="editUserModal('${u.id}')">Editar</button> <button class="icon-btn" style="width:30px;height:30px" title="Eliminar persona" onclick="delUser('${u.id}')">${svgIcon('trash','icon icon-sm')}</button></td>`:''}
+    </tr>`;}).join('');
     html+=`</tbody></table></div></div>`;
   });
+  if(seeRRHH){
+    const sols=DB.pedidos.filter(p=>(p.area==='rrhh'||p.area==='contabilidad')&&inScope(p.sucursalId)).sort((a,b)=>b.createdAt-a.createdAt);
+    html+=`<div class="page-head" style="margin:26px 0 10px"><div class="page-title" style="font-size:17px">Solicitudes a RRHH</div><div class="page-sub" style="margin:0 0 0 8px">· ${sols.filter(s=>s.status==='pendiente'||s.status==='proceso').length} activas</div></div>`;
+    html+= sols.length? sols.map(pedidoRow).join('') : emptyState('👤','Sin solicitudes','Permisos, adelantos y vacaciones aparecen acá.');
+  }
   return html;
 }
 function newUserModal(){
@@ -2698,7 +2712,7 @@ function rolePanel(){
     const sol=(DB.pedidos||[]).filter(p=>(p.area==='rrhh'||p.area==='contabilidad')&&(p.status==='pendiente'||p.status==='proceso')&&inScope(p.sucursalId)).length;
     const val=invInScope().reduce((s,p)=>s+p.stock*p.cost,0);
     return wrap('Tu puesto · Contabilidad y Recursos', `${sol} solicitud(es) por atender · inventario ${money(val)}`,
-      b('Solicitudes',"go('pedidos')")+b('Personal',"go('personal')")+b('Horarios',"go('horarios')")+b('Reportes',"go('reportes')"));
+      b('Solicitudes',"go('pedidos')")+b('Equipo',"go('equipo')")+b('Horarios',"go('horarios')")+b('Reportes',"go('reportes')"));
   }
   if(r==='gerencia_exp'){
     return wrap('Tu puesto · Gerencia de Experiencia','Calidad de servicio, equipo y turnos',
@@ -3773,38 +3787,6 @@ window.shiftNewModal=shiftNewModal; window.shiftEditModal=shiftEditModal; window
 window.addBreakRow=addBreakRow; window.renderBreakRows=renderBreakRows;
 
 /* =====================================================================
-   VISTA: PERSONAL (RRHH)
-   ===================================================================== */
-function viewPersonal(){
-  const manage=canPersonal();
-  const people=DB.users.filter(u=>inScope(u.sucursalId)).sort(byDept);
-  const sols=DB.pedidos.filter(p=>(p.area==='rrhh'||p.area==='contabilidad')&&inScope(p.sucursalId)).sort((a,b)=>b.createdAt-a.createdAt);
-  const guide=sectionGuide('personal','Personal y RRHH',`
-    Directorio del equipo y <b>solicitudes a Recursos Humanos</b> (permisos, adelantos, vacaciones).
-    <div class="tip"><b>Tip:</b> respondé las solicitudes desde Pedidos para que quede el registro de quién y cuándo.</div>`);
-  let html=`<div class="page-head"><div><div class="page-title">Personal</div><div class="page-sub">${people.length} personas · ${sols.filter(s=>s.status==='pendiente'||s.status==='proceso').length} solicitudes activas</div></div>
-    <div class="ph-spacer"></div>${manage?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="newUserModal()">+ Persona</button>`:''}</div>`;
-  html+=guide;
-  const pcols=manage?5:4;
-  html+=`<div class="card"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th>Sucursal</th><th>Teléfono</th>${manage?'<th></th>':''}</tr></thead><tbody>`;
-  let lastD=-1;
-  html+=people.map(u=>{
-    const dr=deptRank(u.role); let head='';
-    if(dr!==lastD){ lastD=dr; head=`<tr class="grp-row"><td colspan="${pcols}">${esc(deptLabel(u.role))}</td></tr>`; }
-    return head+`<tr>
-    <td><div style="display:flex;align-items:center;gap:10px">${avatarHTML(u)}<div style="font-weight:600">${esc(u.name)}</div></div></td>
-    <td><span class="role-badge">${roleInfo(u.role).label}</span></td>
-    <td>${esc(sucName(u.sucursalId))}</td>
-    <td>${esc(u.phone||'—')}</td>
-    ${manage?`<td style="text-align:right"><button class="btn btn-ghost" style="padding:6px 10px" onclick="editUserModal('${u.id}')">Editar</button></td>`:''}
-  </tr>`;}).join('');
-  html+=`</tbody></table></div></div>`;
-  html+=`<div class="page-head" style="margin:18px 0 10px"><div class="page-title" style="font-size:17px">Solicitudes a RRHH</div></div>`;
-  html+= sols.length? sols.map(pedidoRow).join('') : emptyState('👤','Sin solicitudes','Permisos, adelantos y vacaciones aparecen acá.');
-  return html;
-}
-
-/* =====================================================================
    VISTA: REPORTES (Gerencia / Contabilidad)
    ===================================================================== */
 let repMonth='';
@@ -4825,9 +4807,9 @@ function renderGlobalSearch(){
     const recs=(DB.recipes||[]).filter(r=>r&&hit(r.name)).slice(0,6);
     if(recs.length) html+=`<div class="gs-group">Recetas</div>`+recs.map(r=>gsItem('clipboard',r.name,'',`gsGo('recetas','','')`)).join('');
   }
-  if(cv('personal')){
+  if(cv('equipo')){
     const ppl=(DB.users||[]).filter(u=>u&&u.active&&inScope(u.sucursalId)&&hit(u.name)).slice(0,6);
-    if(ppl.length) html+=`<div class="gs-group">Personas</div>`+ppl.map(u=>gsItem('users',u.name,roleInfo(u.role).short,`gsGo('personal','','')`)).join('');
+    if(ppl.length) html+=`<div class="gs-group">Personas</div>`+ppl.map(u=>gsItem('users',u.name,roleInfo(u.role).short,`gsGo('equipo','','')`)).join('');
   }
   if(cv('souvenir')){
     const sv=(DB.souvenirs||[]).filter(p=>p&&inScope(p.sucursalId)&&hit(p.name)).slice(0,6);
