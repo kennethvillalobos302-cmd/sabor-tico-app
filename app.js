@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v47 · pizarra: deshacer (Ctrl+Z)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v48 · deshacer tambien borrar tarjeta';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2111,7 +2111,9 @@ window.editCard=editCard; window.saveCardEdit=saveCardEdit;
 async function delCard(projId,cardId){
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
   if(!await confirmDialog('Se quita esta tarjeta de la pizarra.',{title:'¿Quitar tarjeta?',okText:'Sí, quitar'})) return;
+  const card=p.cards.find(c=>c.id===cardId);
   p.cards=p.cards.filter(c=>c.id!==cardId);
+  if(card) boardHistPush(()=>{ const pp=DB.projects.find(x=>x.id===projId); if(pp && !pp.cards.some(c=>c.id===card.id)) pp.cards.push(card); });
   audit('proyecto',`quitó una tarjeta de "${p.name}"`,p.sucursalId);
   save(); render();
 }
