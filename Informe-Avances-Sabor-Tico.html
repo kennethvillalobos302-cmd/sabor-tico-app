@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sabor Tico App · Informe de avances (21–22 jun 2026)</title>
+<title>Sabor Tico App · Informe de avances (21–23 jun 2026)</title>
 <style>
 :root{
   --bg:#141010; --bg-elev:#1b1514; --bg-card:#211917; --bg-soft:#2b211e;
@@ -68,7 +68,7 @@ section{padding:48px 0}
 .lead{color:var(--text-soft);font-size:15.5px;max-width:640px;margin-bottom:30px}
 
 /* ---------- PARTES DE TRABAJO ---------- */
-.parts{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.parts{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px}
 .part{background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--r-lg);padding:26px;box-shadow:var(--e2)}
 .part .ph{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
 .part .day{font-size:13px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:var(--text-dim)}
@@ -138,22 +138,22 @@ footer b{color:var(--text-soft)}
     <div class="logo">🍽️</div>
     <div class="bn">Sabor Tico App<small>Gestión integral del restaurante</small></div>
   </div>
-  <h1>Informe de avances<br><span class="g">21 – 22 de junio 2026</span></h1>
-  <p>Resumen del proceso de mejora de la aplicación durante estos dos días: nuevas funciones, arreglos, seguridad y la infraestructura en la nube — con el detalle de las partes de trabajo y las horas dedicadas.</p>
+  <h1>Informe de avances<br><span class="g">21 – 23 de junio 2026</span></h1>
+  <p>Resumen del proceso de mejora de la aplicación durante estos días: nuevas funciones, arreglos, seguridad y la infraestructura en la nube — con el detalle de las partes de trabajo y las horas dedicadas.</p>
   <div class="pills">
-    <span class="pill on">Versión actual · v39</span>
-    <span class="pill">2 días de trabajo</span>
-    <span class="pill">45 publicaciones</span>
+    <span class="pill on">Versión actual · v41</span>
+    <span class="pill">3 días de trabajo</span>
+    <span class="pill">47 publicaciones</span>
     <span class="pill">Sin tiempo fuera de servicio</span>
   </div>
 </header>
 
 <section class="wrap">
   <div class="kpis">
-    <div class="kpi reveal"><div class="num" data-target="20.5" data-dec="1">0</div><div class="lbl">Horas dedicadas</div><div class="sub">en 2 días</div></div>
-    <div class="kpi reveal"><div class="num" data-target="45">0</div><div class="lbl">Cambios publicados</div><div class="sub">entregas a producción</div></div>
+    <div class="kpi reveal"><div class="num" data-target="23" data-dec="0">0</div><div class="lbl">Horas dedicadas</div><div class="sub">en 3 días</div></div>
+    <div class="kpi reveal"><div class="num" data-target="47">0</div><div class="lbl">Cambios publicados</div><div class="sub">entregas a producción</div></div>
     <div class="kpi reveal"><div class="num" data-target="10">0</div><div class="lbl">Áreas mejoradas</div><div class="sub">de la aplicación</div></div>
-    <div class="kpi reveal"><div class="num" data-target="18">0</div><div class="lbl">Mejoras clave</div><div class="sub">nuevas y arregladas</div></div>
+    <div class="kpi reveal"><div class="num" data-target="20">0</div><div class="lbl">Mejoras clave</div><div class="sub">nuevas y arregladas</div></div>
   </div>
 </section>
 
@@ -189,6 +189,17 @@ footer b{color:var(--text-soft)}
         <li><b>Reuniones dentro de la app</b> (voz/video, pantalla compartida) para ~20 personas.</li>
       </ul>
     </div>
+    <div class="part reveal">
+      <div class="ph">
+        <div><div class="day">Día 3 · Martes</div><div class="date">23 de junio</div></div>
+        <div class="hbadge"><b>2,5 h</b><span>HORAS</span></div>
+      </div>
+      <ul>
+        <li><b>Borrar marcas de asistencia</b> (solo Gerencia) para quitar registros de prueba, con sincronización y "Deshacer".</li>
+        <li><b>Código de entrada</b> que cambia cada pocos minutos: el personal solo puede marcar entrada estando en el local.</li>
+        <li>Panel de Gerencia para <b>mostrar y regenerar</b> el código por sucursal.</li>
+      </ul>
+    </div>
   </div>
 </section>
 
@@ -196,7 +207,7 @@ footer b{color:var(--text-soft)}
 <section class="wrap">
   <div class="eyebrow reveal">Distribución del esfuerzo</div>
   <div class="h2 reveal">Horas por área de trabajo</div>
-  <p class="lead reveal">Total: <b>20,5 horas</b> repartidas en las áreas que más impacto tienen para la operación del restaurante.</p>
+  <p class="lead reveal">Total: <b>23,0 horas</b> repartidas en las áreas que más impacto tienen para la operación del restaurante.</p>
   <div class="bars reveal">
     <div class="bar"><div class="bt"><span>Sincronización y nube</span><span class="hr">6,0 h</span></div><div class="track"><div class="fill" data-w="100"></div></div></div>
     <div class="bar"><div class="bt"><span>Reuniones y comunicación</span><span class="hr">3,5 h</span></div><div class="track"><div class="fill" data-w="58"></div></div></div>
@@ -204,7 +215,7 @@ footer b{color:var(--text-soft)}
     <div class="bar"><div class="bt"><span>Equipo y personas</span><span class="hr">3,0 h</span></div><div class="track"><div class="fill" data-w="50"></div></div></div>
     <div class="bar"><div class="bt"><span>Seguridad</span><span class="hr">2,0 h</span></div><div class="track"><div class="fill" data-w="33"></div></div></div>
     <div class="bar"><div class="bt"><span>Proyectos y pizarra</span><span class="hr">1,5 h</span></div><div class="track"><div class="fill" data-w="25"></div></div></div>
-    <div class="bar"><div class="bt"><span>Asistencia y horarios</span><span class="hr">1,0 h</span></div><div class="track"><div class="fill" data-w="17"></div></div></div>
+    <div class="bar"><div class="bt"><span>Asistencia y horarios</span><span class="hr">3,5 h</span></div><div class="track"><div class="fill" data-w="58"></div></div></div>
   </div>
 </section>
 
@@ -220,6 +231,7 @@ footer b{color:var(--text-soft)}
     <div class="feat reveal"><div class="fi">🕒</div><h3>Asistencia real con quiebres</h3><p>Marca de entrada y salida varias veces al día y reporte de horas reales por persona y área.</p></div>
     <div class="feat reveal"><div class="fi">💬</div><h3>Mensajes estilo WhatsApp</h3><p>Chat directo y grupos a pantalla completa en celular, con botón para llamar por WhatsApp al número del perfil.</p></div>
     <div class="feat reveal"><div class="fi">👥</div><h3>Equipo unificado</h3><p>Una sola sección por sucursal y departamento, con alta/baja de personas y sucursales, y login más claro.</p></div>
+    <div class="feat reveal"><div class="fi">📍</div><h3>Fichaje solo en el local</h3><p>Un código que cambia cada pocos minutos y se muestra en la entrada: el personal solo marca entrada estando adentro. Gerencia también puede corregir o borrar marcas.</p></div>
   </div>
 </section>
 
@@ -227,7 +239,7 @@ footer b{color:var(--text-soft)}
 <section class="wrap">
   <div class="eyebrow reveal">Línea de tiempo</div>
   <div class="h2 reveal">El proceso, paso a paso</div>
-  <p class="lead reveal">Las 18 mejoras clave entregadas durante los dos días, en orden.</p>
+  <p class="lead reveal">Las 20 mejoras clave entregadas durante estos días, en orden.</p>
   <div class="tl">
     <div class="daymark reveal">Domingo 21 de junio</div>
     <div class="item reveal"><div class="it">Pizarra de proyectos profesional <span class="tag nuevo">Nuevo</span></div><div class="id">Dibujo a mano con herramientas, y subir / abrir / descargar PDF y archivos en la pizarra y el chat.</div></div>
@@ -250,11 +262,15 @@ footer b{color:var(--text-soft)}
     <div class="item reveal"><div class="it">Elegir personas por área o sucursal <span class="tag mejora">Mejora</span></div><div class="id">En Tareas y Proyectos se puede agrupar el selector de personas por área o por sucursal.</div></div>
     <div class="item reveal"><div class="it">Proyectos más profesionales <span class="tag mejora">Mejora</span></div><div class="id">Chat a la altura del tablero, barra de herramientas más limpia y "Llamar por WhatsApp" en el chat.</div></div>
     <div class="item reveal"><div class="it">Reuniones dentro de la app (~20) <span class="tag nuevo">Nuevo</span></div><div class="id">Ventana flotante atada al proyecto con voz, video y pantalla compartida para hasta ~20 personas.</div></div>
+
+    <div class="daymark reveal">Martes 23 de junio</div>
+    <div class="item reveal"><div class="it">Borrar marcas de asistencia <span class="tag seguridad">Control</span></div><div class="id">Gerencia puede eliminar una marca o todo el día (para quitar registros de prueba), con sincronización y "Deshacer".</div></div>
+    <div class="item reveal"><div class="it">Código de entrada para fichar en el local <span class="tag nuevo">Nuevo</span></div><div class="id">Un código que cambia cada pocos minutos y se muestra en la entrada: el personal solo puede marcar entrada estando adentro. Gerencia lo activa, muestra y regenera por sucursal.</div></div>
   </div>
 </section>
 
 <footer>
-  <div><b>Sabor Tico App</b> · Informe de avances · 21 – 22 de junio 2026 · versión <b>v39</b></div>
+  <div><b>Sabor Tico App</b> · Informe de avances · 21 – 23 de junio 2026 · versión <b>v41</b></div>
   <div class="note">Horas de dedicación estimadas según el alcance de cada entrega. Documento generado para revisión interna.</div>
 </footer>
 
