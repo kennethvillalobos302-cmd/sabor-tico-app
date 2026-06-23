@@ -71,14 +71,15 @@ Con esos pasos, la app pasa de “cualquiera en internet podía ver y borrar tod
 - **Inicio de sesión anónimo de Firebase:** la app entra a la base autenticada (necesario para las reglas cerradas).
 - **Cabeceras de seguridad web (vercel.json):** Content-Security-Policy, anti-clickjacking
   (no se puede meter la app en un iframe), HSTS, no-sniff, Referrer-Policy y Permissions-Policy.
-- **Reuniones (videollamadas de proyecto, Jitsi):** las reuniones usan el servicio externo
-  **meet.jit.si** (un servidor de reuniones que reparte el video, necesario para que entren ~20
-  personas). Por eso la CSP permite cargar su reproductor y la Permissions-Policy habilita
-  cámara/micrófono **solo** para ese dominio (y para la propia app). La sala se llama
-  `SaborTico-<id-de-proyecto>` con un id aleatorio (UUID), imposible de adivinar desde afuera.
-  El audio/video viaja por los servidores de Jitsi, no por tu Firebase. En tu Firebase solo queda la
-  **presencia** ("quién está en la reunión") bajo `signals/<id-de-proyecto>`, datos efímeros legibles
-  y escribibles solo por usuarios autenticados; se autolimpian al salir.
+- **Reuniones (videollamadas de proyecto, JaaS/Jitsi):** las reuniones usan **Jitsi as a Service
+  (8x8.vc)** — un servidor de reuniones que reparte el video, necesario para que entren ~20 personas
+  sin el corte de 5 minutos del Jitsi público. El acceso se firma con una **clave privada que vive solo
+  en el servidor** (variable de entorno en Vercel, nunca en el navegador); la app pide un “pase” temporal
+  a `api/meet-token`. Por eso la CSP permite cargar el reproductor de 8x8.vc y la Permissions-Policy
+  habilita cámara/micrófono **solo** para ese dominio (y para la propia app). La sala se llama
+  `SaborTico-<id-de-proyecto>` (id UUID, imposible de adivinar). El audio/video viaja por los servidores
+  de Jitsi, no por tu Firebase; en tu Firebase solo queda la **presencia** ("quién está en la reunión")
+  bajo `signals/<id-de-proyecto>`, datos efímeros que se autolimpian al salir. Ver **CONECTAR-REUNIONES.md**.
 - **Anti-XSS:** todo lo que escriben las personas se “escapa” correctamente y las imágenes/videos
   solo se aceptan si son archivos reales (se bloquea texto malicioso disfrazado de imagen).
 - **Lectura de facturas más segura:** modelo más barato, límite de tamaño de archivo, control de

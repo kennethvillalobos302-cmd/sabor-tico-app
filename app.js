@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v43 · souvenirs: dólar arriba, colón abajo';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v44 · reuniones sin límite (JaaS)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2186,11 +2186,11 @@ function watchProjectCall(projId){
   _ppWatchRef.on('value', s=>{ const v=s.val()||{}; const ids=Object.keys(v); const prev=(_projPeers[projId]||[]).join(','); _projPeers[projId]=ids; if(ids.join(',')!==prev && SES.userId && SES.view==='proyectos') render(); });
 }
 function unwatchProjectCall(){ if(_ppWatchRef){ try{ _ppWatchRef.off(); }catch(e){} } _ppWatchRef=null; _ppWatchId=null; }
-function loadJitsi(){
+function loadJitsi(appId){
   if(window.JitsiMeetExternalAPI) return Promise.resolve();
   if(_jitsiLoading) return _jitsiLoading;
   _jitsiLoading=new Promise((res,rej)=>{
-    const s=document.createElement('script'); s.src='https://meet.jit.si/external_api.js'; s.async=true;
+    const s=document.createElement('script'); s.src='https://8x8.vc/'+appId+'/external_api.js'; s.async=true;
     s.onload=()=>res(); s.onerror=()=>{ _jitsiLoading=null; rej(new Error('jitsi')); };
     document.head.appendChild(s);
   });
@@ -2229,27 +2229,34 @@ async function startCall(projId, video){
   _call.refs={myPeerRef};
   audit('proyecto',`entró a la reunión de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
   notify(p.memberIds.filter(i=>i!==myId), `${m.name.split(' ')[0]} inició una reunión en "${p.name}"`,'video',{view:'proyectos'});
-  // motor Jitsi (SFU): reparte el video por nosotros -> aguanta ~20 personas + pantalla compartida
+  // motor JaaS (Jitsi as a Service): SIN límite de tiempo, ~20 personas + pantalla compartida.
+  // El "pase" (JWT) lo firma el servidor con la clave privada (api/meet-token).
   try{
-    await loadJitsi();
+    const r=await fetch('/api/meet-token?name='+encodeURIComponent(m.name||'')+'&uid='+encodeURIComponent(myId));
+    if(!r.ok) throw new Error('token '+r.status);
+    const tok=await r.json();
+    if(!tok || !tok.jwt || !tok.appId) throw new Error('token vacío');
     if(!_call || _call.projId!==projId){ return; }   // colgó mientras cargaba
+    await loadJitsi(tok.appId);
+    if(!_call || _call.projId!==projId){ return; }
     body.innerHTML='';
-    const api=new JitsiMeetExternalAPI('meet.jit.si',{
-      roomName:'SaborTico-'+projId,            // sala única e impredecible (id de proyecto = UUID)
+    const api=new JitsiMeetExternalAPI('8x8.vc',{
+      roomName: tok.appId+'/SaborTico-'+projId,   // sala única e impredecible (id de proyecto = UUID)
+      jwt: tok.jwt,
       parentNode: body, width:'100%', height:'100%',
-      userInfo:{ displayName: m.name||'Invitado' },
       configOverwrite:{ prejoinPageEnabled:false, disableDeepLinking:true, startWithAudioMuted:false, startWithVideoMuted:!video },
       interfaceConfigOverwrite:{ MOBILE_APP_PROMO:false, SHOW_JITSI_WATERMARK:false, SHOW_WATERMARK_FOR_GUESTS:false,
         TOOLBAR_BUTTONS:['microphone','camera','desktop','tileview','raisehand','chat','fullscreen','hangup','settings'] }
     });
     api.addEventListener('readyToClose', ()=>callHangup());
     _call.api=api;
+    _callStarting=false;
+    if(SES.userId) render();
   }catch(e){
-    console.warn('jitsi', e);
-    body.innerHTML='<div class="cd-load">No se pudo cargar la reunión.<br>Revisá tu conexión a internet e intentá de nuevo.</div>';
+    console.warn('meet', e);
+    toast('Las reuniones aún no están configuradas (JaaS). Ver CONECTAR-REUNIONES.md','err');
+    endCall(true);
   }
-  _callStarting=false;
-  if(SES.userId) render();
 }
 function openCall(projId){ startCall(projId, false); }   // compatibilidad (voz)
 function endCall(silent){
