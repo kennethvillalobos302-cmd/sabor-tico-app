@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v40 · borrar marcas de asistencia (solo Gerencia)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v41 · código de entrada (marcar solo en el local)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3589,7 +3589,8 @@ function horAsistencia(){
   }).join('');
   const canDel=canAttDelete();
   let html=`<div class="toolbar" style="overflow-x:auto">${chips}</div>`;
-  if(canDel) html+=`<div class="page-sub" style="margin:2px 0 10px">${svgIcon('info','icon icon-sm')} Tocá la ✕ de una marca para borrarla, o 🗑️ para borrar todo el día. Sirve para quitar registros de prueba.</div>`;
+  if(canDel) html+=`<div style="display:flex;gap:8px;flex-wrap:wrap;margin:2px 0 8px"><button class="btn btn-ghost" style="flex:0 0 auto" onclick="openEntryAdmin()">${svgIcon('clock','icon icon-sm')} Código de entrada</button></div>
+    <div class="page-sub" style="margin:0 0 10px">${svgIcon('info','icon icon-sm')} Tocá la ✕ de una marca para borrarla, o 🗑️ para borrar todo el día (quitar pruebas).</div>`;
   const day=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&a.date===attDay&&attLiveSessions(a).length);
   if(!day.length) return html+emptyState('','Sin marcas ese día','Cuando alguien marque entrada o salida, su registro aparece acá.');
   let body='', totMin=0, totPpl=0;
@@ -3884,8 +3885,25 @@ async function delAttDay(recId){
   undoDelete('attendance', a, 'Marcas de '+(u?u.name.split(' ')[0]:''));
 }
 window.delAttSession=delAttSession; window.delAttDay=delAttDay;
+/* ---- Código de entrada rotativo (para marcar entrada solo estando en el local) ----
+   Cada sucursal tiene un secreto; el código de 6 dígitos = f(secreto, ventana de 5 min).
+   Gerencia muestra el código en la entrada; la persona lo escribe para poder marcar.
+   Nota honesta: la verificación es en el dispositivo, sirve como control fuerte para el
+   uso normal (cambia y solo se ve en el local), no es infalible ante alguien muy técnico. */
+const ENTRY_WIN=5*60*1000;
+function _hash32(str){ let h=0x811c9dc5>>>0; for(let i=0;i<(str||'').length;i++){ h^=str.charCodeAt(i); h=Math.imul(h,0x01000193)>>>0; } return h>>>0; }
+function entryCode(secret, win){ return String(_hash32((secret||'')+'|'+win)%1000000).padStart(6,'0'); }
+function entryCodeNow(secret){ return entryCode(secret, Math.floor(Date.now()/ENTRY_WIN)); }
+function entryCodeValid(secret, typed){ typed=(typed||'').trim(); if(!/^\d{6}$/.test(typed)) return false; const w=Math.floor(Date.now()/ENTRY_WIN); return [w-1,w,w+1].some(x=>entryCode(secret,x)===typed); }
+function entryRequiredFor(u){ if(!u || u.sucursalId==='all') return null; const s=(DB.sucursales||[]).find(x=>x.id===u.sucursalId); return (s && s.entryOn && s.entrySecret) ? s : null; }
 function markIn(){
   const m=me(); if(!m){ toast('Tu sesión no es válida — volvé a entrar','err'); return; }
+  const sucReq=entryRequiredFor(m);
+  if(sucReq){ openEntryCodeModal(sucReq); return; }   // pide el código del local antes de marcar
+  doMarkIn();
+}
+function doMarkIn(){
+  const m=me(); if(!m) return;
   DB.attendance=DB.attendance||[]; let a=todayAttendance();
   // id determinista por persona+día: si dos equipos marcan sin haber sincronizado, crean el MISMO id y la nube los une (no se duplica el día).
   if(!a){ a={id:'att_'+m.id+'_'+todayISO(), userId:m.id, date:todayISO(), sucursalId:m.sucursalId, sessions:[], updatedAt:now()}; DB.attendance.push(a); }
@@ -3894,6 +3912,71 @@ function markIn(){
   const t=now(); a.sessions.push({id:uid(),in:t,out:null}); attSyncLegacy(a);
   audit('horarios',`marcó ENTRADA ${fmtClock(t)}`); toast('Entrada marcada ✓','ok'); render();
 }
+function openEntryCodeModal(suc){
+  openModal(`<div class="modal-head"><h3>${svgIcon('clock','icon')} Código de entrada</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <p class="page-sub" style="margin-top:0">Para marcar entrada, escribí el <b>código que se muestra en la entrada de ${esc(suc.name)}</b> (cambia cada pocos minutos).</p>
+      <div class="field"><label>Código (6 dígitos)</label><input class="input" id="entryCodeInp" type="tel" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="off" style="font-size:24px;letter-spacing:8px;text-align:center" onkeydown="if(event.key==='Enter')submitEntryCode('${suc.id}')"></div>
+      <div id="entryCodeErr" style="color:var(--danger);font-size:12.5px;min-height:16px"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="submitEntryCode('${suc.id}')">${svgIcon('clock','icon icon-sm')} Marcar entrada</button></div>`);
+  setTimeout(()=>{ const i=$('#entryCodeInp'); if(i) i.focus(); },60);
+}
+function submitEntryCode(sucId){
+  const s=(DB.sucursales||[]).find(x=>x.id===sucId); if(!s){ closeModal(); return; }
+  const v=($('#entryCodeInp')?$('#entryCodeInp').value:'').trim();
+  if(!entryCodeValid(s.entrySecret, v)){ const e=$('#entryCodeErr'); if(e) e.textContent='Código incorrecto o vencido. Mirá el código actual en el local.'; return; }
+  closeModal(); doMarkIn();
+}
+window.submitEntryCode=submitEntryCode;
+/* Panel de Gerencia: activar/mostrar/regenerar el código de la sucursal */
+function entryCfgSuc(){
+  const meId=me()&&me().sucursalId;
+  if(meId && meId!=='all') return (DB.sucursales||[]).find(s=>s.id===meId)||null;
+  if(SES.sucFilter && SES.sucFilter!=='all') return (DB.sucursales||[]).find(s=>s.id===SES.sucFilter)||null;
+  return (DB.sucursales||[])[0]||null;
+}
+let _entryTimer=null;
+function openEntryAdmin(){ const s=entryCfgSuc(); if(!s){ toast('No hay sucursal para configurar','err'); return; } renderEntryAdmin(s.id); }
+function renderEntryAdmin(sucId){
+  const s=(DB.sucursales||[]).find(x=>x.id===sucId); if(!s) return;
+  const on=!!(s.entryOn && s.entrySecret);
+  const body = on
+    ? `<p class="page-sub" style="margin-top:0">Dejá esta pantalla visible en la <b>entrada de ${esc(s.name)}</b>. El personal escribe este código para marcar entrada. Cambia solo cada 5 minutos.</p>
+       <div class="entry-code-box"><div class="entry-code" id="entryBigCode">------</div><div class="entry-count"><div class="entry-bar" id="entryBar"></div></div><div class="entry-sub" id="entrySub">—</div></div>
+       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:14px">
+         <button class="btn btn-ghost" style="flex:1;min-width:120px" onclick="regenEntry('${s.id}')">Regenerar código</button>
+         <button class="btn btn-ghost" style="flex:1;min-width:120px" onclick="toggleEntry('${s.id}',false)">Desactivar</button>
+       </div>`
+    : `<p class="page-sub" style="margin-top:0">Si lo activás, el personal de <b>${esc(s.name)}</b> deberá escribir un código (que cambia cada pocos minutos y se muestra en el local) para poder <b>marcar entrada</b>. Así solo marcan estando adentro.</p>
+       <button class="btn btn-primary" onclick="toggleEntry('${s.id}',true)">${svgIcon('clock','icon icon-sm')} Activar código de entrada</button>`;
+  openModal(`<div class="modal-head"><h3>${svgIcon('clock','icon')} Código de entrada · ${esc(s.name)}</h3><button class="modal-close" onclick="closeEntryAdmin()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">${body}</div>`);
+  if(_entryTimer){ clearInterval(_entryTimer); _entryTimer=null; }
+  if(on){ tickEntry(s.id); _entryTimer=setInterval(()=>tickEntry(s.id), 1000); }
+}
+function tickEntry(sucId){
+  const s=(DB.sucursales||[]).find(x=>x.id===sucId); const el=$('#entryBigCode');
+  if(!s||!el){ if(_entryTimer){ clearInterval(_entryTimer); _entryTimer=null; } return; }   // modal cerrado: autolimpia
+  el.textContent=entryCodeNow(s.entrySecret);
+  const left=ENTRY_WIN-(Date.now()%ENTRY_WIN);
+  const sub=$('#entrySub'); if(sub) sub.textContent='Cambia en '+Math.ceil(left/1000)+' s';
+  const bar=$('#entryBar'); if(bar) bar.style.width=(left/ENTRY_WIN*100)+'%';
+}
+function closeEntryAdmin(){ if(_entryTimer){ clearInterval(_entryTimer); _entryTimer=null; } closeModal(); }
+function toggleEntry(sucId,on){
+  if(!canAttDelete()){ toast('Solo Gerencia','err'); return; }
+  const s=(DB.sucursales||[]).find(x=>x.id===sucId); if(!s) return;
+  s.entryOn=!!on; if(on && !s.entrySecret) s.entrySecret=uid()+'-'+uid(); s.updatedAt=now();
+  audit('equipo',`${on?'activó':'desactivó'} el código de entrada de "${s.name}"`); save(); renderEntryAdmin(sucId);
+}
+function regenEntry(sucId){
+  if(!canAttDelete()){ toast('Solo Gerencia','err'); return; }
+  const s=(DB.sucursales||[]).find(x=>x.id===sucId); if(!s) return;
+  s.entrySecret=uid()+'-'+uid(); s.updatedAt=now(); audit('equipo',`regeneró el código de entrada de "${s.name}"`); save();
+  toast('Código regenerado','ok'); tickEntry(sucId);
+}
+window.openEntryAdmin=openEntryAdmin; window.toggleEntry=toggleEntry; window.regenEntry=regenEntry; window.closeEntryAdmin=closeEntryAdmin; window.doMarkIn=doMarkIn;
 function markOut(){
   const a=todayAttendance();
   if(!a || !attSessions(a).length){ toast('Primero marcá tu entrada','err'); return; }
