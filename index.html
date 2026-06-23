@@ -916,7 +916,9 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .call-dock{position:fixed;right:18px;bottom:18px;width:460px;height:340px;min-width:300px;min-height:210px;z-index:120;display:flex;flex-direction:column;background:var(--bg-card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--e3);overflow:hidden;resize:both}
 .call-dock.hidden{display:none}
 /* minimizado: píldora compacta, movible y con la reunión viva por debajo */
-.call-dock.min{height:auto!important;width:auto!important;max-width:260px;min-width:0;min-height:0;resize:none;border-radius:var(--r-pill);border-color:transparent;box-shadow:var(--e2)}
+.call-dock.min{height:auto!important;width:auto!important;max-width:360px;min-width:0;min-height:0;resize:none;border-radius:var(--r-pill);border-color:transparent;box-shadow:var(--e2)}
+.call-dock.min .ph-spacer{display:none}            /* sin estirar: la píldora se ajusta al contenido */
+.call-dock.min .cd-title{flex:0 1 auto}            /* el nombre se ve completo y la píldora se ensancha si hace falta */
 .call-dock.min .cd-body{display:none}
 .cd-head{display:flex;align-items:center;gap:9px;padding:10px 10px 10px 14px;background:var(--bg-elev);border-bottom:1px solid var(--border-soft);cursor:grab;user-select:none;touch-action:none}
 .cd-head:active{cursor:grabbing}
