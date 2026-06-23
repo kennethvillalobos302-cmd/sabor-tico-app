@@ -39,8 +39,9 @@ Tiempo aprox: 10 minutos, una sola vez.
   }
 }
 ```
-> La rama **signals** habilita las **llamadas y videollamadas** de los proyectos (señalización
-> efímera entre los dispositivos para conectar la llamada). Si no la pegás, las llamadas no conectan.
+> La rama **signals** guarda la **presencia de las reuniones** de proyecto (quién está en la reunión,
+> para mostrar "Unirse · N"). Las reuniones usan Jitsi (meet.jit.si) para el video; sin esta rama la
+> reunión igual funciona, solo no se ve el conteo de participantes desde afuera.
 > **Orden importante (para no quedar bloqueado):** primero publicá la app con el código nuevo, después activá *Anonymous* (paso 4) y por último publicá estas reglas (paso 5). Si publicás las reglas antes, la app no podrá entrar hasta que actives *Anonymous*. Ver **SEGURIDAD.md**.
 
 ## Paso 3 — Registrar la app web y copiar la configuración

@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v38 · reuniones en proyectos (renombrado)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v39 · reuniones para ~20 (Jitsi) + presencia';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2168,18 +2168,16 @@ function canvasPanMove(e){ if(!_pan)return; const wrap=$('#canvasWrap'); if(!wra
 function canvasPanUp(){ document.removeEventListener('pointermove',canvasPanMove); document.removeEventListener('pointerup',canvasPanUp); const wrap=$('#canvasWrap'); if(wrap)wrap.classList.remove('panning'); _pan=null; }
 window.canvasPanDown=canvasPanDown;
 /* =====================================================================
-   LLAMADAS / VIDEOLLAMADAS DEL PROYECTO — nativas (WebRTC P2P)
-   - "Llamada" = solo voz · "Videollamada" = con cámara. UI propia de la app.
-   - Conexión DIRECTA entre dispositivos; la señalización (ofertas/candidatos)
-     pasa por tu Firebase (nodo "signals"), no por terceros.
+   REUNIONES DEL PROYECTO (Jitsi / SFU — aguanta ~20 personas con video)
+   - "Reunión" (audio) o con video; pantalla compartida; sin servidor propio.
    - Ventana flotante que vive FUERA del render: seguís trabajando sin cortar.
-   - Malla P2P (ideal 2–4 personas). Para iniciar quien tenga el id MAYOR ofrece
-     (evita "glare"); los candidatos que llegan antes de la descripción se encolan.
+   - La presencia ("Unirse · N" / "En reunión") usa signals/peers en tu Firebase
+     (se autolimpia con onDisconnect). El audio/video lo maneja Jitsi (meet.jit.si).
    ===================================================================== */
-const RTC_CFG={iceServers:[{urls:'stun:stun.l.google.com:19302'},{urls:'stun:stun1.l.google.com:19302'}]};
-let _call=null;  // {projId,video,localStream,peers:{pid:{pc,stream,name,queue,op}},myId,base,muted,camOff,refs,listeners}
-let _callStarting=false;            // evita doble inicio mientras se pide cámara/micrófono
-let _projPeers={}, _ppWatchRef=null, _ppWatchId=null;   // presencia EN VIVO de la llamada (de signals/peers, se autolimpia)
+let _call=null;            // {projId, video, api, myId, base, refs} mientras estás en una reunión
+let _callStarting=false;
+let _jitsiLoading=null;
+let _projPeers={}, _ppWatchRef=null, _ppWatchId=null;   // presencia EN VIVO de la reunión (de signals/peers, se autolimpia)
 function watchProjectCall(projId){
   if(_ppWatchId===projId) return;
   unwatchProjectCall();
@@ -2188,6 +2186,16 @@ function watchProjectCall(projId){
   _ppWatchRef.on('value', s=>{ const v=s.val()||{}; const ids=Object.keys(v); const prev=(_projPeers[projId]||[]).join(','); _projPeers[projId]=ids; if(ids.join(',')!==prev && SES.userId && SES.view==='proyectos') render(); });
 }
 function unwatchProjectCall(){ if(_ppWatchRef){ try{ _ppWatchRef.off(); }catch(e){} } _ppWatchRef=null; _ppWatchId=null; }
+function loadJitsi(){
+  if(window.JitsiMeetExternalAPI) return Promise.resolve();
+  if(_jitsiLoading) return _jitsiLoading;
+  _jitsiLoading=new Promise((res,rej)=>{
+    const s=document.createElement('script'); s.src='https://meet.jit.si/external_api.js'; s.async=true;
+    s.onload=()=>res(); s.onerror=()=>{ _jitsiLoading=null; rej(new Error('jitsi')); };
+    document.head.appendChild(s);
+  });
+  return _jitsiLoading;
+}
 function ensureCallDock(){
   let d=document.getElementById('callDock'); if(d) return d;
   d=document.createElement('div'); d.id='callDock'; d.className='call-dock hidden';
@@ -2197,142 +2205,66 @@ function ensureCallDock(){
       <button class="cd-btn" onclick="callDockToggleMin()" title="Minimizar / agrandar">${svgIcon('chevron','icon icon-sm')}</button>
       <button class="cd-btn danger" onclick="callHangup()" title="Salir de la reunión">${svgIcon('x','icon icon-sm')}</button>
     </div>
-    <div class="cd-body" id="cdBody"><div class="rtc-grid" id="rtcGrid"></div><div class="rtc-bar" id="rtcBar"></div></div>`;
+    <div class="cd-body" id="cdBody"></div>`;
   document.body.appendChild(d);
   return d;
-}
-function rtcTile(uid,name,me_){
-  const ini=esc((name||'?').trim().slice(0,1).toUpperCase()||'?');
-  return `<div class="rtc-tile${me_?' me':''}" id="tile-${uid}">
-    <video id="vid-${uid}" autoplay playsinline ${me_?'muted':''}></video>
-    <div class="rtc-av" id="av-${uid}"><div class="rtc-av-c">${ini}</div></div>
-    <span class="rtc-name">${esc(name||'')}${me_?' (vos)':''}</span>
-  </div>`;
-}
-function rtcShowVideo(uid,on){ const v=document.getElementById('vid-'+uid), a=document.getElementById('av-'+uid); if(v)v.style.display=on?'block':'none'; if(a)a.style.display=on?'none':'flex'; }
-function renderCallBar(){
-  const bar=document.getElementById('rtcBar'); if(!bar||!_call) return;
-  const micOn=!_call.muted, camOn=_call.video&&!_call.camOff;
-  bar.innerHTML=`<button class="rtc-cbtn ${micOn?'':'off'}" onclick="callToggleMic()">${svgIcon(micOn?'mic':'mic-off','icon')}<span>${micOn?'Silenciar':'Activar'}</span></button>
-    ${_call.video?`<button class="rtc-cbtn ${camOn?'':'off'}" onclick="callToggleCam()">${svgIcon('video','icon')}<span>${camOn?'Apagar cám.':'Prender cám.'}</span></button>`:''}
-    <button class="rtc-cbtn end" onclick="callHangup()">${svgIcon('phone','icon')}<span>Salir</span></button>`;
 }
 async function startCall(projId, video){
   const m=me(); if(!m) return;
   if(!cloudOn || !fbdb){ toast('Necesitás conexión a la nube para la reunión','err'); return; }
   if(_call){ if(_call.projId===projId){ const d=ensureCallDock(); d.classList.remove('hidden','min'); return; } toast('Ya estás en otra reunión — salí de esa primero','err'); return; }
-  if(_callStarting) return;            // doble clic mientras pide cámara: ignorar el segundo
+  if(_callStarting) return;
   const p=DB.projects.find(x=>x.id===projId); if(!p) return;
   _callStarting=true;
-  let stream;
-  try{ stream=await navigator.mediaDevices.getUserMedia({audio:true, video: video?{width:{ideal:640},height:{ideal:480}}:false}); }
-  catch(e){ _callStarting=false; toast(video?'No se pudo usar la cámara o el micrófono':'No se pudo usar el micrófono','err'); return; }
-  if(_call){ _callStarting=false; try{ stream.getTracks().forEach(t=>t.stop()); }catch(_){} return; }   // entró a otra llamada mientras pedía permisos
   const myId=SES.userId;
-  _call={projId, video:!!video, localStream:stream, peers:{}, myId, base:fbdb.ref('signals/'+projId), muted:false, camOff:false, refs:null, listeners:null};
-  _callStarting=false;
-  // ventana + tile propio
+  _call={projId, video:!!video, api:null, myId, base:fbdb.ref('signals/'+projId), refs:null};
   const dock=ensureCallDock(); dock.classList.remove('hidden','min');
   $('#cdName').textContent='Reunión · '+p.name;
-  $('#rtcGrid').innerHTML=rtcTile('local', (m.name||'Vos').split(' ')[0], true);
-  const lv=document.getElementById('vid-local'); if(lv) lv.srcObject=stream;
-  rtcShowVideo('local', !!video);
-  renderCallBar();
-  // aviso a los demás (la presencia "en llamada" se ve EN VIVO desde signals/peers, que se autolimpia)
+  const body=$('#cdBody'); body.innerHTML='<div class="cd-load">Entrando a la reunión…</div>';
+  // presencia para "Unirse · N" / "En reunión" (se autolimpia al cerrar/cortar)
+  const myPeerRef=_call.base.child('peers').child(myId);
+  try{ await myPeerRef.set({name:m.name||'', video:!!video, at:firebase.database.ServerValue.TIMESTAMP}); }
+  catch(e){ console.warn('signals denied',e); }   // si faltan las reglas, igual entra a la reunión (solo se pierde el conteo "Unirse · N")
+  try{ myPeerRef.onDisconnect().remove(); }catch(e){}
+  _call.refs={myPeerRef};
   audit('proyecto',`entró a la reunión de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
   notify(p.memberIds.filter(i=>i!==myId), `${m.name.split(' ')[0]} inició una reunión en "${p.name}"`,'video',{view:'proyectos'});
-  // señalización por Firebase
-  const base=_call.base, myPeerRef=base.child('peers').child(myId), inbox=base.child('msg').child(myId);
-  try{ await myPeerRef.set({name:m.name||'', video:!!video, at:firebase.database.ServerValue.TIMESTAMP}); }
-  catch(e){ console.warn('signals denied',e); toast('Falta activar las llamadas en Firebase (reglas "signals"). Ver CONECTAR-NUBE.md','err'); endCall(true); return; }
-  try{ myPeerRef.onDisconnect().remove(); inbox.onDisconnect().remove(); }catch(e){}
-  _call.refs={myPeerRef, inbox};
-  let existing={};
-  try{ const snap=await base.child('peers').get(); existing=snap.val()||{}; }catch(e){}
-  if(!_call){ return; }                          // por si colgó mientras esperaba
-  Object.keys(existing).forEach(pid=>{ if(pid!==myId){ ensurePeer(pid, existing[pid]&&existing[pid].name); if(myId>pid) makeOffer(pid); } });
-  const onAdd=base.child('peers').on('child_added', s=>{ if(!_call) return; const pid=s.key; if(pid===myId||_call.peers[pid]) return; const v=s.val()||{}; ensurePeer(pid, v.name); if(myId>pid) makeOffer(pid); });
-  const onRem=base.child('peers').on('child_removed', s=>{ if(_call) closePeer(s.key); });
-  const onMsg=inbox.on('child_added', async s=>{ if(!_call) return; const msg=s.val(); try{ await s.ref.remove(); }catch(e){} if(_call&&msg) enqueueSignal(msg); });
-  _call.listeners={onAdd,onRem,onMsg};
+  // motor Jitsi (SFU): reparte el video por nosotros -> aguanta ~20 personas + pantalla compartida
+  try{
+    await loadJitsi();
+    if(!_call || _call.projId!==projId){ return; }   // colgó mientras cargaba
+    body.innerHTML='';
+    const api=new JitsiMeetExternalAPI('meet.jit.si',{
+      roomName:'SaborTico-'+projId,            // sala única e impredecible (id de proyecto = UUID)
+      parentNode: body, width:'100%', height:'100%',
+      userInfo:{ displayName: m.name||'Invitado' },
+      configOverwrite:{ prejoinPageEnabled:false, disableDeepLinking:true, startWithAudioMuted:false, startWithVideoMuted:!video },
+      interfaceConfigOverwrite:{ MOBILE_APP_PROMO:false, SHOW_JITSI_WATERMARK:false, SHOW_WATERMARK_FOR_GUESTS:false,
+        TOOLBAR_BUTTONS:['microphone','camera','desktop','tileview','raisehand','chat','fullscreen','hangup','settings'] }
+    });
+    api.addEventListener('readyToClose', ()=>callHangup());
+    _call.api=api;
+  }catch(e){
+    console.warn('jitsi', e);
+    body.innerHTML='<div class="cd-load">No se pudo cargar la reunión.<br>Revisá tu conexión a internet e intentá de nuevo.</div>';
+  }
+  _callStarting=false;
   if(SES.userId) render();
 }
-function ensurePeer(pid, name){
-  if(!_call) return null;
-  if(_call.peers[pid]) return _call.peers[pid];
-  const pc=new RTCPeerConnection(RTC_CFG);
-  const peer={pc, name:name||(userById(pid)&&userById(pid).name)||'', stream:null, queue:[]};
-  _call.peers[pid]=peer;
-  try{ _call.localStream.getTracks().forEach(t=>pc.addTrack(t,_call.localStream)); }catch(e){}
-  pc.onicecandidate=e=>{ if(e.candidate) sendSignal(pid,'candidate',e.candidate.toJSON()); };
-  pc.ontrack=e=>{ peer.stream=e.streams[0]; if(e.track&&e.track.kind==='video'){ e.track.onmute=()=>rtcShowVideo(pid,false); e.track.onunmute=()=>rtcShowVideo(pid,true); } addRemoteTile(pid,peer); };
-  pc.onconnectionstatechange=()=>{ if(['failed','closed'].includes(pc.connectionState)) closePeer(pid); };
-  return peer;
-}
-async function makeOffer(pid){
-  const peer=_call&&_call.peers[pid]; if(!peer) return;
-  try{ const off=await peer.pc.createOffer(); if(!_call||_call.peers[pid]!==peer) return; await peer.pc.setLocalDescription(off); sendSignal(pid,'offer',{type:off.type,sdp:off.sdp}); }catch(e){ console.warn('offer',e); }
-}
-function sendSignal(toId, kind, data){ if(!_call) return; try{ _call.base.child('msg').child(toId).push({from:_call.myId, kind, data}); }catch(e){} }
-function enqueueSignal(msg){   // procesa los mensajes de un peer EN ORDEN (uno termina antes del siguiente): evita perder candidatos ICE
-  if(!_call||!msg||!msg.from||msg.from===_call.myId) return;
-  const peer=ensurePeer(msg.from); if(!peer) return;
-  peer.op=(peer.op||Promise.resolve()).then(()=>handleSignal(msg)).catch(e=>console.warn('sig',e));
-}
-async function handleSignal(msg){
-  if(!_call) return;
-  const pid=msg.from, peer=_call.peers[pid]; if(!peer) return;
-  const alive=()=> _call && _call.peers[pid]===peer && peer.pc.signalingState!=='closed';
-  try{
-    if(msg.kind==='offer'){
-      if(peer.pc.signalingState!=='stable' && peer.pc.signalingState!=='have-remote-offer') return;   // no pisar una negociación en curso
-      await peer.pc.setRemoteDescription(new RTCSessionDescription(msg.data)); if(!alive()) return;
-      await flushCands(peer); if(!alive()) return;
-      const ans=await peer.pc.createAnswer(); if(!alive()) return;
-      await peer.pc.setLocalDescription(ans); if(!alive()) return;
-      sendSignal(pid,'answer',{type:ans.type,sdp:ans.sdp});
-    } else if(msg.kind==='answer'){
-      if(peer.pc.signalingState!=='have-local-offer') return;     // answer fuera de orden: ignorar
-      await peer.pc.setRemoteDescription(new RTCSessionDescription(msg.data)); if(!alive()) return;
-      await flushCands(peer);
-    } else if(msg.kind==='candidate'){
-      if(peer.pc.remoteDescription && peer.pc.remoteDescription.type){ try{ await peer.pc.addIceCandidate(new RTCIceCandidate(msg.data)); }catch(e){} }
-      else (peer.queue=peer.queue||[]).push(msg.data);
-    }
-  }catch(e){ console.warn('signal',msg.kind,e); }
-}
-async function flushCands(peer){ while(peer.queue && peer.queue.length){ const c=peer.queue.shift(); try{ await peer.pc.addIceCandidate(new RTCIceCandidate(c)); }catch(e){} } }   // drena en bucle: no pierde los que llegan durante el await
-function addRemoteTile(pid,peer){
-  const grid=document.getElementById('rtcGrid'); if(!grid) return;
-  if(!document.getElementById('tile-'+pid)) grid.insertAdjacentHTML('beforeend', rtcTile(pid,(peer.name||'…').split(' ')[0],false));
-  const v=document.getElementById('vid-'+pid); if(v && v.srcObject!==peer.stream) v.srcObject=peer.stream;
-  const hasVid=peer.stream && peer.stream.getVideoTracks().some(t=>t.readyState==='live' && !t.muted);
-  rtcShowVideo(pid, !!hasVid);
-}
-function closePeer(pid){
-  const peer=_call&&_call.peers[pid]; if(!peer) return;
-  try{ peer.pc.ontrack=peer.pc.onicecandidate=peer.pc.onconnectionstatechange=null; peer.pc.close(); }catch(e){}
-  delete _call.peers[pid];
-  const t=document.getElementById('tile-'+pid); if(t) t.remove();
-}
-function callToggleMic(){ if(!_call) return; const tr=_call.localStream.getAudioTracks()[0]; if(!tr) return; tr.enabled=!tr.enabled; _call.muted=!tr.enabled; renderCallBar(); }
-function callToggleCam(){ if(!_call||!_call.video) return; const tr=_call.localStream.getVideoTracks()[0]; if(!tr) return; tr.enabled=!tr.enabled; _call.camOff=!tr.enabled; rtcShowVideo('local', tr.enabled); renderCallBar(); }
 function openCall(projId){ startCall(projId, false); }   // compatibilidad (voz)
 function endCall(silent){
   if(!_call) return;
   const projId=_call.projId, myId=_call.myId, base=_call.base;
-  try{ Object.keys(_call.peers).forEach(pid=>closePeer(pid)); }catch(e){}
-  try{ _call.localStream.getTracks().forEach(t=>t.stop()); }catch(e){}
-  try{ base.child('peers').off(); base.child('msg').child(myId).off(); }catch(e){}
-  try{ if(_call.refs){ _call.refs.myPeerRef.onDisconnect().cancel(); _call.refs.inbox.onDisconnect().cancel(); } }catch(e){}
-  try{ base.child('peers').child(myId).remove(); base.child('msg').child(myId).remove(); }catch(e){}
-  _call=null;
-  const d=document.getElementById('callDock'); if(d){ d.classList.add('hidden'); d.classList.remove('min'); d.style.left=d.style.top=d.style.right=d.style.bottom=''; const g=document.getElementById('rtcGrid'); if(g)g.innerHTML=''; const bar=document.getElementById('rtcBar'); if(bar)bar.innerHTML=''; }
+  try{ if(_call.api) _call.api.dispose(); }catch(e){}
+  try{ if(_call.refs&&_call.refs.myPeerRef){ _call.refs.myPeerRef.onDisconnect().cancel(); } }catch(e){}
+  try{ base.child('peers').child(myId).remove(); }catch(e){}
+  _call=null; _callStarting=false;
+  const d=document.getElementById('callDock'); if(d){ d.classList.add('hidden'); d.classList.remove('min'); d.style.left=d.style.top=d.style.right=d.style.bottom=''; const b=document.getElementById('cdBody'); if(b) b.innerHTML=''; }
   const p=projId&&DB.projects.find(x=>x.id===projId);
   if(p&&!silent) audit('proyecto',`salió de la reunión de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
   if(SES.userId) render();
 }
-window.addEventListener('pagehide', ()=>{ if(_call) endCall(true); });   // cerrar la cámara si se cierra la pestaña
+window.addEventListener('pagehide', ()=>{ if(_call) endCall(true); });
 function callHangup(){ endCall(false); }
 function leaveCall(projId){ callHangup(); }   // compatibilidad
 function callDockToggleMin(){ const d=document.getElementById('callDock'); if(d) d.classList.toggle('min'); }
@@ -2351,7 +2283,6 @@ function cdDragMove(e){
 }
 function cdDragEnd(){ document.removeEventListener('pointermove',cdDragMove); document.removeEventListener('pointerup',cdDragEnd); _cdDrag=null; }
 window.startCall=startCall; window.openCall=openCall; window.callHangup=callHangup; window.leaveCall=leaveCall;
-window.callToggleMic=callToggleMic; window.callToggleCam=callToggleCam;
 window.callDockToggleMin=callDockToggleMin; window.cdDragStart=cdDragStart;
 window.addCard=addCard;
 
