@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v46 · reunión: contador de personas';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v47 · pizarra: deshacer (Ctrl+Z)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -760,6 +760,13 @@ function closeModal(){ $('#modalBg').classList.remove('on'); $('#modal').innerHT
 $('#modalBg').addEventListener('click', e=>{ if(e.target.id==='modalBg') closeModal(); });
 // Escape: cerrar el modal abierto, o los paneles (notificaciones / menú de usuario)
 document.addEventListener('keydown', e=>{
+  // Ctrl/Cmd+Z: deshacer en la pizarra de Proyectos (si no estás escribiendo en un campo)
+  if((e.ctrlKey||e.metaKey) && !e.shiftKey && (e.key==='z'||e.key==='Z')){
+    const tg=e.target, tag=(tg&&tg.tagName)||'';
+    if(SES.view==='proyectos' && !/^(INPUT|TEXTAREA|SELECT)$/.test(tag) && !(tg&&tg.isContentEditable)){
+      e.preventDefault(); boardUndo(); return;
+    }
+  }
   if(e.key!=='Escape') return;
   if($('#modalBg') && $('#modalBg').classList.contains('on')){ closeModal(); return; }
   const np=$('#notifPanel'), um=$('#userMenu'), sw=$('#sucSwitch');
@@ -1797,6 +1804,7 @@ function viewProyectos(){
       ${canEdit?`<button class="bt-tool ${boardTool==='draw'?'on':''}" data-t="draw" onclick="setBoardTool('draw')" title="Dibujar a mano">${svgIcon('edit','icon icon-sm')} Dibujar</button>
       <button class="bt-tool ${boardTool==='erase'?'on':''}" data-t="erase" onclick="setBoardTool('erase')" title="Borrar trazos">${svgIcon('x','icon icon-sm')} Borrar</button>`:''}
     </div>
+    ${canEdit?`<button class="bt-icon" id="btUndo" title="Deshacer (Ctrl+Z)" onclick="boardUndo()" ${_boardHist.length?'':'disabled'}>${svgIcon('back','icon icon-sm')}</button>`:''}
     ${canEdit?`<div class="bt-pens">${PEN_COLORS.map(c=>`<button class="pen-sw ${c===penColor?'on':''}" data-c="${c}" style="background:${c}" onclick="setPen('${c}')"></button>`).join('')}
       <span class="bt-widths">${[3,6,10].map(w=>`<button class="pen-w ${w===penWidth?'on':''}" data-w="${w}" onclick="setPenW(${w})"><span style="width:${Math.min(14,w+2)}px;height:${Math.min(14,w+2)}px"></span></button>`).join('')}</span>
     </div>`:''}
@@ -1831,10 +1839,23 @@ function setBoardTool(t){ boardTool=t; const w=$('#canvasWrap'); if(w) w.classLi
 function setPen(c){ penColor=c; if(boardTool!=='draw') setBoardTool('draw'); document.querySelectorAll('.pen-sw').forEach(s=>s.classList.toggle('on',s.dataset.c===c)); }
 function setPenW(w){ penWidth=w; if(boardTool!=='draw') setBoardTool('draw'); document.querySelectorAll('.pen-w').forEach(b=>b.classList.toggle('on',+b.dataset.w===w)); }
 window.setBoardTool=setBoardTool; window.setPen=setPen; window.setPenW=setPenW;
+/* Deshacer de la pizarra (Ctrl+Z): pila local de acciones reversibles (no se sincroniza) */
+let _boardHist=[];
+function boardHistPush(undoFn){ _boardHist.push(undoFn); if(_boardHist.length>80) _boardHist.shift(); updateUndoBtn(); }
+function updateUndoBtn(){ const b=document.getElementById('btUndo'); if(b) b.disabled=!_boardHist.length; }
+function boardUndo(){
+  if(SES.view!=='proyectos') return;
+  const fn=_boardHist.pop();
+  if(!fn){ toast('Nada para deshacer','ok'); return; }
+  try{ fn(); }catch(_){}
+  updateUndoBtn(); save(); render();
+}
+window.boardUndo=boardUndo;
 function drawPaths(p){ return (p.drawings||[]).map(s=>{ if(!s.points||s.points.length<2) return ''; const d='M'+s.points.map(q=>`${q.x} ${q.y}`).join(' L'); return `<path d="${d}" stroke="${s.color}" stroke-width="${s.width||6}" fill="none" stroke-linecap="round" stroke-linejoin="round"/>`; }).join(''); }
 function boardPoint(e){ const bc=$('#boardCanvas'); const r=bc.getBoundingClientRect(); return {x:Math.round((e.clientX-r.left)/boardZoom), y:Math.round((e.clientY-r.top)/boardZoom)}; }
 function drawStart(e){
   const svg=$('#boardDraw'); if(!svg) return; e.preventDefault();
+  const be=document.querySelector('.board-empty'); if(be) be.remove();   // quitar el aviso "Pizarra vacía" al empezar a dibujar
   const pt=boardPoint(e);
   const path=document.createElementNS('http://www.w3.org/2000/svg','path');
   path.setAttribute('stroke',penColor); path.setAttribute('stroke-width',penWidth); path.setAttribute('fill','none');
@@ -1848,19 +1869,22 @@ function drawEnd(){
   document.removeEventListener('pointermove',drawMove); document.removeEventListener('pointerup',drawEnd);
   if(!_draw)return; const pts=_draw.points; _draw=null; if(pts.length<2) return;
   const p=DB.projects.find(x=>x.id===activeProj); if(!p) return;
-  p.drawings=p.drawings||[]; p.drawings.push({id:uid(),color:penColor,width:penWidth,points:pts,byId:SES.userId,at:now()});
+  p.drawings=p.drawings||[]; const st={id:uid(),color:penColor,width:penWidth,points:pts,byId:SES.userId,at:now()}; p.drawings.push(st);
+  boardHistPush(()=>{ const pp=DB.projects.find(x=>x.id===activeProj); if(pp) pp.drawings=(pp.drawings||[]).filter(s=>s.id!==st.id); });
   save();
 }
 function eraseAt(e){
   const p=DB.projects.find(x=>x.id===activeProj); if(!p||!(p.drawings&&p.drawings.length)) return;
   const pt=boardPoint(e); let best=-1,bestD=16;
   p.drawings.forEach((s,idx)=>{ (s.points||[]).forEach(q=>{ const d=Math.hypot(q.x-pt.x,q.y-pt.y); if(d<bestD){bestD=d;best=idx;} }); });
-  if(best>=0){ p.drawings.splice(best,1); save(); const svg=$('#boardDraw'); if(svg) svg.innerHTML=drawPaths(p); }
+  if(best>=0){ const removed=p.drawings[best]; p.drawings.splice(best,1); boardHistPush(()=>{ const pp=DB.projects.find(x=>x.id===activeProj); if(pp){ pp.drawings=pp.drawings||[]; pp.drawings.push(removed); } }); save(); const svg=$('#boardDraw'); if(svg) svg.innerHTML=drawPaths(p); }
 }
 async function clearDrawings(projId){
   const p=DB.projects.find(x=>x.id===projId); if(!p||!(p.drawings&&p.drawings.length)){ toast('No hay trazos para borrar','ok'); return; }
   if(!await confirmDialog('Se borran todos los trazos dibujados en la pizarra (las notas e imágenes se mantienen).',{title:'¿Borrar dibujos?',okText:'Sí, borrar'})) return;
-  p.drawings=[]; audit('proyecto',`borró los dibujos de "${p.name}"`,p.sucursalId); save(); render();
+  const prev=p.drawings.slice(); p.drawings=[];
+  boardHistPush(()=>{ const pp=DB.projects.find(x=>x.id===projId); if(pp) pp.drawings=prev; });
+  audit('proyecto',`borró los dibujos de "${p.name}"`,p.sucursalId); save(); render();
 }
 window.clearDrawings=clearDrawings;
 /* ---- Archivos / PDF en proyectos (subir, abrir, descargar) ---- */
@@ -1902,7 +1926,9 @@ async function addFileCard(projId){
   const mid=await putMedia(fileCardPending.data);   // archivo al nodo aparte
   const file={mid,filename:fileCardPending.filename,mime:fileCardPending.mime,size:fileCardPending.size};
   const i=p.cards.length;
-  p.cards.push({id:uid(),type:'file',text:($('#fcTitle')?$('#fcTitle').value.trim():'')||fileCardPending.filename,file,byId:SES.userId,at:now(),x:40+(i%5)*250,y:40+Math.floor(i/5)*215});
+  const card={id:uid(),type:'file',text:($('#fcTitle')?$('#fcTitle').value.trim():'')||fileCardPending.filename,file,byId:SES.userId,at:now(),x:40+(i%5)*250,y:40+Math.floor(i/5)*215};
+  p.cards.push(card);
+  boardHistPush(()=>{ const pp=DB.projects.find(x=>x.id===projId); if(pp) pp.cards=pp.cards.filter(c=>c.id!==card.id); });
   audit('proyecto',`subió el archivo "${fileCardPending.filename}" a "${p.name}"`,p.sucursalId);
   notify(p.memberIds.filter(x=>x!==SES.userId), `${me().name.split(' ')[0]} subió un archivo a "${p.name}"`,'clipboard',{view:'proyectos'});
   fileCardPending=null; closeModal(); toast('Archivo agregado a la pizarra','ok'); save(); render();
@@ -1960,7 +1986,7 @@ function projSide(proj){
     </div>
   </div>`;
 }
-window.openProj=id=>{activeProj=id;render();};
+window.openProj=id=>{ activeProj=id; _boardHist=[]; render(); };
 
 const NOTE_COLORS=['var(--warn-bg)','rgba(184,58,82,.18)','rgba(90,167,119,.16)','rgba(127,169,184,.16)','var(--bg-soft)'];
 let _bdrag=null;
@@ -2011,9 +2037,11 @@ function bcardMove(e){
 function bcardUp(){
   document.removeEventListener('pointermove',bcardMove); document.removeEventListener('pointerup',bcardUp);
   if(!_bdrag) return;
-  const {projId,cardId,el,moved}=_bdrag; el.classList.remove('dragging'); _bdrag=null;
+  const {projId,cardId,el,moved,ox,oy}=_bdrag; el.classList.remove('dragging'); _bdrag=null;
   const p=DB.projects.find(x=>x.id===projId); const c=p&&p.cards.find(x=>x.id===cardId); if(!c) return;
-  if(moved){ c.x=parseInt(el.style.left)||0; c.y=parseInt(el.style.top)||0; save(); refreshBoard(projId); }
+  if(moved){ c.x=parseInt(el.style.left)||0; c.y=parseInt(el.style.top)||0;
+    boardHistPush(()=>{ const pp=DB.projects.find(x=>x.id===projId); const cc=pp&&pp.cards.find(x=>x.id===cardId); if(cc){ cc.x=ox; cc.y=oy; } });
+    save(); refreshBoard(projId); }
   else { cardDetailModal(projId,cardId); }
 }
 window.bcardDown=bcardDown;
@@ -2112,7 +2140,9 @@ async function addCard(projId,type){
   if(type==='image'&&!cardImg){ toast('Elegí una imagen','err'); return; }
   const img = type==='title'?null:(cardImg?await putMedia(cardImg):null);   // imagen al nodo aparte
   const i=p.cards.length;
-  p.cards.push({id:uid(),type,text,img,color:type==='title'?null:cardColor,byId:SES.userId,at:now(),x:40+(i%5)*250,y:40+Math.floor(i/5)*215});
+  const card={id:uid(),type,text,img,color:type==='title'?null:cardColor,byId:SES.userId,at:now(),x:40+(i%5)*250,y:40+Math.floor(i/5)*215};
+  p.cards.push(card);
+  boardHistPush(()=>{ const pp=DB.projects.find(x=>x.id===projId); if(pp) pp.cards=pp.cards.filter(c=>c.id!==card.id); });
   audit('proyecto',`agregó ${type==='title'?'un título':type==='text'?'una nota':'una imagen'} a "${p.name}"`,p.sucursalId);
   notify(p.memberIds, `${me().name.split(' ')[0]} agregó algo a "${p.name}"`, 'clipboard', {view:'proyectos'});
   closeModal(); toast('Agregado a la pizarra','ok'); save(); render();
