@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v39 · reuniones para ~20 (Jitsi) + presencia';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v40 · borrar marcas de asistencia (solo Gerencia)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -189,11 +189,12 @@ function _unionMsgs(localArr, remoteArr, flags){
    y cerrada en otro, gana la SALIDA más reciente. Así marcar entrada en un equipo y salida en otro
    conviven en vez de perderse. Acepta registros viejos {in,out} (se normalizan con attSessions). */
 function _unionSessions(localArr, remoteArr, flags){
-  const norm=arr=>(Array.isArray(arr)?arr:[]).filter(s=>s&&s.in).map(s=>({id:s.id||('s'+s.in), in:s.in, out:s.out||null}));
+  const norm=arr=>(Array.isArray(arr)?arr:[]).filter(s=>s&&s.in).map(s=>({id:s.id||('s'+s.in), in:s.in, out:s.out||null, del:s.del||0}));
   const L=norm(localArr), R=norm(remoteArr); const byId={};
   R.forEach(s=>{ byId[s.id]=s; });
   L.forEach(s=>{ const e=byId[s.id];
-    if(e){ if((s.out||0)>(e.out||0)){ e.out=s.out; if(flags) flags.added=true; } }   // cerrar una sesión que el otro tenía abierta
+    if(e){ if((s.out||0)>(e.out||0)){ e.out=s.out; if(flags) flags.added=true; }      // cerrar una sesión que el otro tenía abierta
+           if((s.del||0)>(e.del||0)){ e.del=s.del; if(flags) flags.added=true; } }    // borrado de una marca (gana el más reciente)
     else { byId[s.id]=s; if(flags) flags.added=true; }                                 // sesión que el remoto no tenía
   });
   return Object.keys(byId).map(k=>byId[k]).sort((a,b)=>(a.in||0)-(b.in||0));
@@ -3582,12 +3583,14 @@ function horAsistencia(){
   if(!past.some(d=>isoLocal(d)===attDay)) attDay=tISO;
   const chips=past.map((d,di)=>{
     const iso=isoLocal(d);
-    const n=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&a.date===iso&&attSessions(a).length&&userById(a.userId)).length;
+    const n=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&a.date===iso&&attLiveSessions(a).length&&userById(a.userId)).length;
     const lbl=(di===0?'Hoy':di===1?'Ayer':d.toLocaleDateString('es-CR',{weekday:'short'}).replace('.','')+' '+d.getDate());
     return `<button class="chip ${attDay===iso?'on':''}" onclick="attDay='${iso}';render()">${lbl}${n?`<span class="chip-dot">${n}</span>`:''}</button>`;
   }).join('');
+  const canDel=canAttDelete();
   let html=`<div class="toolbar" style="overflow-x:auto">${chips}</div>`;
-  const day=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&a.date===attDay&&attSessions(a).length);
+  if(canDel) html+=`<div class="page-sub" style="margin:2px 0 10px">${svgIcon('info','icon icon-sm')} Tocá la ✕ de una marca para borrarla, o 🗑️ para borrar todo el día. Sirve para quitar registros de prueba.</div>`;
+  const day=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&a.date===attDay&&attLiveSessions(a).length);
   if(!day.length) return html+emptyState('','Sin marcas ese día','Cuando alguien marque entrada o salida, su registro aparece acá.');
   let body='', totMin=0, totPpl=0;
   HOR_DEPTS.forEach(dept=>{
@@ -3596,12 +3599,13 @@ function horAsistencia(){
     if(!rows.length) return;
     body+=`<div class="tl-dept">${dept.label}</div>`;
     rows.forEach(a=>{
-      const u=userById(a.userId); const ss=attSessions(a); const open=attOpen(a); const m=attWorkedMin(a);
+      const u=userById(a.userId); const ss=attLiveSessions(a); const open=attOpen(a); const m=attWorkedMin(a);
       totMin+=m; totPpl++;
       body+=`<div class="sched-row">${avatarHTML(u)}
         <div class="tk-main"><div class="tk-title">${u?esc(u.name):'—'} ${open?'<span class="pill proceso">en turno</span>':''}</div>
-          ${attSegsHTML(ss)}</div>
-        <div class="att-total">${m?fmtDur(m):'—'}</div></div>`;
+          ${attSegsHTML(ss, a.id, canDel)}</div>
+        <div class="att-total">${m?fmtDur(m):'—'}</div>
+        ${canDel?`<button class="icon-btn" style="width:34px;height:34px;flex:0 0 auto;align-self:center" title="Borrar todas las marcas de este día" onclick="delAttDay('${a.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div>`;
     });
   });
   if(!body) return html+emptyState('','Sin marcas ese día','Cuando alguien marque entrada o salida, su registro aparece acá.');
@@ -3852,10 +3856,34 @@ function attSessions(a){
   if(a.in) return [{in:a.in, out:a.out||null}];
   return [];
 }
-function attOpen(a){ return attSessions(a).find(s=>s && s.in && !s.out); }   // sesión abierta (entró y no salió)
-function attWorkedMin(a){ return attSessions(a).reduce((s,x)=>s+((x.in&&x.out)?Math.max(0,Math.round((x.out-x.in)/60000)):0),0); }
-function attSyncLegacy(a){ const ss=attSessions(a); a.in = ss.length?ss[0].in:null; a.out = (ss.length && ss.every(s=>s.out))? ss[ss.length-1].out : null; } // resumen para vistas/reportes viejos
-function attNormSessions(a){ return attSessions(a).map(s=>({id:s.id||uid(), in:s.in, out:s.out||null})); } // ids estables + copia mutable (migra in/out viejos)
+function attLiveSessions(a){ return attSessions(a).filter(s=>s && !s.del); }   // marcas vigentes (sin las eliminadas)
+function attOpen(a){ return attLiveSessions(a).find(s=>s && s.in && !s.out); }   // sesión abierta (entró y no salió)
+function attWorkedMin(a){ return attLiveSessions(a).reduce((s,x)=>s+((x.in&&x.out)?Math.max(0,Math.round((x.out-x.in)/60000)):0),0); }
+function attSyncLegacy(a){ const ss=attLiveSessions(a); a.in = ss.length?ss[0].in:null; a.out = (ss.length && ss.every(s=>s.out))? ss[ss.length-1].out : null; } // resumen para vistas/reportes viejos
+function attNormSessions(a){ return attSessions(a).map(s=>({id:s.id||uid(), in:s.in, out:s.out||null, del:s.del||0})); } // ids estables + copia mutable (migra in/out viejos), conserva el marcador de borrado
+/* Borrar marcas de asistencia (solo Gerencia) — sirve para quitar registros de prueba.
+   Se hace "borrado suave" (del=timestamp) para que la eliminación se sincronice a todos
+   los equipos (la unión de sesiones nunca quita, así que necesita una marca de borrado). */
+const canAttDelete = () => hasRole('admin','gerencia_exp','gerencia_data');
+function delAttSession(recId, inTs){
+  if(!canAttDelete()){ toast('Solo Gerencia puede borrar marcas','err'); return; }
+  const a=(DB.attendance||[]).find(x=>x&&x.id===recId); if(!a) return;
+  a.sessions=attNormSessions(a);
+  const s=a.sessions.find(x=>x.in===inTs); if(!s) return;
+  s.del=now(); attSyncLegacy(a);
+  audit('horarios','eliminó una marca de asistencia',a.sucursalId); save(); render();
+  undoToast('Marca de asistencia', ()=>{ const a2=(DB.attendance||[]).find(x=>x&&x.id===recId); if(!a2) return; const s2=attSessions(a2).find(x=>x.in===inTs); if(s2){ s2.del=0; attSyncLegacy(a2); save(); render(); toast('Restaurada','ok'); } });
+}
+async function delAttDay(recId){
+  if(!canAttDelete()){ toast('Solo Gerencia puede borrar marcas','err'); return; }
+  const a=(DB.attendance||[]).find(x=>x&&x.id===recId); if(!a) return;
+  const u=userById(a.userId);
+  if(!await confirmDialog(`Se borran TODAS las marcas de ${u?esc(u.name):'esta persona'} del ${a.date}. Sirve para quitar registros de prueba.`,{title:'¿Borrar marcas del día?',okText:'Sí, borrar'})) return;
+  delEntity('attendance', recId);
+  audit('horarios',`eliminó las marcas de asistencia de ${u?u.name.split(' ')[0]:'—'} (${a.date})`,a.sucursalId); save(); render();
+  undoDelete('attendance', a, 'Marcas de '+(u?u.name.split(' ')[0]:''));
+}
+window.delAttSession=delAttSession; window.delAttDay=delAttDay;
 function markIn(){
   const m=me(); if(!m){ toast('Tu sesión no es válida — volvé a entrar','err'); return; }
   DB.attendance=DB.attendance||[]; let a=todayAttendance();
@@ -3876,11 +3904,11 @@ function markOut(){
   audit('horarios',`marcó SALIDA ${fmtClock(open.out)}`); toast('Salida marcada ✓','ok'); render();
 }
 window.markIn=markIn; window.markOut=markOut;
-function attSegsHTML(ss){
-  return `<div class="att-segs">${ss.map(s=>`<span class="att-seg${s.out?'':' open'}">${fmtClock(s.in)} <span class="att-arrow">→</span> ${s.out?fmtClock(s.out):'en turno'}</span>`).join('')}</div>`;
+function attSegsHTML(ss, recId, canDel){
+  return `<div class="att-segs">${ss.map(s=>`<span class="att-seg${s.out?'':' open'}">${fmtClock(s.in)} <span class="att-arrow">→</span> ${s.out?fmtClock(s.out):'en turno'}${(canDel&&recId)?`<button class="att-del" title="Borrar esta marca" onclick="delAttSession('${recId}',${s.in})">${svgIcon('x','icon icon-sm')}</button>`:''}</span>`).join('')}</div>`;
 }
 function attendanceCard(){
-  const a=todayAttendance(); const ss=attSessions(a); const open=attOpen(a);
+  const a=todayAttendance(); const ss=attLiveSessions(a); const open=attOpen(a);
   const inBtn=`<button class="btn btn-primary" style="flex:0 0 auto" onclick="markIn()">${svgIcon('clock','icon icon-sm')} Marcar entrada</button>`;
   const outBtn=`<button class="btn btn-primary" style="flex:0 0 auto" onclick="markOut()">${svgIcon('clock','icon icon-sm')} Marcar salida</button>`;
   let body, btn;
@@ -3941,7 +3969,7 @@ function reportData(ym){
   const invVal=inv.reduce((s,p)=>s+p.stock*p.cost,0);
   const invLow=inv.filter(lowStock).length;
   const shifts=(DB.shifts||[]).filter(s=>s&&inScope(s.sucursalId)&&!s.off&&(s.date||'').startsWith(ym));
-  const att=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&(a.date||'').startsWith(ym)&&attSessions(a).length);
+  const att=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&(a.date||'').startsWith(ym)&&attLiveSessions(a).length);
   const prod=DB.users.filter(u=>u.active).map(u=>{
     const mine=tMonth.filter(t=>(t.toIds||[]).includes(u.id));
     const h=mine.filter(t=>t.status==='hecha').length, a=mine.filter(t=>t.status==='atrasada').length, rj=mine.filter(t=>t.status==='rechazada').length;
