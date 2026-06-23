@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v45 · reunión: ventana mejor + tope 24';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v46 · reunión: contador de personas';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2202,7 +2202,7 @@ function ensureCallDock(){
   d=document.createElement('div'); d.id='callDock'; d.className='call-dock hidden';
   d.innerHTML=`<div class="cd-head" id="cdHead" onpointerdown="cdDragStart(event)">
       <span class="cd-live" title="Reunión en curso"></span>
-      <span class="cd-title">${svgIcon('video','icon icon-sm')} <span id="cdName"></span></span>
+      <span class="cd-title">${svgIcon('video','icon icon-sm')} <span id="cdName"></span><span class="cd-count" id="cdCount" hidden></span></span>
       <div class="ph-spacer"></div>
       <button class="cd-btn" id="cdMinBtn" onclick="callDockToggleMin()" title="Minimizar / agrandar">${svgIcon('chevron','icon icon-sm')}</button>
       <button class="cd-btn danger" onclick="callHangup()" title="Salir de la reunión">${svgIcon('x','icon icon-sm')}</button>
@@ -2240,6 +2240,12 @@ async function startCall(projId, video){
   catch(e){ console.warn('signals denied',e); }   // si faltan las reglas, igual entra a la reunión (solo se pierde el conteo "Unirse · N")
   try{ myPeerRef.onDisconnect().remove(); }catch(e){}
   _call.refs={myPeerRef};
+  // contador EN VIVO de personas en la reunión (se ve en la ventana y en la píldora minimizada)
+  try{
+    const cntRef=_call.base.child('peers');
+    const cntHandler=cntRef.on('value', s=>{ updateCallCount(s.exists()?Object.keys(s.val()||{}).length:0); });
+    _call.refs.cntRef=cntRef; _call.refs.cntHandler=cntHandler;
+  }catch(e){}
   audit('proyecto',`entró a la reunión de "${p.name}"`,p.sucursalId);   // audit() persiste/sincroniza
   notify(p.memberIds.filter(i=>i!==myId), `${m.name.split(' ')[0]} inició una reunión en "${p.name}"`,'video',{view:'proyectos'});
   // motor JaaS (Jitsi as a Service): SIN límite de tiempo, ~20 personas + pantalla compartida.
@@ -2276,6 +2282,7 @@ function endCall(silent){
   if(!_call) return;
   const projId=_call.projId, myId=_call.myId, base=_call.base;
   try{ if(_call.api) _call.api.dispose(); }catch(e){}
+  try{ if(_call.refs&&_call.refs.cntRef&&_call.refs.cntHandler){ _call.refs.cntRef.off('value', _call.refs.cntHandler); } }catch(e){}
   try{ if(_call.refs&&_call.refs.myPeerRef){ _call.refs.myPeerRef.onDisconnect().cancel(); } }catch(e){}
   try{ base.child('peers').child(myId).remove(); }catch(e){}
   _call=null; _callStarting=false;
@@ -2287,6 +2294,10 @@ function endCall(silent){
 window.addEventListener('pagehide', ()=>{ if(_call) endCall(true); });
 function callHangup(){ endCall(false); }
 function leaveCall(projId){ callHangup(); }   // compatibilidad
+function updateCallCount(n){
+  const el=document.getElementById('cdCount'); if(!el) return;
+  if(n>0){ el.innerHTML=svgIcon('users','icon icon-sm')+' '+n; el.hidden=false; } else el.hidden=true;
+}
 function callDockToggleMin(){ const d=document.getElementById('callDock'); if(d) d.classList.toggle('min'); }
 let _cdDrag=null;
 function cdDragStart(e){
