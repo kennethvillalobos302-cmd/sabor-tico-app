@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v44 · reuniones sin límite (JaaS)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v45 · reunión: ventana mejor + tope 24';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2177,6 +2177,7 @@ window.canvasPanDown=canvasPanDown;
 let _call=null;            // {projId, video, api, myId, base, refs} mientras estás en una reunión
 let _callStarting=false;
 let _jitsiLoading=null;
+const MEET_MAX=24;         // tope de personas por reunión (margen para el plan gratis de JaaS)
 let _projPeers={}, _ppWatchRef=null, _ppWatchId=null;   // presencia EN VIVO de la reunión (de signals/peers, se autolimpia)
 function watchProjectCall(projId){
   if(_ppWatchId===projId) return;
@@ -2200,9 +2201,10 @@ function ensureCallDock(){
   let d=document.getElementById('callDock'); if(d) return d;
   d=document.createElement('div'); d.id='callDock'; d.className='call-dock hidden';
   d.innerHTML=`<div class="cd-head" id="cdHead" onpointerdown="cdDragStart(event)">
+      <span class="cd-live" title="Reunión en curso"></span>
       <span class="cd-title">${svgIcon('video','icon icon-sm')} <span id="cdName"></span></span>
       <div class="ph-spacer"></div>
-      <button class="cd-btn" onclick="callDockToggleMin()" title="Minimizar / agrandar">${svgIcon('chevron','icon icon-sm')}</button>
+      <button class="cd-btn" id="cdMinBtn" onclick="callDockToggleMin()" title="Minimizar / agrandar">${svgIcon('chevron','icon icon-sm')}</button>
       <button class="cd-btn danger" onclick="callHangup()" title="Salir de la reunión">${svgIcon('x','icon icon-sm')}</button>
     </div>
     <div class="cd-body" id="cdBody"></div>`;
@@ -2221,6 +2223,17 @@ async function startCall(projId, video){
   const dock=ensureCallDock(); dock.classList.remove('hidden','min');
   $('#cdName').textContent='Reunión · '+p.name;
   const body=$('#cdBody'); body.innerHTML='<div class="cd-load">Entrando a la reunión…</div>';
+  // tope de 24 personas: si la reunión ya está llena, no dejar entrar (cuenta presencia actual)
+  try{
+    const psnap=await _call.base.child('peers').get();
+    const cnt=psnap.exists()? Object.keys(psnap.val()||{}).filter(k=>k!==myId).length : 0;
+    if(cnt>=MEET_MAX){
+      toast('La reunión está llena (máximo '+MEET_MAX+' personas). Esperá a que alguien salga.','err');
+      _call=null; _callStarting=false;
+      const dd=document.getElementById('callDock'); if(dd){ dd.classList.add('hidden'); const bb=document.getElementById('cdBody'); if(bb) bb.innerHTML=''; }
+      return;
+    }
+  }catch(e){}
   // presencia para "Unirse · N" / "En reunión" (se autolimpia al cerrar/cortar)
   const myPeerRef=_call.base.child('peers').child(myId);
   try{ await myPeerRef.set({name:m.name||'', video:!!video, at:firebase.database.ServerValue.TIMESTAMP}); }
@@ -2278,7 +2291,7 @@ function callDockToggleMin(){ const d=document.getElementById('callDock'); if(d)
 let _cdDrag=null;
 function cdDragStart(e){
   if(e.target.closest('.cd-btn')) return;
-  const d=document.getElementById('callDock'); if(!d||d.classList.contains('min')) return;
+  const d=document.getElementById('callDock'); if(!d) return;   // movible también minimizado
   const r=d.getBoundingClientRect(); _cdDrag={dx:e.clientX-r.left, dy:e.clientY-r.top};
   document.addEventListener('pointermove',cdDragMove); document.addEventListener('pointerup',cdDragEnd); e.preventDefault();
 }
