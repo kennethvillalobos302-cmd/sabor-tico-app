@@ -991,12 +991,14 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .souv-ic{width:52px;height:52px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:var(--grad-accent,var(--accent));color:#fff;box-shadow:var(--e1)}
 .souv-ic .icon{width:26px;height:26px}
 .souv-name{font-weight:750;font-size:15px;line-height:1.25;letter-spacing:-.2px;min-height:2.4em;display:flex;align-items:center;justify-content:center}
-.souv-price{font-weight:800;font-size:21px;line-height:1;letter-spacing:-.5px}
-.souv-price .cur-usd{display:block;font-size:12.5px;font-weight:600;color:var(--text-soft);margin-top:4px;letter-spacing:0}
-.souv-stock{font-size:11.5px;font-weight:700;color:var(--text-soft);background:var(--bg-soft);border-radius:var(--r-pill);padding:4px 12px}
-.souv-stock.low{color:var(--warn);background:var(--warn-bg)}
-.souv-stock.zero{color:var(--danger);background:var(--danger-bg)}
-.souv-gan{font-size:11.5px;font-weight:700;color:var(--success);background:var(--success-bg);border-radius:var(--r-pill);padding:4px 12px}
+.souv-price{display:flex;flex-direction:column;align-items:center;gap:1px;margin:2px 0}
+.souv-price .sp-amt{font-weight:800;font-size:24px;line-height:1.05;letter-spacing:-.6px;color:var(--text);font-variant-numeric:tabular-nums}
+.souv-price .sp-usd{font-size:12.5px;font-weight:650;color:var(--text-soft);font-variant-numeric:tabular-nums}
+.souv-tags{display:flex;flex-wrap:wrap;justify-content:center;gap:6px}
+.souv-stock{font-size:11px;font-weight:700;color:var(--text-soft);background:var(--bg-soft);border:1px solid var(--border-soft);border-radius:var(--r-pill);padding:3px 11px;white-space:nowrap}
+.souv-stock.low{color:var(--warn);background:var(--warn-bg);border-color:transparent}
+.souv-stock.zero{color:var(--danger);background:var(--danger-bg);border-color:transparent}
+.souv-gan{font-size:11px;font-weight:700;color:var(--success);background:var(--success-bg);border-radius:var(--r-pill);padding:3px 11px;white-space:nowrap}
 .souv-sell-btn{width:100%;margin-top:6px}
 .souv-sell-stock{font-size:15px;margin-bottom:12px;color:var(--text)}
 .souv-sell-info{font-size:13px;color:var(--text-soft);margin-top:10px;padding:10px 12px;background:var(--bg-soft);border-radius:var(--r-md,12px)}

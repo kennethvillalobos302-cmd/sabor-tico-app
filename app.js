@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v41 · código de entrada (marcar solo en el local)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v42 · un botón de reunión + souvenirs más claros';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1945,9 +1945,8 @@ function projSide(proj){
   const others=(_projPeers[proj.id]||[]).filter(id=>id!==SES.userId);
   const meInCall=_call&&_call.projId===proj.id;
   const callBtns = meInCall
-    ? `<button class="btn btn-primary" style="flex:0 0 auto;padding:7px 11px" onclick="startCall('${proj.id}',false)" title="Volver a la reunión">${svgIcon('phone','icon icon-sm')} En reunión</button>`
-    : `<button class="btn ${others.length?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 10px" title="Reunión (solo audio)" onclick="startCall('${proj.id}',false)">${svgIcon('phone','icon icon-sm')} ${others.length?('Unirse · '+others.length):'Reunión'}</button>
-       <button class="btn btn-ghost" style="flex:0 0 auto;padding:7px 10px" title="Reunión con video" onclick="startCall('${proj.id}',true)">${svgIcon('video','icon icon-sm')}</button>`;
+    ? `<button class="btn btn-primary" style="flex:0 0 auto;padding:7px 12px" onclick="startCall('${proj.id}',true)" title="Volver a la reunión">${svgIcon('video','icon icon-sm')} En reunión</button>`
+    : `<button class="btn ${others.length?'btn-primary':'btn-ghost'}" style="flex:0 0 auto;padding:7px 12px" title="Iniciar o unirse a la reunión (voz y video)" onclick="startCall('${proj.id}',true)">${svgIcon('video','icon icon-sm')} ${others.length?('Unirse · '+others.length):'Reunión'}</button>`;
   return `<div class="proj-side">
     <div class="proj-side-head"><span style="font-weight:700;font-size:13px">Chat del grupo</span><div class="ph-spacer"></div>
       ${callBtns}</div>
@@ -4518,9 +4517,11 @@ function souvSellGrid(){
     return `<div class="souv-card ${out?'out':''}">
       <div class="souv-ic">${svgIcon('gift','icon')}</div>
       <div class="souv-name">${esc(p.name)}</div>
-      <div class="souv-price">${money(p.price)} <span class="cur-usd">${usd(p.price)}</span></div>
-      <div class="souv-stock ${souvLow(p)&&!out?'low':''} ${out?'zero':''}">${out?'Agotado':'Quedan '+(+p.stock||0)}</div>
-      ${money_?`<div class="souv-gan">Ganás ${money(souvProfit(p))} c/u</div>`:''}
+      <div class="souv-price"><span class="sp-amt">${money(p.price)}</span><span class="sp-usd">${usd(p.price)}</span></div>
+      <div class="souv-tags">
+        <span class="souv-stock ${souvLow(p)&&!out?'low':''} ${out?'zero':''}">${out?'Agotado':'Quedan '+(+p.stock||0)}</span>
+        ${money_?`<span class="souv-gan">Ganás ${money(souvProfit(p))} c/u</span>`:''}
+      </div>
       <button class="btn btn-primary souv-sell-btn" ${out?'disabled':''} onclick="souvSellModal('${p.id}')">${svgIcon('plus','icon icon-sm')} Vender</button>
     </div>`;
   }).join('')+`</div>`;
