@@ -49,14 +49,18 @@ export default async function handler(req, res) {
     return;
   }
 
-  const kid = process.env.JAAS_KID;
+  const rawKid = process.env.JAAS_KID;
   let pk = process.env.JAAS_PRIVATE_KEY;
-  if (!kid || !pk) {
+  if (!rawKid || !pk) {
     res.status(500).json({ error: 'Las reuniones no están configuradas (falta la cuenta JaaS).' });
     return;
   }
   pk = pk.replace(/\\n/g, '\n'); // por si la clave quedó con \n literales
-  const appId = String(kid).split('/')[0];
+  // El AppID puede venir en su propia variable (JAAS_APP_ID) o ya incluido en el kid (AppID/IDdeLlave).
+  const appId = (process.env.JAAS_APP_ID || String(rawKid).split('/')[0] || '').trim();
+  // El "kid" del JWT DEBE ser "AppID/IDdeLlave". Si en JAAS_KID quedó solo el ID de la llave, lo armamos.
+  let kid = String(rawKid).trim();
+  if (kid.indexOf('/') === -1) kid = appId + '/' + kid;
 
   // datos del usuario que llegan del cliente: NO confiables, se limpian
   const q = req.method === 'GET'
