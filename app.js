@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v42 · un botón de reunión + souvenirs más claros';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v43 · souvenirs: dólar arriba, colón abajo';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4517,7 +4517,7 @@ function souvSellGrid(){
     return `<div class="souv-card ${out?'out':''}">
       <div class="souv-ic">${svgIcon('gift','icon')}</div>
       <div class="souv-name">${esc(p.name)}</div>
-      <div class="souv-price"><span class="sp-amt">${money(p.price)}</span><span class="sp-usd">${usd(p.price)}</span></div>
+      <div class="souv-price"><span class="sp-amt">${usd(p.price)}</span><span class="sp-usd">${money(p.price)}</span></div>
       <div class="souv-tags">
         <span class="souv-stock ${souvLow(p)&&!out?'low':''} ${out?'zero':''}">${out?'Agotado':'Quedan '+(+p.stock||0)}</span>
         ${money_?`<span class="souv-gan">Ganás ${money(souvProfit(p))} c/u</span>`:''}
