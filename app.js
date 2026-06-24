@@ -3033,6 +3033,7 @@ function viewInventario(){
   const all=invInScope();
   const searching=!!invSearch;
   const scoped = invArea!=='todas' ? all.filter(p=>(p.area||'cocina')===invArea) : all;
+  const bods=bodegasFor();
   const famList = catsVisible();
   window._invFams = famList;                            // para los onclick del menú izquierdo
   const inFam = (p,c)=>{ if(c==='__sin__') return !p.category || !famList.includes(p.category); return (p.category||'')===c; };
