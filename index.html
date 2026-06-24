@@ -887,6 +887,15 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .inv-fam-act:hover{background:rgba(0,0,0,.08);color:var(--text)}
 .inv-fam-row.on .inv-fam-act{color:rgba(255,255,255,.85)}
 .inv-fam-row.on .inv-fam-act:hover{background:rgba(255,255,255,.2);color:#fff}
+/* modo organizar: barra y selección */
+.inv-bulk{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:16px;padding:11px 14px;background:var(--accent-soft,rgba(150,40,27,.08));border:1px solid var(--accent-line);border-radius:var(--r-md)}
+.inv-bulk-n{font-size:13px;font-weight:800;color:var(--accent)}
+.inv-bulk-lbl{font-size:12.5px;color:var(--text-soft)}
+.inv-tile.selmode{cursor:pointer}
+.inv-tile.selmode .inv-tile-eye{display:none}
+.inv-tile-check{position:absolute;top:8px;left:8px;width:22px;height:22px;border-radius:50%;border:2px solid var(--border);background:var(--bg-card);display:flex;align-items:center;justify-content:center;color:#fff}
+.inv-tile.picked{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-line)}
+.inv-tile.picked .inv-tile-check{background:var(--accent);border-color:var(--accent)}
 /* foto del producto: tarjeta */
 .inv-tile-img{width:62px;height:62px;border-radius:12px;overflow:hidden;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;margin-top:2px}
 .inv-tile-img img{width:100%;height:100%;object-fit:cover}
