@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v54 · Calendario: recordatorios, repetir, arrastrar, agenda, equipo';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v55 · Calendario: repetir por dias (lun, mier...)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4122,8 +4122,13 @@ function calEventOccurs(e, iso){
   const d0=calParse(e.date), d=calParse(iso), diff=Math.round((d-d0)/86400000);
   if(diff<0) return false;
   if(e.repeat==='diario') return true;
-  if(e.repeat==='semanal') return diff%7===0;
-  if(e.repeat==='quincenal') return diff%14===0;
+  if(e.repeat==='semanal' || e.repeat==='quincenal'){
+    const interval=e.repeat==='quincenal'?2:1;
+    const days=(e.repeatDays&&e.repeatDays.length)?e.repeatDays:[(d0.getDay()+6)%7];
+    if(!days.includes((d.getDay()+6)%7)) return false;
+    const weeks=Math.round((calParse(calWeekStart(iso))-calParse(calWeekStart(e.date)))/(7*86400000));
+    return weeks>=0 && weeks%interval===0;
+  }
   if(e.repeat==='mensual') return d.getDate()===d0.getDate();
   return iso===e.date;
 }
@@ -4314,6 +4319,12 @@ function calForm(e){
   const rems=[['no','Sin aviso'],['at','A la hora'],['10','10 min antes'],['30','30 min antes'],['60','1 hora antes'],['1440','1 día antes']];
   const aud=e.audience||'me'; const canAll=canShiftManage();
   const auds=[['me','Solo yo'],['sel','Personas específicas']].concat(canAll?[['all','Todo el equipo']]:[]);
+  const baseWd=(calParse(e.date||calToday()).getDay()+6)%7;
+  const curDays=(e.repeatDays&&e.repeatDays.length)?e.repeatDays:[baseWd];
+  const showDays=(e.repeat==='semanal'||e.repeat==='quincenal');
+  const daysSel=`<div class="field" id="ceDaysW" style="${showDays?'':'display:none'}"><label>¿Qué días se repite?</label>
+    <div class="cal-wdrow">${['L','M','X','J','V','S','D'].map((n,i)=>`<button type="button" class="cal-wd ${curDays.includes(i)?'on':''}" data-d="${i}" onclick="this.classList.toggle('on')">${n}</button>`).join('')}</div>
+    <div class="cal-wdpresets"><button type="button" class="cal-wdpreset" onclick="calSetDays([0,1,2,3,4])">Lun a Vie</button><button type="button" class="cal-wdpreset" onclick="calSetDays([0,1,2,3,4,5,6])">Toda la semana</button></div></div>`;
   openModal(`<div class="modal-head"><h3>${svgIcon('calendar','icon')} ${_calEdit?'Editar':'Nuevo'} evento</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
       <div class="field"><label>Título</label><input class="input" id="ceTitle" value="${esc(e.title||'')}" placeholder="Ej: Reunión con proveedor" autocomplete="off"></div>
@@ -4326,9 +4337,10 @@ function calForm(e){
         <div class="field"><label>Hasta</label><input class="input" type="time" id="ceEnd" value="${esc(e.end||'10:00')}"></div>
       </div>
       <div class="row2">
-        <div class="field"><label>Repetir</label><select class="select" id="ceRepeat" onchange="document.getElementById('ceUntilW').style.display=this.value==='no'?'none':''">${reps.map(([v,l])=>`<option value="${v}" ${(e.repeat||'no')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label>Repetir</label><select class="select" id="ceRepeat" onchange="calRepeatChange(this.value)">${reps.map(([v,l])=>`<option value="${v}" ${(e.repeat||'no')===v?'selected':''}>${l}</option>`).join('')}</select></div>
         <div class="field"><label>${svgIcon('clock','icon icon-sm')} Recordatorio</label><select class="select" id="ceRemind">${rems.map(([v,l])=>`<option value="${v}" ${(e.remind||'no')===v?'selected':''}>${l}</option>`).join('')}</select></div>
       </div>
+      ${daysSel}
       <div class="field" id="ceUntilW" style="${(e.repeat&&e.repeat!=='no')?'':'display:none'}"><label>Repetir hasta (opcional)</label><input class="input" type="date" id="ceUntil" value="${esc(e.repeatUntil||'')}"></div>
       <div class="field"><label>¿Para quién?</label><select class="select" id="ceAud" onchange="document.getElementById('ceMembersW').style.display=this.value==='sel'?'':'none'">${auds.map(([v,l])=>`<option value="${v}" ${aud===v?'selected':''}>${l}</option>`).join('')}</select></div>
       <div class="field" id="ceMembersW" style="${aud==='sel'?'':'display:none'}"><label>Elegí las personas</label>${peoplePicker('ceMembers', scopedPeople(false), e.members||[])}</div>
@@ -4338,6 +4350,9 @@ function calForm(e){
     <div class="modal-foot">${_calEdit?`<button class="btn btn-danger" style="margin-right:auto" onclick="calDelEvent()">Eliminar</button>`:''}<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="calSaveEvent()">Guardar</button></div>`, true);
 }
 function calPickColor(c){ _calColor=c; document.querySelectorAll('.cal-colsw').forEach(b=>b.classList.toggle('on', b.dataset.c===c)); }
+function calRepeatChange(v){ const u=document.getElementById('ceUntilW'); if(u) u.style.display=(v==='no')?'none':''; const d=document.getElementById('ceDaysW'); if(d) d.style.display=(v==='semanal'||v==='quincenal')?'':'none'; }
+function calSetDays(arr){ document.querySelectorAll('#ceDaysW .cal-wd').forEach(b=>b.classList.toggle('on', arr.includes(+b.dataset.d))); }
+window.calRepeatChange=calRepeatChange; window.calSetDays=calSetDays;
 function calSaveEvent(){
   const title=$('#ceTitle').value.trim(); if(!title){ toast('Ponele un título','err'); return; }
   const date=$('#ceDate').value; if(!date){ toast('Elegí una fecha','err'); return; }
@@ -4346,14 +4361,16 @@ function calSaveEvent(){
   if(!allDay && start && end && calMin(end)<=calMin(start)) end=calMinToHHMM(calMin(start)+60);
   const repeat=$('#ceRepeat')?$('#ceRepeat').value:'no';
   const repeatUntil=(repeat!=='no'&&$('#ceUntil'))?$('#ceUntil').value:'';
+  let repeatDays=[];
+  if(repeat==='semanal'||repeat==='quincenal'){ repeatDays=[...document.querySelectorAll('#ceDaysW .cal-wd.on')].map(b=>+b.dataset.d); if(!repeatDays.length) repeatDays=[(calParse(date).getDay()+6)%7]; }
   const remind=$('#ceRemind')?$('#ceRemind').value:'no';
   let audience=$('#ceAud')?$('#ceAud').value:'me', members=[];
   if(audience==='sel'){ members=pickedIds('ceMembers'); if(!members.length){ toast('Elegí al menos una persona (o cambiá "¿Para quién?")','err'); return; } }
   const note=$('#ceNote').value.trim(), color=_calColor||CAL_COLORS[0];
   const sucursalId = me()?me().sucursalId:'all';
   DB.calEvents=DB.calEvents||[];
-  if(_calEdit){ const ev=DB.calEvents.find(x=>x.id===_calEdit); if(ev) Object.assign(ev,{title,date,allDay,start,end,repeat,repeatUntil,remind,audience,members,sucursalId,note,color,updatedAt:now()}); }
-  else DB.calEvents.push({id:uid(),byId:SES.userId,title,date,allDay,start,end,repeat,repeatUntil,remind,audience,members,sucursalId,note,color,at:now(),updatedAt:now()});
+  if(_calEdit){ const ev=DB.calEvents.find(x=>x.id===_calEdit); if(ev) Object.assign(ev,{title,date,allDay,start,end,repeat,repeatUntil,repeatDays,remind,audience,members,sucursalId,note,color,updatedAt:now()}); }
+  else DB.calEvents.push({id:uid(),byId:SES.userId,title,date,allDay,start,end,repeat,repeatUntil,repeatDays,remind,audience,members,sucursalId,note,color,at:now(),updatedAt:now()});
   if(audience&&audience!=='me'){ const targets = audience==='all'? scopedPeople(true).map(u=>u.id) : members.filter(id=>id!==SES.userId); if(targets.length) notify(targets, `${me().name.split(' ')[0]} te agendó: ${title}`, 'calendar', {view:'calendario'}); }
   audit('calendario',`${_calEdit?'editó':'agregó'} un evento: ${title}`);
   closeModal(); toast('Guardado ✓','ok'); render();

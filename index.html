@@ -1023,6 +1023,13 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .cal-colors{display:flex;gap:10px;flex-wrap:wrap}
 .cal-colsw{width:30px;height:30px;border-radius:50%;border:2px solid transparent;cursor:pointer;transition:transform var(--t-fast)}
 .cal-colsw.on{border-color:var(--text);transform:scale(1.12)}
+.cal-wdrow{display:flex;gap:6px;flex-wrap:wrap}
+.cal-wd{width:38px;height:38px;border-radius:50%;border:1px solid var(--border);background:var(--bg-soft);color:var(--text-soft);font-size:13px;font-weight:800;cursor:pointer;transition:background var(--t-fast),color var(--t-fast),border-color var(--t-fast)}
+.cal-wd:hover{border-color:var(--accent-line)}
+.cal-wd.on{background:var(--grad-accent);color:#fff;border-color:transparent}
+.cal-wdpresets{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+.cal-wdpreset{font-size:12px;font-weight:700;padding:6px 13px;border-radius:var(--r-pill);border:1px solid var(--border);background:var(--bg-soft);color:var(--text-soft);cursor:pointer;transition:border-color var(--t-fast),color var(--t-fast)}
+.cal-wdpreset:hover{border-color:var(--accent-line);color:var(--text)}
 /* arrastrar / soltar */
 .cal-chip.cdraggable,.cal-ev.cdraggable{cursor:grab;touch-action:none}
 .cal-chip.cdraggable:active,.cal-ev.cdraggable:active{cursor:grabbing}
