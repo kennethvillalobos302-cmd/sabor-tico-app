@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v51 · pildora: nombre completo + personas';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v52 · Calendario personal (dia/semana/mes/año)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -213,7 +213,7 @@ function mergeAppendOnly(localDB, remoteDB){
    el otro aún no tenía), respetando los borrados con "tombstones". Para un objeto que existe en ambos
    lados, gana la EDICIÓN MÁS RECIENTE (por updatedAt), no "el último que sube"; así un cambio (p.ej.
    renombrar una sucursal) se propaga a todos y no lo revierte un dispositivo con datos viejos. */
-const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory','sucursales'];
+const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory','sucursales','calEvents'];
 const _stamp=o=>(o&&(o.updatedAt||o.at||o.createdAt))||0;   // marca de tiempo para "edición más reciente gana"
 // REGLA: cualquier BORRADO DURO de una colección de RECON_COLLS DEBE marcar tomb(id) antes de filtrar,
 // o el borrado "revivirá" desde otro dispositivo. Usá delEntity(coll,id) para no olvidarlo nunca.
@@ -392,7 +392,7 @@ function seed(){
 // leer (sin conexión / auth / reglas). Evita inventar datos de ejemplo que contaminen la base real.
 function emptyDB(){ return { _dataVersion:DATA_VERSION, sucursales:[], users:[], inventory:[],
   invCats:JSON.parse(JSON.stringify(DEFAULT_CATS)), invMoves:[], recipes:[], shifts:[], tasks:[], pedidos:[],
-  projects:[], chats:[], notifs:[], audit:[], clients:[], reservations:[], souvenirs:[], souvSales:[], attendance:[] }; }
+  projects:[], chats:[], notifs:[], audit:[], clients:[], reservations:[], souvenirs:[], souvSales:[], attendance:[], calEvents:[] }; }
 
 /* ---------------- Generadores de datos (inventario / recetas / turnos) ---------------- */
 const money = n => '₡'+Math.round(n||0).toLocaleString('es-CR');
@@ -524,7 +524,7 @@ function migrate(remote){
   // unir puestos viejos de Contabilidad y Recursos en el rol combinado
   (DB.users||[]).forEach(u=>{ if(u.role==='contabilidad'||u.role==='rrhh'){ u.role='contarh'; ch=true; } });
   // asegurar que las colecciones base existan (datos sincronizados pueden venir incompletos)
-  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients','souvenirs','souvSales','attendance'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
+  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients','souvenirs','souvSales','attendance','calEvents'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
   const s=DB.sucursales||[]; const s1=s[0]?s[0].id:'all'; const s2=s[1]?s[1].id:s1;
   if(DB.inventory===undefined){ DB.inventory=seedInventory(s1,s2); ch=true; }
   if(DB.invMoves===undefined){ DB.invMoves=[]; ch=true; }
@@ -904,6 +904,7 @@ const NAV_DEF = {
   inventario:{label:'Inventario',  ico:'chart' },
   recetas:  { label:'Recetas',     ico:'utensils' },
   horarios: { label:'Horarios',    ico:'calendar' },
+  calendario:{ label:'Calendario', ico:'calendar' },
   proyectos:{ label:'Proyectos',   ico:'clipboard' },
   chat:     { label:'Mensajes',    ico:'message' },
   reportes: { label:'Reportes',    ico:'trend' },
@@ -925,6 +926,8 @@ const ROLE_NAV = {
   gerencia_data:['inicio','tareas','pedidos','reservas','souvenir','inventario','proyectos','chat','reportes'],
   bartender:   ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
 };
+// Calendario personal: disponible para todos los puestos (lo agregamos después de Horarios)
+Object.keys(ROLE_NAV).forEach(r=>{ if(!ROLE_NAV[r].includes('calendario')){ const i=ROLE_NAV[r].indexOf('horarios'); if(i>=0) ROLE_NAV[r].splice(i+1,0,'calendario'); else ROLE_NAV[r].splice(1,0,'calendario'); } });
 const ADMIN_GROUP = ['reportes','equipo','auditoria'];
 function navItems(){
   const ids = ROLE_NAV[me().role] || ['inicio','tareas','pedidos','proyectos','chat'];
@@ -1036,7 +1039,7 @@ function render(){
 
   const v=$('#view');
   const map={ inicio:viewInicio, tareas:viewTareas, pedidos:viewPedidos, inventario:viewInventario,
-    recetas:viewRecetas, horarios:viewHorarios, personal:viewEquipo, proyectos:viewProyectos,
+    recetas:viewRecetas, horarios:viewHorarios, calendario:viewCalendario, personal:viewEquipo, proyectos:viewProyectos,
     chat:viewChat, reportes:viewReportes, reservas:viewReservas, souvenir:viewSouvenir, equipo:viewEquipo, auditoria:viewAuditoria };
   // si el puesto no tiene acceso a la vista actual, volver a inicio
   if(!(ROLE_NAV[me().role]||[]).includes(SES.view)) SES.view='inicio';
@@ -4081,6 +4084,179 @@ function todayShiftCard(){
 }
 window.shiftNewModal=shiftNewModal; window.shiftEditModal=shiftEditModal; window.saveShift=saveShift; window.delShift=delShift;
 window.addBreakRow=addBreakRow; window.renderBreakRows=renderBreakRows;
+
+/* =====================================================================
+   VISTA: CALENDARIO (personal) — agenda con vistas Día / Semana / Mes / Año.
+   Cada persona agenda sus cosas (DB.calEvents) y ve también sus turnos
+   (Horarios) y sus tareas con fecha de entrega. Estilo oscuro de la app.
+   ===================================================================== */
+let calView='mes', calCursor='', _calEdit=null, _calColor='#b83a52';
+let calShow={eventos:true, turnos:true, tareas:true};
+const CAL_COLORS=['#b83a52','#f4b740','#5aa777','#7fa9b8','#9b6dd6','#e07a5f'];
+const CAL_DOW=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+const CAL_MON=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+function dISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function calToday(){ return dISO(new Date()); }
+function calParse(iso){ const a=(iso||calToday()).split('-').map(Number); return new Date(a[0],(a[1]||1)-1,a[2]||1); }
+function calAddDays(iso,n){ const d=calParse(iso); d.setDate(d.getDate()+n); return dISO(d); }
+function calAddMonths(iso,n){ const d=calParse(iso); d.setMonth(d.getMonth()+n); return dISO(d); }
+function calWeekStart(iso){ const d=calParse(iso); const wd=(d.getDay()+6)%7; d.setDate(d.getDate()-wd); return dISO(d); }
+function calHHMM(ts){ const d=new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+function calMin(t){ if(!t) return 0; const a=t.split(':').map(Number); return a[0]*60+(a[1]||0); }
+function cap1(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+function calDayItems(iso){
+  const items=[];
+  if(calShow.eventos) (DB.calEvents||[]).filter(e=>e&&e.userId===SES.userId && e.date===iso).forEach(e=>{
+    items.push({kind:'event', id:e.id, title:e.title||'(sin título)', start:e.allDay?'':e.start, end:e.allDay?'':e.end, allDay:!!e.allDay||!e.start, color:e.color||CAL_COLORS[0]});
+  });
+  if(calShow.turnos) (DB.shifts||[]).filter(s=>s&&s.userId===SES.userId && s.date===iso).forEach(s=>{
+    if(s.off) items.push({kind:'shift', id:s.id, title:'Día libre', allDay:true, color:'#7fa9b8'});
+    else items.push({kind:'shift', id:s.id, title:'Turno', start:s.start, end:s.end, allDay:false, color:'#5aa777'});
+  });
+  if(calShow.tareas) (DB.tasks||[]).filter(t=>t&&(t.toIds||[]).includes(SES.userId) && t.due && dISO(new Date(t.due))===iso && t.status!=='hecha' && t.status!=='rechazada').forEach(t=>{
+    const d=new Date(t.due); const hasTime=!(d.getHours()===0&&d.getMinutes()===0);
+    items.push({kind:'task', id:t.id, title:t.title||'Tarea', start:hasTime?calHHMM(t.due):'', end:'', allDay:!hasTime, color:'#d59b4a'});
+  });
+  return items.sort((a,b)=> (a.allDay?0:1)-(b.allDay?0:1) || calMin(a.start)-calMin(b.start));
+}
+function viewCalendario(){
+  if(!calCursor) calCursor=calToday();
+  const d=calParse(calCursor);
+  let title;
+  if(calView==='dia') title=d.getDate()+' de '+CAL_MON[d.getMonth()]+' '+d.getFullYear();
+  else if(calView==='semana'){ const ws=calParse(calWeekStart(calCursor)), we=calParse(calAddDays(calWeekStart(calCursor),6)); title=ws.getDate()+(ws.getMonth()!==we.getMonth()?' '+CAL_MON[ws.getMonth()].slice(0,3):'')+' – '+we.getDate()+' '+CAL_MON[we.getMonth()].slice(0,3)+' '+we.getFullYear(); }
+  else if(calView==='anio') title=''+d.getFullYear();
+  else title=cap1(CAL_MON[d.getMonth()])+' '+d.getFullYear();
+  const views=[['dia','Día'],['semana','Semana'],['mes','Mes'],['anio','Año']];
+  const guide=sectionGuide('calendario','Tu calendario',`Agendá tus cosas y vé tus <b>turnos</b> y <b>tareas</b> en un solo lugar. Tocá un día (o <b>Crear</b>) para agregar algo.`);
+  let html=`<div class="page-head"><div><div class="page-title">Calendario</div><div class="page-sub">Tu agenda personal</div></div>
+    <div class="ph-spacer"></div><button class="btn btn-primary" style="flex:0 0 auto" onclick="calCreate('${calCursor}')">${svgIcon('plus','icon icon-sm')} Crear</button></div>`;
+  html+=guide;
+  html+=`<div class="cal-toolbar">
+    <button class="btn btn-ghost cal-today" onclick="calGo('hoy')">Hoy</button>
+    <button class="icon-btn cal-nav" onclick="calGo('prev')" title="Anterior">${svgIcon('back','icon icon-sm')}</button>
+    <button class="icon-btn cal-nav cal-next" onclick="calGo('next')" title="Siguiente">${svgIcon('back','icon icon-sm')}</button>
+    <div class="cal-title">${esc(title)}</div>
+    <div class="ph-spacer"></div>
+    <div class="cal-views">${views.map(([k,l])=>`<button class="cal-vbtn ${calView===k?'on':''}" onclick="calView='${k}';render()">${l}</button>`).join('')}</div>
+  </div>`;
+  html+=`<div class="cal-filters">${[['eventos','Mis eventos','#b83a52'],['turnos','Turnos','#5aa777'],['tareas','Tareas','#d59b4a']].map(([k,l,c])=>`<button class="cal-fchip ${calShow[k]?'on':''}" onclick="calShow.${k}=!calShow.${k};render()"><span class="cal-dot" style="background:${c}"></span>${l}</button>`).join('')}</div>`;
+  html+= calView==='mes'?calMonthView():calView==='semana'?calWeekView():calView==='dia'?calDayView():calYearView();
+  return html;
+}
+function calGo(dir){
+  if(dir==='hoy'){ calCursor=calToday(); render(); return; }
+  const n=dir==='next'?1:-1;
+  if(calView==='dia') calCursor=calAddDays(calCursor,n);
+  else if(calView==='semana') calCursor=calAddDays(calCursor,7*n);
+  else if(calView==='anio') calCursor=calAddMonths(calCursor,12*n);
+  else calCursor=calAddMonths(calCursor,n);
+  render();
+}
+function calChip(it){ return `<button class="cal-chip" style="--c:${it.color}" onclick="event.stopPropagation();calItemClick('${it.kind}','${it.id}')">${it.allDay?'':`<b>${esc(fmt12(it.start))}</b> `}${esc(it.title)}</button>`; }
+function calMonthView(){
+  const first=calParse(calCursor); first.setDate(1);
+  const gridStart=calWeekStart(dISO(first)); const today=calToday(); const curMonth=first.getMonth();
+  let cells='';
+  for(let i=0;i<42;i++){
+    const iso=calAddDays(gridStart,i); const d=calParse(iso); const items=calDayItems(iso);
+    const shown=items.slice(0,3), more=items.length-shown.length;
+    cells+=`<div class="cal-cell${d.getMonth()!==curMonth?' other':''}${iso===today?' today':''}" onclick="calCreate('${iso}')">
+      <div class="cal-cnum">${d.getDate()}</div>
+      <div class="cal-cev">${shown.map(calChip).join('')}${more>0?`<div class="cal-more">+${more} más</div>`:''}</div>
+    </div>`;
+  }
+  return `<div class="cal-month"><div class="cal-dow">${CAL_DOW.map(x=>`<span>${x}</span>`).join('')}</div><div class="cal-grid">${cells}</div></div>`;
+}
+function calTimeGrid(days){
+  const startH=6,endH=23,rowH=46; const hours=[]; for(let h=startH;h<=endH;h++) hours.push(h);
+  const today=calToday(); const cols='58px repeat('+days.length+',minmax(0,1fr))';
+  const head=days.map(iso=>{const d=calParse(iso);return `<div class="cal-tg-dh${iso===today?' today':''}"><span>${CAL_DOW[(d.getDay()+6)%7]}</span><b>${d.getDate()}</b></div>`;}).join('');
+  const adcells=days.map(iso=>`<div class="cal-tg-ad">${calDayItems(iso).filter(it=>it.allDay).map(calChip).join('')}</div>`).join('');
+  const gut=`<div class="cal-tg-gut">${hours.map(h=>`<div class="cal-tg-hr" style="height:${rowH}px"><span>${fmt12(String(h).padStart(2,'0')+':00')}</span></div>`).join('')}</div>`;
+  const dayCols=days.map(iso=>{
+    const evs=calDayItems(iso).filter(it=>!it.allDay&&it.start).map(it=>{
+      let s=calMin(it.start), e=it.end?calMin(it.end):s+45; if(e<=s)e=s+45;
+      const top=(s-startH*60)/60*rowH, h=Math.max(20,(e-s)/60*rowH);
+      return `<button class="cal-ev" style="--c:${it.color};top:${top}px;height:${h}px" onclick="event.stopPropagation();calItemClick('${it.kind}','${it.id}')"><b>${esc(fmt12(it.start))}</b> ${esc(it.title)}</button>`;
+    }).join('');
+    return `<div class="cal-tg-col" style="height:${hours.length*rowH}px" onclick="calCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
+  }).join('');
+  return `<div class="cal-timegrid">
+    <div class="cal-tg-headrow" style="grid-template-columns:${cols}"><div></div>${head}</div>
+    <div class="cal-tg-adrow" style="grid-template-columns:${cols}"><div class="cal-tg-adl">Todo el día</div>${adcells}</div>
+    <div class="cal-tg-scroll"><div class="cal-tg-board" style="grid-template-columns:${cols}">${gut}${dayCols}</div></div>
+  </div>`;
+}
+function calDayView(){ return calTimeGrid([calCursor]); }
+function calWeekView(){ const ws=calWeekStart(calCursor); return calTimeGrid([0,1,2,3,4,5,6].map(i=>calAddDays(ws,i))); }
+function calYearView(){
+  const year=calParse(calCursor).getFullYear(); const today=calToday();
+  let html='<div class="cal-year">';
+  for(let m=0;m<12;m++){
+    const gridStart=calWeekStart(dISO(new Date(year,m,1)));
+    let cells='';
+    for(let i=0;i<42;i++){ const iso=calAddDays(gridStart,i); const d=calParse(iso); const other=d.getMonth()!==m; const has=!other&&calDayItems(iso).length>0;
+      cells+=`<span class="cal-yc${other?' o':''}${iso===today?' t':''}${has?' h':''}">${d.getDate()}</span>`; }
+    html+=`<button class="cal-ymonth" onclick="calView='mes';calCursor='${dISO(new Date(year,m,1))}';render()"><div class="cal-ymn">${cap1(CAL_MON[m])}</div><div class="cal-yhdr">${['L','M','X','J','V','S','D'].map(x=>`<span>${x}</span>`).join('')}</div><div class="cal-yg">${cells}</div></button>`;
+  }
+  return html+'</div>';
+}
+function calCreate(iso, time){ _calEdit=null; calForm({date:iso||calToday(), start:time||'', end:time?calMinToHHMM(calMin(time)+60):'', allDay:!time, title:'', color:CAL_COLORS[0], note:''}); }
+function calMinToHHMM(m){ m=Math.max(0,Math.min(1439,m)); return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
+function calCreateAt(iso,ev,rowH,startH){
+  if(ev.target.closest('.cal-ev')) return;
+  let y=0; try{ const r=ev.currentTarget.getBoundingClientRect(); y=ev.clientY-r.top; }catch(_){}
+  const mins=startH*60+Math.max(0,Math.round(y/rowH*60/30)*30);
+  calCreate(iso, calMinToHHMM(mins));
+}
+function calEditEvent(id){ const e=(DB.calEvents||[]).find(x=>x.id===id); if(!e) return; _calEdit=id; calForm(e); }
+function calItemClick(kind,id){
+  if(kind==='event') return calEditEvent(id);
+  if(kind==='task'){ SES.view='tareas'; render(); if(typeof taskDetail==='function') setTimeout(()=>{ try{ taskDetail(id); }catch(_){} },60); return; }
+  if(kind==='shift'){ SES.view='horarios'; render(); return; }
+}
+function calForm(e){
+  _calColor=e.color||CAL_COLORS[0];
+  const colors=CAL_COLORS.map(c=>`<button type="button" class="cal-colsw ${_calColor===c?'on':''}" style="background:${c}" data-c="${c}" onclick="calPickColor('${c}')"></button>`).join('');
+  openModal(`<div class="modal-head"><h3>${svgIcon('calendar','icon')} ${_calEdit?'Editar':'Nuevo'} evento</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Título</label><input class="input" id="ceTitle" value="${esc(e.title||'')}" placeholder="Ej: Reunión con proveedor" autocomplete="off"></div>
+      <div class="row2">
+        <div class="field"><label>Fecha</label><input class="input" type="date" id="ceDate" value="${esc(e.date||calToday())}"></div>
+        <div class="field"><label>&nbsp;</label><label class="cal-allday"><input type="checkbox" id="ceAllday" ${e.allDay?'checked':''} onchange="document.getElementById('ceTimes').style.display=this.checked?'none':'grid'"> Todo el día</label></div>
+      </div>
+      <div class="row2" id="ceTimes" style="${e.allDay?'display:none':'display:grid'}">
+        <div class="field"><label>Desde</label><input class="input" type="time" id="ceStart" value="${esc(e.start||'09:00')}"></div>
+        <div class="field"><label>Hasta</label><input class="input" type="time" id="ceEnd" value="${esc(e.end||'10:00')}"></div>
+      </div>
+      <div class="field"><label>Color</label><div class="cal-colors">${colors}</div></div>
+      <div class="field"><label>Nota (opcional)</label><textarea class="textarea" id="ceNote" placeholder="Detalle…">${esc(e.note||'')}</textarea></div>
+    </div>
+    <div class="modal-foot">${_calEdit?`<button class="btn btn-danger" style="margin-right:auto" onclick="calDelEvent()">Eliminar</button>`:''}<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="calSaveEvent()">Guardar</button></div>`, true);
+}
+function calPickColor(c){ _calColor=c; document.querySelectorAll('.cal-colsw').forEach(b=>b.classList.toggle('on', b.dataset.c===c)); }
+function calSaveEvent(){
+  const title=$('#ceTitle').value.trim(); if(!title){ toast('Ponele un título','err'); return; }
+  const date=$('#ceDate').value; if(!date){ toast('Elegí una fecha','err'); return; }
+  const allDay=$('#ceAllday').checked;
+  let start=allDay?'':$('#ceStart').value, end=allDay?'':$('#ceEnd').value;
+  if(!allDay && start && end && calMin(end)<=calMin(start)) end=calMinToHHMM(calMin(start)+60);
+  const note=$('#ceNote').value.trim(), color=_calColor||CAL_COLORS[0];
+  DB.calEvents=DB.calEvents||[];
+  if(_calEdit){ const ev=DB.calEvents.find(x=>x.id===_calEdit); if(ev) Object.assign(ev,{title,date,allDay,start,end,note,color,updatedAt:now()}); }
+  else DB.calEvents.push({id:uid(),userId:SES.userId,title,date,allDay,start,end,note,color,at:now(),updatedAt:now()});
+  audit('calendario',`${_calEdit?'editó':'agregó'} un evento: ${title}`);
+  closeModal(); toast('Guardado ✓','ok'); render();
+}
+function calDelEvent(){
+  if(!_calEdit) return; const ev=(DB.calEvents||[]).find(x=>x.id===_calEdit);
+  delEntity('calEvents', _calEdit); _calEdit=null;
+  closeModal(); audit('calendario','eliminó un evento'); save(); render();
+  if(ev) undoDelete('calEvents', ev, 'Evento');
+}
+window.calGo=calGo; window.calCreate=calCreate; window.calCreateAt=calCreateAt; window.calItemClick=calItemClick;
+window.calEditEvent=calEditEvent; window.calForm=calForm; window.calPickColor=calPickColor; window.calSaveEvent=calSaveEvent; window.calDelEvent=calDelEvent;
 
 /* =====================================================================
    VISTA: REPORTES (Gerencia / Contabilidad)
