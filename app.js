@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v57 · Calendario de Reservas (pestaña)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v58 · Calendario: varias reservas a la misma hora lado a lado';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4107,6 +4107,16 @@ function calWeekStart(iso){ const d=calParse(iso); const wd=(d.getDay()+6)%7; d.
 function calHHMM(ts){ const d=new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function calMin(t){ if(!t) return 0; const a=t.split(':').map(Number); return a[0]*60+(a[1]||0); }
 function cap1(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+/* Acomodo de eventos superpuestos: a cada item (con .s y .e en minutos) le pone
+   .col (columna) y .cols (cuántas columnas hay en su grupo) para verse lado a lado. */
+function calPack(list){
+  list.sort((a,b)=> a.s-b.s || a.e-b.e);
+  let cl=[], curEnd=-1; const clusters=[];
+  list.forEach(it=>{ if(cl.length && it.s>=curEnd){ clusters.push(cl); cl=[]; curEnd=-1; } cl.push(it); curEnd=Math.max(curEnd,it.e); });
+  if(cl.length) clusters.push(cl);
+  clusters.forEach(c=>{ const ends=[]; c.forEach(it=>{ let p=false; for(let i=0;i<ends.length;i++){ if(ends[i]<=it.s){ ends[i]=it.e; it.col=i; p=true; break; } } if(!p){ it.col=ends.length; ends.push(it.e); } }); const n=ends.length; c.forEach(it=>it.cols=n); });
+  return list;
+}
 function calEvBy(e){ return e.byId||e.userId; }
 function calEventVisible(e){
   if(calEvBy(e)===SES.userId) return true;
@@ -4215,11 +4225,13 @@ function calTimeGrid(days){
   const adcells=days.map(iso=>`<div class="cal-tg-ad">${calDayItems(iso).filter(it=>it.allDay).map(it=>calChip(it,iso)).join('')}</div>`).join('');
   const gut=`<div class="cal-tg-gut">${hours.map(h=>`<div class="cal-tg-hr" style="height:${rowH}px"><span>${fmt12(String(h).padStart(2,'0')+':00')}</span></div>`).join('')}</div>`;
   const dayCols=days.map(iso=>{
-    const evs=calDayItems(iso).filter(it=>!it.allDay&&it.start).map(it=>{
-      let s=calMin(it.start), e=it.end?calMin(it.end):s+45; if(e<=s)e=s+45;
-      const top=(s-startH*60)/60*rowH, h=Math.max(20,(e-s)/60*rowH);
+    const list=calDayItems(iso).filter(it=>!it.allDay&&it.start).map(it=>{ let s=calMin(it.start), e=it.end?calMin(it.end):s+45; if(e<=s)e=s+45; return Object.assign({}, it, {s,e}); });
+    calPack(list);
+    const evs=list.map(it=>{
+      const top=(it.s-startH*60)/60*rowH, h=Math.max(20,(it.e-it.s)/60*rowH);
+      const cols=it.cols||1, col=it.col||0, lf=col/cols*100, wd=100/cols;
       const handler=it.draggable?`onpointerdown="calDragStart(event,'${it.kind}','${it.id}','${iso}')" onclick="event.stopPropagation()"`:`onclick="event.stopPropagation();calItemClick('${it.kind}','${it.id}')"`;
-      return `<button class="cal-ev${it.draggable?' cdraggable':''}" style="--c:${it.color};top:${top}px;height:${h}px" ${handler}>${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}<b>${esc(fmt12(it.start))}</b> ${esc(it.title)}</button>`;
+      return `<button class="cal-ev${it.draggable?' cdraggable':''}" style="--c:${it.color};top:${top}px;height:${h}px;left:calc(${lf}% + 2px);width:calc(${wd}% - 4px);right:auto" ${handler}>${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}<b>${esc(fmt12(it.start))}</b> ${esc(it.title)}</button>`;
     }).join('');
     return `<div class="cal-tg-col" data-iso="${iso}" style="height:${hours.length*rowH}px" onclick="calCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
   }).join('');
@@ -4760,9 +4772,12 @@ function rvcTimeGrid(days){
   const head=days.map(iso=>{const d=calParse(iso);return `<div class="cal-tg-dh${iso===today?' today':''}"><span>${CAL_DOW[(d.getDay()+6)%7]}</span><b>${d.getDate()}</b></div>`;}).join('');
   const gut=`<div class="cal-tg-gut">${hours.map(h=>`<div class="cal-tg-hr" style="height:${rowH}px"><span>${fmt12(String(h).padStart(2,'0')+':00')}</span></div>`).join('')}</div>`;
   const dayCols=days.map(iso=>{
-    const evs=rvcItems(iso).filter(it=>it.time).map(it=>{ let s=calMin(it.time), e=s+90;
-      const top=(s-startH*60)/60*rowH, h=Math.max(26,(e-s)/60*rowH);
-      return `<button class="cal-ev" style="--c:${it.color};top:${top}px;height:${h}px" onclick="event.stopPropagation();reservDetail('${it.id}')"><b>${esc(fmt12(it.time))}</b> ${esc(it.name)}${it.people?' ('+it.people+'p)':''}</button>`;
+    const list=rvcItems(iso).filter(it=>it.time).map(it=>{ const s=calMin(it.time); return Object.assign({}, it, {s, e:s+90}); });
+    calPack(list);
+    const evs=list.map(it=>{
+      const top=(it.s-startH*60)/60*rowH, h=Math.max(26,(it.e-it.s)/60*rowH);
+      const cols=it.cols||1, col=it.col||0, lf=col/cols*100, wd=100/cols;
+      return `<button class="cal-ev" style="--c:${it.color};top:${top}px;height:${h}px;left:calc(${lf}% + 2px);width:calc(${wd}% - 4px);right:auto" onclick="event.stopPropagation();reservDetail('${it.id}')"><b>${esc(fmt12(it.time))}</b> ${esc(it.name)}${(cols<2&&it.people)?' ('+it.people+'p)':''}</button>`;
     }).join('');
     return `<div class="cal-tg-col" data-iso="${iso}" style="height:${hours.length*rowH}px" onclick="rvcCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
   }).join('');
