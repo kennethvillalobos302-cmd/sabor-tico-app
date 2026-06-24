@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v55 · Calendario: repetir por dias (lun, mier...)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v56 · Calendario: tocar dia en Mes abre el Dia';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4201,7 +4201,7 @@ function calMonthView(){
   for(let i=0;i<42;i++){
     const iso=calAddDays(gridStart,i); const d=calParse(iso); const items=calDayItems(iso);
     const shown=items.slice(0,3), more=items.length-shown.length;
-    cells+=`<div class="cal-cell${d.getMonth()!==curMonth?' other':''}${iso===today?' today':''}" data-iso="${iso}" onclick="calCreate('${iso}')">
+    cells+=`<div class="cal-cell${d.getMonth()!==curMonth?' other':''}${iso===today?' today':''}" data-iso="${iso}" onclick="calOpenDay('${iso}')">
       <div class="cal-cnum">${d.getDate()}</div>
       <div class="cal-cev">${shown.map(it=>calChip(it,iso)).join('')}${more>0?`<div class="cal-more">+${more} más</div>`:''}</div>
     </div>`;
@@ -4257,6 +4257,8 @@ function calAgendaView(){
   return html+'</div>';
 }
 function calCreate(iso, time){ _calEdit=null; calForm({date:iso||calToday(), start:time||'', end:time?calMinToHHMM(calMin(time)+60):'', allDay:!time, title:'', color:CAL_COLORS[0], note:''}); }
+function calOpenDay(iso){ calView='dia'; calCursor=iso||calToday(); render(); }   // tocar un día en Mes -> ver el día
+window.calOpenDay=calOpenDay;
 function calMinToHHMM(m){ m=Math.max(0,Math.min(1439,m)); return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
 function calCreateAt(iso,ev,rowH,startH){
   if(ev.target.closest('.cal-ev')) return;
