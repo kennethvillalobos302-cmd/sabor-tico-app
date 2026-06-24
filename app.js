@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v65 · Inventario: modos Editar/Conteo, arrastrar, reporte y CSV';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v66 · Inventario: movimientos con filtros/quién y conteos de hoy';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3100,6 +3100,7 @@ function viewInventario(){
       </select>
       <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">${svgIcon('info','icon icon-sm')} Bajo mínimo${low?' ('+low+')':''}</button>
       <button class="chip" onclick="inventoryReportModal()">${svgIcon('chart','icon icon-sm')} Reporte</button>
+      <button class="chip" onclick="dailyCountsModal()">${svgIcon('check','icon icon-sm')} Conteos de hoy</button>
       <button class="chip" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button>
       ${editMode?`<button class="chip ${invSelMode?'on':''}" onclick="invToggleSelMode()">${svgIcon('check','icon icon-sm')} Organizar</button>
         <button class="chip" onclick="bodegaManagerModal()">${svgIcon('box','icon icon-sm')} Bodegas</button>
@@ -3342,19 +3343,19 @@ function invCountPanel(p){
     </div>
   </aside>`;
 }
-function doInvMove(pid,type,q,note){
+function doInvMove(pid,type,q,note,src){
   const p=DB.inventory.find(x=>x.id===pid); if(!p) return;
   p.stock = type==='entrada' ? +(p.stock+q).toFixed(2) : Math.max(0,+(p.stock-q).toFixed(2));
-  DB.invMoves.unshift({id:uid(),productId:p.id,type,qty:q,byId:SES.userId,at:now(),note:note||'',refId:null,sucursalId:p.sucursalId});
+  DB.invMoves.unshift({id:uid(),productId:p.id,type,qty:q,byId:SES.userId,at:now(),note:note||'',refId:null,sucursalId:p.sucursalId,src:src||''});
   audit('inventario',`${type==='entrada'?'+':'-'}${q} ${p.unit} de "${p.name}"${note?' ('+note+')':''}`,p.sucursalId);
   if(type==='salida'&&lowStock(p)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Inventario bajo: ${p.name} (${p.stock} ${p.unit})`,'⚠️',{view:'inventario'});
   toast('Inventario actualizado','ok'); render();
 }
-function countMove(pid,type){ const q=+($('#cntQty')?$('#cntQty').value:0)||0; if(!(q>0)){ toast('Poné una cantidad','err'); return; } doInvMove(pid,type,q,'conteo diario'); }
+function countMove(pid,type){ const q=+($('#cntQty')?$('#cntQty').value:0)||0; if(!(q>0)){ toast('Poné una cantidad','err'); return; } doInvMove(pid,type,q,'conteo diario','conteo'); }
 function countSet(pid){ const p=DB.inventory.find(x=>x.id===pid); if(!p) return; const v=$('#cntReal')?$('#cntReal').value:''; const real=+v;
   if(v===''||isNaN(real)||real<0){ toast('Poné la cantidad contada','err'); return; }
   const diff=+(real-p.stock).toFixed(2); if(diff===0){ toast('El conteo coincide con el sistema ✓','ok'); return; }
-  doInvMove(pid, diff>0?'entrada':'salida', Math.abs(diff), `ajuste por conteo (${p.stock}→${real})`);
+  doInvMove(pid, diff>0?'entrada':'salida', Math.abs(diff), `ajuste por conteo (${p.stock}→${real})`, 'conteo');
 }
 window.invCountPanel=invCountPanel; window.countMove=countMove; window.countSet=countSet; window.doInvMove=doInvMove;
 /* ---- Reporte general (tabla) + exportar CSV ---- */
@@ -3505,19 +3506,62 @@ function saveProduct(id){
   else { DB.inventory.push({id:uid(),...data}); audit('inventario',`agregó el producto "${name}"`,data.sucursalId); }
   closeModal(); toast('Producto guardado','ok'); render();
 }
+let mvRange='hoy', mvType='todos';
+function todayStart(){ const d=new Date(); d.setHours(0,0,0,0); return d.getTime(); }
+function mvMatch(m){
+  const fromTs={hoy:todayStart(),'7d':todayStart()-6*864e5,'30d':todayStart()-29*864e5,todo:0}[mvRange]||0;
+  if(m.at<fromTs) return false;
+  if(mvType==='todos') return true;
+  if(mvType==='conteo') return m.src==='conteo';
+  return m.type===mvType;
+}
+function mvSetRange(r){ mvRange=r; invMovesModal(); }
+function mvSetType(t){ mvType=t; invMovesModal(); }
+function invMvType(m){ return {entrada:{l:'Entrada',c:'var(--success)',s:'+'},salida:{l:'Salida',c:'var(--danger)',s:'−'},venta:{l:'Venta',c:'#a855f7',s:'−'},traslado:{l:'Traslado',c:'var(--accent)',s:'⇄'}}[m.type]||{l:m.type,c:'var(--text-soft)',s:''}; }
 function invMovesModal(){
-  const moves=DB.invMoves.filter(m=>inScope(m.sucursalId)).slice(0,80);
+  const moves=DB.invMoves.filter(m=>inScope(m.sucursalId) && mvMatch(m)).slice(0,400);
+  const cnt=t=> DB.invMoves.filter(m=>inScope(m.sucursalId) && mvMatch(m) && (t==='conteo'?m.src==='conteo':m.type===t)).length;
+  const rangeChip=(k,l)=>`<button class="chip sm ${mvRange===k?'on':''}" onclick="mvSetRange('${k}')">${l}</button>`;
+  const typeChip=(k,l)=>`<button class="chip sm ${mvType===k?'on':''}" onclick="mvSetType('${k}')">${l}</button>`;
   const rows=moves.map(m=>{
     const p=DB.inventory.find(x=>x.id===m.productId); const u=userById(m.byId);
-    const isTr=m.type==='traslado';
-    const sign=m.type==='entrada'?'+':isTr?'⇄':'−';
-    const col=m.type==='entrada'?'var(--success)':isTr?'var(--accent)':m.type==='venta'?'#a855f7':'var(--danger)';
-    const label={entrada:'entrada',salida:'salida',venta:'venta',traslado:'traslado'}[m.type]||m.type;
-    return `<div class="log-item"><b style="color:${col}">${isTr?'⇄':sign+m.qty}</b> ${p?esc(p.name):'—'} · ${label} · ${u?esc((u.name||'').split(' ')[0]):''}${m.note?' · '+esc(m.note):''} <span style="opacity:.7">· ${fmtDateTime(m.at)}</span></div>`;
+    const T=invMvType(m); const isTr=m.type==='traslado'; const isCount=m.src==='conteo';
+    return `<div class="mv-item">
+      <span class="mv-av" title="${u?esc(u.name):''}">${u?initials(u.name):'?'}</span>
+      <div class="mv-main">
+        <div class="mv-l1"><b class="mv-prod">${p?esc(p.name):'—'}</b> <span class="mv-pill" style="background:${T.c}1a;color:${T.c}">${T.l}${isCount?' · conteo':''}</span></div>
+        <div class="mv-l2">${u?esc(u.name):'—'}${m.note?' · '+esc(m.note):''} · ${fmtDateTime(m.at)}</div>
+      </div>
+      <span class="mv-qty" style="color:${T.c}">${isTr?'⇄':(T.s+m.qty)}</span>
+    </div>`;
   }).join('');
-  openModal(`<div class="modal-head"><h3>Movimientos de inventario</h3><button class="modal-close" onclick="closeModal()">×</button></div>
-    <div class="modal-body">${moves.length?`<div class="log">${rows}</div>`:'<div class="empty"><div class="em-ico">📜</div><div class="em-d">Sin movimientos todavía.</div></div>'}</div>`,true);
+  openModal(`<div class="modal-head"><h3>${svgIcon('list','icon')} Movimientos${mvRange==='hoy'?' de hoy':''}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="mv-filters">
+        ${rangeChip('hoy','Hoy')}${rangeChip('7d','7 días')}${rangeChip('30d','30 días')}${rangeChip('todo','Todo')}
+        <span class="mv-sep"></span>
+        ${typeChip('todos','Todos')}${typeChip('conteo','Conteos')}${typeChip('entrada','Entradas')}${typeChip('salida','Salidas')}${typeChip('venta','Ventas')}${typeChip('traslado','Traslados')}
+      </div>
+      <div class="mv-kpis">
+        <div class="mv-kpi"><b>${cnt('entrada')}</b><span>Entradas</span></div>
+        <div class="mv-kpi"><b>${cnt('salida')}</b><span>Salidas</span></div>
+        <div class="mv-kpi"><b>${cnt('venta')}</b><span>Ventas</span></div>
+        <div class="mv-kpi"><b>${cnt('conteo')}</b><span>Conteos</span></div>
+      </div>
+      ${moves.length?`<div class="mv-list">${rows}</div>`:'<div class="empty"><div class="em-ico">📜</div><div class="em-d">Sin movimientos en este período.</div></div>'}
+    </div>
+    <div class="modal-foot"><div style="flex:1;font-size:12px;color:var(--text-soft)">${moves.length} movimiento(s)</div><button class="btn btn-primary" onclick="exportMovesCSV()">${svgIcon('save','icon icon-sm')} Descargar CSV</button></div>`,true);
 }
+function exportMovesCSV(){
+  const moves=DB.invMoves.filter(m=>inScope(m.sucursalId) && mvMatch(m));
+  const head=['Fecha','Producto','Tipo','Origen','Cantidad','Unidad','Quién','Nota','Sucursal'];
+  const lines=[head.map(csvCell).join(',')];
+  moves.forEach(m=>{ const p=DB.inventory.find(x=>x.id===m.productId); const u=userById(m.byId);
+    lines.push([fmtDateTime(m.at),p?p.name:'',invMvType(m).l,m.src==='conteo'?'conteo':'manual',m.qty,p?p.unit:'',u?u.name:'',m.note||'',sucName(m.sucursalId)].map(csvCell).join(',')); });
+  downloadText('movimientos.csv','﻿'+lines.join('\n'),'text/csv'); toast('CSV descargado','ok');
+}
+function dailyCountsModal(){ mvRange='hoy'; mvType='conteo'; invMovesModal(); }
+window.mvSetRange=mvSetRange; window.mvSetType=mvSetType; window.exportMovesCSV=exportMovesCSV; window.dailyCountsModal=dailyCountsModal;
 // Cuánto conviene pedir para llevar el stock a ~2× el mínimo
 function suggestReorder(p){ if(!p || !(+p.minStock>0)) return 0; const s=Math.ceil((+p.minStock*2)-(+p.stock||0)); return s>0?s:0; }
 function pedirProducto(pid, qty){
