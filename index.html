@@ -578,6 +578,25 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .chat-send{width:45px;height:45px;border-radius:50%;background:var(--grad-accent);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform var(--t-fast),filter var(--t-fast)}
 .chat-send:hover{filter:brightness(1.07)}
 .chat-send:active{transform:scale(.94)}
+.chat-mic{width:44px;height:44px;border-radius:50%;background:var(--bg-soft);border:1px solid var(--border);color:var(--text-soft);display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:border-color var(--t-fast),color var(--t-fast),background var(--t-fast)}
+.chat-mic:hover{border-color:var(--accent-line);color:var(--accent)}
+/* barra de grabación */
+.chat-rec .rec-mid{flex:1;display:flex;align-items:center;gap:9px;padding:12px 16px;background:var(--bg-soft);border:1px solid var(--accent-line);border-radius:var(--r-pill);font-size:14px;font-weight:600;color:var(--text)}
+.rec-dot{width:11px;height:11px;border-radius:50%;background:var(--danger);flex:0 0 auto;animation:cdpulse 1.4s infinite}
+.rec-lbl{color:var(--text-soft);font-weight:500}
+.chat-rec .rec-cancel:hover{border-color:var(--danger);color:var(--danger)}
+/* reproductor de nota de voz */
+.va-player{display:flex;align-items:center;gap:9px;min-width:200px;max-width:280px;padding:4px 4px 4px 4px}
+.va-play{width:34px;height:34px;flex:0 0 auto;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer;border:none}
+.va-play .icon{width:16px;height:16px}
+.msg.mine .va-play{background:#fff;color:var(--accent-2)}
+.va-bar{flex:1;height:5px;border-radius:999px;background:var(--bg);cursor:pointer;min-width:60px;overflow:hidden}
+.msg.mine .va-bar{background:rgba(255,255,255,.28)}
+.va-fill{height:100%;width:0;background:var(--accent);border-radius:999px}
+.msg.mine .va-fill{background:#fff}
+.va-time{font-size:11.5px;font-weight:700;color:var(--text-soft);flex:0 0 auto;min-width:34px;text-align:right;font-variant-numeric:tabular-nums}
+.msg.mine .va-time{color:rgba(255,255,255,.9)}
+.chat-pending .va-player{min-width:0;max-width:220px}
 .admin-eye{font-size:11px;color:var(--warn);background:var(--warn-bg);padding:4px 9px;border-radius:var(--r-sm);font-weight:700;white-space:nowrap}
 .chat-head-main{display:flex;align-items:center;gap:11px;min-width:0;border-radius:var(--r-md);padding:3px;margin:-3px}
 .chat-head-main[style*=pointer]:hover{background:var(--bg-soft)}
@@ -1399,6 +1418,8 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
 <g id="i-phone"><path d="M5 4h4l2 5-2.5 1.5a11 11 0 005 5L15 13l5 2v4a2 2 0 01-2 2A16 16 0 013 6a2 2 0 012-2z"/></g>
 <g id="i-mic"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0014 0"/><path d="M12 18v3"/></g>
 <g id="i-mic-off"><path d="M9 9V6a3 3 0 015.8-1.1"/><path d="M15 11.3V11"/><path d="M5 11a7 7 0 0010.6 6"/><path d="M12 18v3"/><path d="M3 3l18 18"/></g>
+<g id="i-play"><path d="M7 5l12 7-12 7z"/></g>
+<g id="i-pause"><path d="M8 5v14M16 5v14"/></g>
 <g id="i-gift"><path d="M20 12v8a1 1 0 01-1 1H5a1 1 0 01-1-1v-8"/><rect x="2.5" y="7.5" width="19" height="4.5" rx="1"/><path d="M12 7.5V21"/><path d="M12 7.5C9.5 7.5 7.5 4 9.5 4s2.5 3.5 2.5 3.5zM12 7.5c2.5 0 4.5-3.5 2.5-3.5S12 7.5 12 7.5z"/></g>
 <g id="i-theme"><circle cx="12" cy="12" r="5"/><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5L19 19M19 5l-1.5 1.5M6.5 17.5L5 19"/></g>
 <g id="i-save"><path d="M5 3h12l4 4v14H5z"/><path d="M8 3v6h8V3M8 21v-7h8v7"/></g>

@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v58 · Calendario: varias reservas a la misma hora lado a lado';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v59 · Mensajes: notas de voz';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -78,6 +78,7 @@ const esc = s => (s==null?'':String(s)).replace(/[&<>"'`]/g, c => ({'&':'&amp;',
 // Bloquea inyección por atributo (p.ej. valores con comillas/onerror) en medios guardados en la DB.
 const safeImg = s => (typeof s==='string' && /^data:image\/(png|jpe?g|gif|webp|bmp);base64,[A-Za-z0-9+/=\s]+$/i.test(s)) ? s : '';
 const safeVid = s => (typeof s==='string' && /^data:video\/(mp4|webm|ogg|quicktime|x-matroska);base64,[A-Za-z0-9+/=\s]+$/i.test(s)) ? s : '';
+const safeAud = s => (typeof s==='string' && /^data:audio\/[\w.+-]+(;[\w=-]+)*;base64,[A-Za-z0-9+/=\s]+$/i.test(s)) ? s : '';
 // Recortar texto y acotar números: evita que un campo enorme infle el estado compartido (DoS) o se metan valores inválidos
 const clip = (s,n=300) => String(s==null?'':s).trim().slice(0,n);
 const numClamp = (v,min,max) => { let x=Number(v); if(!isFinite(x)) x=0; return Math.max(min, Math.min(max, x)); };
@@ -872,7 +873,7 @@ function loadMedia(id){
   else done('');
 }
 function applyMediaToDom(id){
-  const d=mediaCache[id]||''; const safe=d.indexOf('data:video')===0?safeVid(d):safeImg(d);
+  const d=mediaCache[id]||''; const safe=d.indexOf('data:video')===0?safeVid(d):d.indexOf('data:audio')===0?safeAud(d):safeImg(d);
   let sel; try{ sel='[data-mid="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]'; }catch(_){ sel='[data-mid="'+id+'"]'; }
   document.querySelectorAll(sel).forEach(el=>{
     if(safe){ el.src=safe; el.classList.remove('media-loading'); } else { el.classList.remove('media-loading'); el.classList.add('media-broken'); }
@@ -2456,7 +2457,7 @@ function viewChat(){
     const ur=chatUnread(c);
     const prevTxt = last
       ? ((c.type==='group' && last.byId!==SES.userId ? ((userById(last.byId)?.name||'').split(' ')[0]+': ') : (last.byId===SES.userId?'Vos: ':''))
-         + (last.text || (last.media?(last.media.type==='video'?'Video':'Foto'):'')))
+         + (last.text || (last.media?(last.media.type==='video'?'🎬 Video':last.media.type==='audio'?'🎤 Nota de voz':'📷 Foto'):'')))
       : 'Sin mensajes';
     const lastT = last ? new Date(last.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'}) : '';
     return `<div class="chat-li ${sel===c.id?'sel':''}" onclick="openChat('${c.id}')">
@@ -2476,14 +2477,14 @@ function viewChat(){
     let _lastDay='', _prevBy=null;
     const msgsHtml = visibleMsgs.map(m=>{
       const u=userById(m.byId); const mine=m.byId===SES.userId;
-      const media = m.media ? (m.media.type==='video' ? mediaTag(m.media.mid||m.media.data,'video','controls') : mediaTag(m.media.mid||m.media.data,'image')) : '';
+      const media = m.media ? (m.media.type==='video' ? mediaTag(m.media.mid||m.media.data,'video','controls') : m.media.type==='audio' ? audioMsgHTML(m.media.mid||m.media.data, m.media.dur) : mediaTag(m.media.mid||m.media.data,'image')) : '';
       let sep='';
       const dk=dayKey(m.at);
       if(dk!==_lastDay){ sep=`<div class="chat-day"><span>${esc(dayLabel(m.at))}</span></div>`; _lastDay=dk; _prevBy=null; }
       const grouped = _prevBy===m.byId; _prevBy=m.byId;
       const showName = !mine && cur.type==='group' && !grouped;
       const time = new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'});
-      const onlyMedia = media && !m.text;
+      const onlyMedia = media && !m.text && !(m.media&&m.media.type==='audio');
       return sep + `<div class="msg ${mine?'mine':''} ${grouped?'grouped':''} ${onlyMedia?'media-only':''}">${showName?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?`<span class="mtext">${esc(m.text)}</span>`:''}${media}<div class="mtime">${time}${mine?svgIcon('check','icon icon-sm'):''}<button class="msg-del" title="Eliminar" onclick="delMsgMenu('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button></div></div>`;
     }).join('');
     paneHtml=`<div class="chat-pane" id="chatPane">
@@ -2500,13 +2501,18 @@ function viewChat(){
       </div>
       <div class="chat-msgs" id="chatMsgs">${msgsHtml||'<div style="margin:auto;color:var(--text-soft);font-size:13px">Escribí el primer mensaje 👋</div>'}</div>
       ${curMem.includes(SES.userId)?`
-        ${chatPending?`<div class="chat-pending">${chatPending.type==='video'?`<video src="${safeVid(chatPending.data)}"></video>`:`<img src="${safeImg(chatPending.data)}">`}<span>${chatPending.type==='video'?'Video':'Foto'} listo para enviar</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="chatPending=null;render()">Quitar</button></div>`:''}
-        <div class="chat-input">
+        ${chatPending?`<div class="chat-pending">${chatPending.type==='video'?`<video src="${safeVid(chatPending.data)}"></video>`:chatPending.type==='audio'?vaPreviewHTML(chatPending.data,chatPending.dur):`<img src="${safeImg(chatPending.data)}">`}<span>${chatPending.type==='video'?'Video':chatPending.type==='audio'?'Nota de voz':'Foto'} lista para enviar</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="chatPending=null;render()">Quitar</button></div>`:''}
+        ${vaRecording(cur.id)?`<div class="chat-input chat-rec">
+          <button class="chat-attach rec-cancel" title="Cancelar" onclick="vaRecCancel()">${svgIcon('trash')}</button>
+          <div class="rec-mid"><span class="rec-dot"></span><span id="vaRecTime">0:00</span> <span class="rec-lbl">Grabando…</span></div>
+          <button class="chat-send" title="Listo" onclick="vaRecStop()">${svgIcon('check')}</button>
+        </div>`:`<div class="chat-input">
           <input type="file" id="chatFile" accept="image/*,video/*" style="display:none" onchange="chatAttachPick('${cur.id}')">
           <button class="chat-attach" title="Adjuntar foto o video" onclick="document.getElementById('chatFile').click()">${svgIcon('clip')}</button>
           <input id="chatField" placeholder="Escribí un mensaje…" onkeydown="if(event.key==='Enter')sendMsg('${cur.id}')">
+          <button class="chat-mic" title="Grabar nota de voz" onclick="vaRecStart('${cur.id}')">${svgIcon('mic')}</button>
           <button class="chat-send" onclick="sendMsg('${cur.id}')">${svgIcon('send')}</button>
-        </div>`
+        </div>`}`
         :`<div class="chat-input" style="justify-content:center;color:var(--text-soft);font-size:12px">Solo lectura — no sos miembro de este chat</div>`}
     </div>`;
   } else {
@@ -2530,6 +2536,67 @@ function afterChatRender(){
 window.openChat=id=>{ SES.activeChat=id; render(); };
 window.backChatList=()=>{ SES.activeChat=null; document.body.classList.remove('chat-open'); render(); };
 
+/* =================== NOTAS DE VOZ =================== */
+function vaFmtDur(s){ s=Math.max(0,Math.round(+s||0)); return Math.floor(s/60)+':'+String(s%60).padStart(2,'0'); }
+function audioMsgHTML(mid, dur){
+  const d=mediaData(mid); const safe=(d!==undefined)?safeAud(d):'';
+  return `<div class="va-player">
+    <button type="button" class="va-play" onclick="vaToggle(this)">${svgIcon('play','icon icon-sm')}</button>
+    <div class="va-bar" onclick="vaSeek(event,this)"><div class="va-fill"></div></div>
+    <span class="va-time">${vaFmtDur(dur)}</span>
+    <audio class="va-audio" data-mid="${esc(mid)}" ${safe?`src="${safe}"`:''} preload="metadata" ontimeupdate="vaTick(this)" onplay="vaState(this,1)" onpause="vaState(this,0)" onended="vaEnd(this)" onloadedmetadata="vaTick(this)"></audio>
+  </div>`;
+}
+function vaPreviewHTML(data, dur){
+  return `<div class="va-player"><button type="button" class="va-play" onclick="vaToggle(this)">${svgIcon('play','icon icon-sm')}</button><div class="va-bar" onclick="vaSeek(event,this)"><div class="va-fill"></div></div><span class="va-time">${vaFmtDur(dur)}</span><audio class="va-audio" src="${safeAud(data)}" preload="metadata" ontimeupdate="vaTick(this)" onplay="vaState(this,1)" onpause="vaState(this,0)" onended="vaEnd(this)" onloadedmetadata="vaTick(this)"></audio></div>`;
+}
+function vaToggle(btn){
+  const p=btn.closest('.va-player'); const a=p&&p.querySelector('.va-audio'); if(!a) return;
+  document.querySelectorAll('.va-audio').forEach(x=>{ if(x!==a && !x.paused) x.pause(); });
+  if(a.paused){
+    if(!a.getAttribute('src')){ const mid=a.getAttribute('data-mid'); fetchMediaData(mid).then(d=>{ const safe=safeAud(d); if(safe){ a.src=safe; a.play().catch(()=>{}); } else toast('No se pudo cargar la nota de voz','err'); }); return; }
+    a.play().catch(()=>{});
+  } else a.pause();
+}
+function vaTick(a){ const p=a.closest('.va-player'); if(!p) return; const f=p.querySelector('.va-fill'), t=p.querySelector('.va-time');
+  const dur=(isFinite(a.duration)&&a.duration>0)?a.duration:0; const cur=a.currentTime||0;
+  if(f) f.style.width=(dur?cur/dur*100:0)+'%';
+  if(t) t.textContent=(a.paused&&cur===0)?vaFmtDur(dur):vaFmtDur(dur?dur-cur:cur);
+}
+function vaState(a,playing){ const p=a.closest('.va-player'); if(!p) return; const b=p.querySelector('.va-play'); if(b) b.innerHTML=svgIcon(playing?'pause':'play','icon icon-sm'); }
+function vaEnd(a){ try{ a.currentTime=0; }catch(_){} vaState(a,0); const p=a.closest('.va-player'); const f=p&&p.querySelector('.va-fill'); if(f) f.style.width='0%'; vaTick(a); }
+function vaSeek(ev,bar){ const a=bar.closest('.va-player').querySelector('.va-audio'); if(!a||!isFinite(a.duration)||!a.duration) return; const r=bar.getBoundingClientRect(); a.currentTime=Math.max(0,Math.min(1,(ev.clientX-r.left)/r.width))*a.duration; vaTick(a); }
+window.vaToggle=vaToggle; window.vaTick=vaTick; window.vaState=vaState; window.vaEnd=vaEnd; window.vaSeek=vaSeek;
+/* grabación */
+let _vaRec=null;   // {mr, chunks, stream, chatId, t0, timer, cancel}
+function vaRecording(chatId){ return _vaRec && _vaRec.chatId===chatId; }
+async function vaRecStart(chatId){
+  if(_vaRec) return;
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof MediaRecorder==='undefined'){ toast('Tu dispositivo no permite grabar audio','err'); return; }
+  let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){ toast('No se pudo usar el micrófono','err'); return; }
+  let mime=''; ['audio/webm;codecs=opus','audio/webm','audio/mp4','audio/ogg'].some(m=>{ try{ if(MediaRecorder.isTypeSupported(m)){ mime=m; return true; } }catch(_){} return false; });
+  let mr; try{ mr=mime?new MediaRecorder(stream,{mimeType:mime}):new MediaRecorder(stream); }catch(_){ mr=new MediaRecorder(stream); }
+  const chunks=[];
+  mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
+  mr.onstop=()=>{ try{ stream.getTracks().forEach(t=>t.stop()); }catch(_){} vaRecFinish(); };
+  _vaRec={mr, chunks, stream, chatId, t0:Date.now(), cancel:false, timer:null};
+  try{ mr.start(); }catch(e){ try{stream.getTracks().forEach(t=>t.stop());}catch(_){}; _vaRec=null; toast('No se pudo iniciar la grabación','err'); return; }
+  _vaRec.timer=setInterval(()=>{ const el=document.getElementById('vaRecTime'); if(el&&_vaRec) el.textContent=vaFmtDur((Date.now()-_vaRec.t0)/1000); }, 300);
+  render();
+}
+function vaRecStop(){ if(!_vaRec) return; try{ _vaRec.mr.stop(); }catch(_){ vaRecFinish(); } }
+function vaRecCancel(){ if(!_vaRec) return; _vaRec.cancel=true; try{ _vaRec.mr.stop(); }catch(_){ try{_vaRec.stream.getTracks().forEach(t=>t.stop());}catch(__){}; if(_vaRec&&_vaRec.timer)clearInterval(_vaRec.timer); _vaRec=null; render(); } }
+function vaRecFinish(){
+  const r=_vaRec; if(!r) return; if(r.timer) clearInterval(r.timer);
+  if(r.cancel){ _vaRec=null; render(); return; }
+  const dur=Math.round((Date.now()-r.t0)/1000);
+  const blob=new Blob(r.chunks, {type:(r.mr&&r.mr.mimeType)?r.mr.mimeType.split(';')[0]:'audio/webm'});
+  _vaRec=null;
+  if(!blob.size || dur<1){ toast('Grabación muy corta','err'); render(); return; }
+  if(blob.size>6*1024*1024){ toast('La nota de voz es muy larga (máx ~6 MB)','err'); render(); return; }
+  const rd=new FileReader(); rd.onload=()=>{ chatPending={type:'audio', data:rd.result, dur}; render(); }; rd.readAsDataURL(blob);
+}
+window.vaRecStart=vaRecStart; window.vaRecStop=vaRecStop; window.vaRecCancel=vaRecCancel;
 let chatPending=null;
 function fileToData(f){ return new Promise(r=>{const rd=new FileReader();rd.onload=()=>r(rd.result);rd.readAsDataURL(f);}); }
 async function chatAttachPick(chatId){
@@ -2548,9 +2615,9 @@ async function sendMsg(chatId){
   const f=$('#chatField'); const txt=f?f.value.trim():'';
   if(!txt && !chatPending) return;
   const m={id:uid(),byId:SES.userId,text:txt,at:now()};
-  if(chatPending){ const mid=await putMedia(chatPending.data); m.media={type:chatPending.type,mid}; }
+  if(chatPending){ const mid=await putMedia(chatPending.data); m.media={type:chatPending.type,mid}; if(chatPending.dur!=null) m.media.dur=chatPending.dur; }
   c.msgs.push(m);
-  const preview = txt? txt.slice(0,40) : (chatPending? (chatPending.type==='video'?'envió un video':'envió una foto') : '');
+  const preview = txt? txt.slice(0,40) : (chatPending? (chatPending.type==='video'?'envió un video':chatPending.type==='audio'?'envió una nota de voz':'envió una foto') : '');
   notify(c.memberIds.filter(i=>i!==SES.userId), `${me().name.split(' ')[0]} (${c.type==='group'?c.name:'directo'}): ${preview}`, 'msg', {view:'chat',chatId});
   chatPending=null; markSeen(c); save(); render();
 }
