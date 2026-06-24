@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v64 · Inventario: organizar en lote (mover varios de familia)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v65 · Inventario: modos Editar/Conteo, arrastrar, reporte y CSV';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2999,6 +2999,7 @@ function rolePanel(){
    ===================================================================== */
 let invCat='todas', invLowOnly=false, invSearch='', invArea='todas', invBodega='todas', invSel=null, ipImgData=null;
 let invSelMode=false; const invPicks=new Set();   // modo "Organizar": mover varios productos de familia a la vez
+let invMode='edit', invDragId=null;                // 'edit' (gerencia/admin) | 'count' (conteo diario, colaboradores)
 /* Bodegas (lugares de almacenamiento, ej. Congelador 1) */
 function bodegasFor(){ return (DB.bodegas||[]).filter(b=>b&&inScope(b.sucursalId)); }
 function bodegaName(id){ if(!id) return 'Sin bodega'; const b=(DB.bodegas||[]).find(x=>x&&x.id===id); return b?b.name:'Sin bodega'; }
@@ -3043,9 +3044,11 @@ function viewInventario(){
   if(!searching && invCat!=='todas') list=list.filter(p=>inFam(p,invCat));
   if(invLowOnly) list=list.filter(lowStock);
   if(searching) list=list.filter(p=>p.name.toLowerCase().includes(invSearch.toLowerCase()));
-  list.sort((a,b)=>(lowStock(b)-lowStock(a))||a.name.localeCompare(b.name));
+  const ordOf = p => (p.ord==null?1e9:p.ord);
+  list.sort((a,b)=>(ordOf(a)-ordOf(b))||a.name.localeCompare(b.name));   // orden manual (arrastrar) y luego alfabético
   window._invList = list.map(p=>p.id);                  // para "Seleccionar todo" del modo organizar
   if(invSelMode) invSel=null;                           // en modo organizar no se edita
+  const mode = editor ? invMode : 'count';              // colaboradores: siempre conteo diario
   const low=scoped.filter(lowStock).length;
   const sinFam = scoped.filter(p=>!p.category || !famList.includes(p.category)).length;
   const sel = invSel==='__new__' ? '__new__' : (invSel?DB.inventory.find(x=>x.id===invSel):null);
@@ -3061,10 +3064,10 @@ function viewInventario(){
     <div class="inv-fam-list">
       <button class="inv-fam-row ${invCat==='todas'?'on':''}" onclick="invCat='todas';invSearch='';render()">
         <span class="inv-fam-ico">${svgIcon('box','icon icon-sm')}</span><span class="inv-fam-lbl">Todas las familias</span><span class="inv-fam-c">${scoped.length}</span></button>
-      ${famList.map((c,i)=>`<div class="inv-fam-row ${invCat===c?'on':''}" onclick="invPickFam(${i})">
+      ${famList.map((c,i)=>`<div class="inv-fam-row ${invCat===c?'on':''}" onclick="invPickFam(${i})"${editor?` ondragover="invDragOver(event)" ondragenter="this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="this.classList.remove('drop');invDropOnFam(event,${i})"`:''}>
         <span class="inv-dot" style="background:${famColor(c)}"></span><span class="inv-fam-lbl">${esc(c)}</span><span class="inv-fam-c">${scoped.filter(p=>(p.category||'')===c).length}</span>${editor?`<span class="inv-fam-acts"><button class="inv-fam-act" title="Renombrar familia" onclick="event.stopPropagation();famEditModal(${i})">${svgIcon('edit','icon icon-sm')}</button><button class="inv-fam-act" title="Eliminar familia" onclick="event.stopPropagation();deleteFamily(${i})">${svgIcon('trash','icon icon-sm')}</button></span>`:''}</div>`).join('')}
-      <button class="inv-fam-row ${invCat==='__sin__'?'on':''}" onclick="invCat='__sin__';invSearch='';render()">
-        <span class="inv-dot" style="background:var(--border)"></span><span class="inv-fam-lbl">Sin familia</span><span class="inv-fam-c">${sinFam}</span></button>
+      <div class="inv-fam-row ${invCat==='__sin__'?'on':''}" onclick="invCat='__sin__';invSearch='';render()"${editor?` ondragover="invDragOver(event)" ondragenter="this.classList.add('drop')" ondragleave="this.classList.remove('drop')" ondrop="this.classList.remove('drop');invDropOnFam(event,'__sin__')"`:''}>
+        <span class="inv-dot" style="background:var(--border)"></span><span class="inv-fam-lbl">Sin familia</span><span class="inv-fam-c">${sinFam}</span></div>
     </div>
     ${editor?`<div class="inv-side-foot">
       <input class="input" id="newFamSide" placeholder="Nueva familia" onkeydown="if(event.key==='Enter')addFamilyInline()">
@@ -3073,16 +3076,21 @@ function viewInventario(){
 
   // =================== CENTRO: TARJETAS ===================
   const title = searching?'Resultados':(invCat==='todas'?'Todos los productos':(invCat==='__sin__'?'Sin familia':invCat));
+  const editMode = editor && mode==='edit';
+  const showNew = editMode && !searching && !invSelMode;
   const grid = list.length||editor ? `<div class="inv-grid">
-      ${editor && !searching && !invSelMode ? `<button class="inv-tile inv-tile-new" onclick="invNewInline()"><span class="inv-tile-plus">${svgIcon('plus','icon')}</span><span>Nuevo</span></button>`:''}
+      ${showNew ? `<button class="inv-tile inv-tile-new" onclick="invNewInline()"><span class="inv-tile-plus">${svgIcon('plus','icon')}</span><span>Nuevo</span></button>`:''}
       ${list.map(invTile).join('')}
-    </div>` : emptyState('📦','Sin productos', searching?'No hay productos que coincidan con la búsqueda.':'Agregá productos para llevar el control de la bodega.','','');
+    </div>` : emptyState('📦','Sin productos', searching?'No hay productos que coincidan con la búsqueda.':(editor?'Agregá productos para llevar el control de la bodega.':'Todavía no hay productos.'),'','');
 
   const main=`<section class="inv-main">
     <div class="inv-main-h">
       <div class="inv-main-title">${esc(title)} <span class="inv-main-n">${list.length}</span></div>
+      ${editor?`<div class="seg inv-mode-seg">
+        <button type="button" class="seg-b ${invMode==='edit'?'on':''}" onclick="invMode='edit';invSel=null;render()">${svgIcon('edit','icon icon-sm')} Editar</button>
+        <button type="button" class="seg-b ${invMode==='count'?'on':''}" onclick="invMode='count';invSel=null;invSelMode=false;render()">${svgIcon('check','icon icon-sm')} Conteo diario</button>
+      </div>`:`<span class="inv-mode-tag">${svgIcon('check','icon icon-sm')} Conteo diario</span>`}
       <div class="inv-search-wrap">${svgIcon('search','icon icon-sm')}<input class="input" placeholder="Buscar producto…" value="${esc(invSearch)}" oninput="invSearch=this.value;clearTimeout(window._is);window._is=setTimeout(render,250)"></div>
-      ${editor?`<button class="btn btn-primary inv-new-btn" onclick="invNewInline()">${svgIcon('plus','icon icon-sm')} Nuevo</button>`:''}
     </div>
     <div class="inv-filters">
       <select class="select" onchange="invBodega=this.value;render()">
@@ -3091,8 +3099,9 @@ function viewInventario(){
         <option value="sin" ${invBodega==='sin'?'selected':''}>Sin bodega</option>
       </select>
       <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">${svgIcon('info','icon icon-sm')} Bajo mínimo${low?' ('+low+')':''}</button>
-      ${editor?`<button class="chip ${invSelMode?'on':''}" onclick="invToggleSelMode()">${svgIcon('check','icon icon-sm')} Organizar</button>
-        <button class="chip" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button>
+      <button class="chip" onclick="inventoryReportModal()">${svgIcon('chart','icon icon-sm')} Reporte</button>
+      <button class="chip" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button>
+      ${editMode?`<button class="chip ${invSelMode?'on':''}" onclick="invToggleSelMode()">${svgIcon('check','icon icon-sm')} Organizar</button>
         <button class="chip" onclick="bodegaManagerModal()">${svgIcon('box','icon icon-sm')} Bodegas</button>
         <button class="chip" onclick="invoicesModal()">${svgIcon('clipboard','icon icon-sm')} Facturas</button>
         <button class="chip" onclick="invoiceModal()">${svgIcon('truck','icon icon-sm')} Registrar factura</button>`:''}
@@ -3113,17 +3122,25 @@ function viewInventario(){
     ${grid}
   </section>`;
 
-  // =================== DERECHA: EDITOR ===================
-  const panel = (editor && sel) ? invPanel(sel==='__new__'?null:sel) : '';
+  // =================== DERECHA: EDITOR o CONTEO ===================
+  let panel='';
+  if(sel && !invSelMode){
+    if(sel==='__new__') panel = invPanel(null);
+    else if(editMode) panel = invPanel(sel);
+    else panel = invCountPanel(sel);
+  }
 
   return `<div class="inv-shell ${panel?'has-panel':''}">${side}${main}${panel}</div>`;
 }
 function invTile(p){
   const lw=lowStock(p); const col=p.color||famColor(p.category);
   const picked=invPicks.has(p.id);
-  return `<button class="inv-tile ${lw?'low':''} ${invSel===p.id?'sel':''} ${p.img?'has-img':''} ${invSelMode?'selmode':''} ${picked?'picked':''}" style="--fc:${col}" onclick="${invSelMode?`invTogglePick('${p.id}')`:`invSelect('${p.id}')`}">
+  const editAll=canInvEdit();
+  const dragOn = editAll && invMode==='edit' && !invSelMode && !invSearch;
+  const click = invSelMode?`invTogglePick('${p.id}')`:`invSelect('${p.id}')`;
+  return `<button class="inv-tile ${lw?'low':''} ${invSel===p.id?'sel':''} ${p.img?'has-img':''} ${invSelMode?'selmode':''} ${picked?'picked':''} ${dragOn?'drag':''}" style="--fc:${col}" onclick="${click}"${dragOn?` draggable="true" ondragstart="invDragStart(event,'${p.id}')" ondragover="invDragOver(event)" ondrop="invDropOnTile(event,'${p.id}')" ondragend="invDragEnd(event)"`:''}>
     ${invSelMode?`<span class="inv-tile-check">${picked?svgIcon('check','icon icon-sm'):''}</span>`:''}
-    <span class="inv-tile-top">${svgIcon('edit','icon icon-sm inv-tile-eye')}${lw?`<span class="inv-tile-warn" title="Bajo el mínimo">${svgIcon('info','icon icon-sm')}</span>`:''}</span>
+    <span class="inv-tile-top">${dragOn?`<span class="inv-tile-grip" title="Arrastrá para mover u ordenar">${svgIcon('list','icon icon-sm')}</span>`:svgIcon('edit','icon icon-sm inv-tile-eye')}${lw?`<span class="inv-tile-warn" title="Bajo el mínimo">${svgIcon('info','icon icon-sm')}</span>`:''}</span>
     ${p.img?`<span class="inv-tile-img">${mediaTag(p.img,'image','alt=""')}</span>`:''}
     <span class="inv-tile-name">${esc(p.name)}</span>
     <span class="inv-tile-qty ${lw?'low':''}">${p.stock}<i>${esc(p.unit)}</i></span>
@@ -3281,6 +3298,105 @@ window.invSelect=invSelect; window.invClosePanel=invClosePanel; window.invNewInl
 window.invPickColor=invPickColor; window.addFamilyInline=addFamilyInline; window.delProduct=delProduct; window.saveProductPanel=saveProductPanel;
 window.ipPickImg=ipPickImg; window.ipClearImg=ipClearImg; window.famEditModal=famEditModal; window.saveFamilyName=saveFamilyName; window.deleteFamily=deleteFamily;
 window.invToggleSelMode=invToggleSelMode; window.invTogglePick=invTogglePick; window.invClearPicks=invClearPicks; window.invPickAll=invPickAll; window.movePicks=movePicks;
+/* ---- Arrastrar producto: ordenar (soltar en otra tarjeta) o mover de familia (soltar en el menú) ---- */
+function invDragStart(e,id){ invDragId=id; try{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',id); }catch(_){} }
+function invDragOver(e){ e.preventDefault(); try{ e.dataTransfer.dropEffect='move'; }catch(_){} }
+function invDragEnd(){ invDragId=null; }
+function invDropOnTile(e,targetId){ e.preventDefault(); const id=invDragId||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); invDragId=null; if(!id||id===targetId) return;
+  const arr=DB.inventory; const from=arr.findIndex(x=>x.id===id); if(from<0) return; const [m]=arr.splice(from,1);
+  const ti=arr.findIndex(x=>x.id===targetId); arr.splice(ti<0?arr.length:ti,0,m); arr.forEach((p,i)=>p.ord=i);
+  audit('inventario',`reordenó "${m.name}"`,m.sucursalId); render();
+}
+function invDropOnFam(e,i){ e.preventDefault(); const id=invDragId||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); invDragId=null; if(!id) return;
+  const fam = i==='__sin__' ? '' : (window._invFams[i]||''); const p=DB.inventory.find(x=>x.id===id); if(!p) return; if((p.category||'')===fam) return;
+  p.category=fam; if(fam){ const a=p.area||'cocina'; DB.invCats=DB.invCats||{}; if(!Array.isArray(DB.invCats[a])) DB.invCats[a]=(DEFAULT_CATS[a]?[...DEFAULT_CATS[a]]:[]); if(!DB.invCats[a].includes(fam)) DB.invCats[a].push(fam); }
+  audit('inventario',`movió "${p.name}" a ${fam||'Sin familia'}`,p.sucursalId); toast(`Movido a ${fam||'Sin familia'}`,'ok'); render();
+}
+window.invDragStart=invDragStart; window.invDragOver=invDragOver; window.invDragEnd=invDragEnd; window.invDropOnTile=invDropOnTile; window.invDropOnFam=invDropOnFam;
+/* ---- Conteo diario (colaboradores): entrada, salida y ajuste por conteo físico ---- */
+function invCountPanel(p){
+  const lw=lowStock(p); const canMore=canInvEditArea(p.area||'cocina');
+  return `<aside class="inv-edit inv-count">
+    <div class="inv-edit-h">
+      <div><div class="inv-edit-kick">CONTEO DIARIO</div><div class="inv-edit-name">${esc(p.name)}</div></div>
+      <button class="modal-close" onclick="invClosePanel()">${svgIcon('x','icon')}</button>
+    </div>
+    <div class="inv-edit-body">
+      <div class="cnt-now ${lw?'low':''}">
+        <div class="cnt-now-n">${p.stock}<span>${esc(p.unit)}</span></div>
+        <div class="cnt-now-l">en sistema${lw?` · ¡bajo el mínimo (${p.minStock})!`:` · mínimo ${p.minStock}`}</div>
+        <div class="cnt-now-tags">${esc(INV_AREA_LABEL[p.area||'cocina'])}${p.category?' · '+esc(p.category):''}${p.bodega?' · '+esc(bodegaName(p.bodega)):''}</div>
+      </div>
+      <div class="ip-sec">${svgIcon('up','icon icon-sm')} Registrar movimiento</div>
+      <div class="field"><label>Cantidad (${esc(p.unit)})</label><input class="input" id="cntQty" type="number" min="0" step="any" value="1"></div>
+      <div class="cnt-btns">
+        <button class="ibtn ok" onclick="countMove('${p.id}','entrada')">${svgIcon('up','icon icon-sm')}<span>Entrada (+)</span></button>
+        <button class="ibtn danger" onclick="countMove('${p.id}','salida')">${svgIcon('down','icon icon-sm')}<span>Salida (−)</span></button>
+      </div>
+      <div class="ip-sec">${svgIcon('check','icon icon-sm')} Conteo físico</div>
+      <div class="page-sub" style="margin:-4px 0 10px">Contá lo que hay realmente y poné el número. El sistema ajusta solo la diferencia.</div>
+      <div class="field"><label>Cantidad contada (${esc(p.unit)})</label><input class="input" id="cntReal" type="number" min="0" step="any" placeholder="Ej: ${p.stock}"></div>
+      <button class="btn btn-primary" style="width:100%" onclick="countSet('${p.id}')">${svgIcon('save','icon icon-sm')} Ajustar a esta cantidad</button>
+      ${canMore?`<div class="ip-sec">${svgIcon('tag','icon icon-sm')} Más</div>
+      <div class="cnt-btns"><button class="ibtn sale" onclick="invMoveModal('${p.id}','venta')">${svgIcon('tag','icon icon-sm')}<span>Venta</span></button><button class="ibtn move" onclick="invTrasladoModal('${p.id}')">${svgIcon('truck','icon icon-sm')}<span>Traslado</span></button></div>`:''}
+    </div>
+  </aside>`;
+}
+function doInvMove(pid,type,q,note){
+  const p=DB.inventory.find(x=>x.id===pid); if(!p) return;
+  p.stock = type==='entrada' ? +(p.stock+q).toFixed(2) : Math.max(0,+(p.stock-q).toFixed(2));
+  DB.invMoves.unshift({id:uid(),productId:p.id,type,qty:q,byId:SES.userId,at:now(),note:note||'',refId:null,sucursalId:p.sucursalId});
+  audit('inventario',`${type==='entrada'?'+':'-'}${q} ${p.unit} de "${p.name}"${note?' ('+note+')':''}`,p.sucursalId);
+  if(type==='salida'&&lowStock(p)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Inventario bajo: ${p.name} (${p.stock} ${p.unit})`,'⚠️',{view:'inventario'});
+  toast('Inventario actualizado','ok'); render();
+}
+function countMove(pid,type){ const q=+($('#cntQty')?$('#cntQty').value:0)||0; if(!(q>0)){ toast('Poné una cantidad','err'); return; } doInvMove(pid,type,q,'conteo diario'); }
+function countSet(pid){ const p=DB.inventory.find(x=>x.id===pid); if(!p) return; const v=$('#cntReal')?$('#cntReal').value:''; const real=+v;
+  if(v===''||isNaN(real)||real<0){ toast('Poné la cantidad contada','err'); return; }
+  const diff=+(real-p.stock).toFixed(2); if(diff===0){ toast('El conteo coincide con el sistema ✓','ok'); return; }
+  doInvMove(pid, diff>0?'entrada':'salida', Math.abs(diff), `ajuste por conteo (${p.stock}→${real})`);
+}
+window.invCountPanel=invCountPanel; window.countMove=countMove; window.countSet=countSet; window.doInvMove=doInvMove;
+/* ---- Reporte general (tabla) + exportar CSV ---- */
+function downloadText(filename, text, mime){
+  try{ const blob=new Blob([text],{type:(mime||'text/plain')+';charset=utf-8'}); const url=URL.createObjectURL(blob);
+    const a=document.createElement('a'); a.href=url; a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1500);
+  }catch(_){ toast('No se pudo descargar','err'); }
+}
+function csvCell(v){ const s=String(v==null?'':v); return /[",\n;]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+function inventoryReportRows(){ return invInScope().slice().sort((a,b)=> (a.category||'~').localeCompare(b.category||'~') || a.name.localeCompare(b.name)); }
+function exportInventoryCSV(){
+  const head=['Producto','Familia','Lado','Bodega','Cantidad','Unidad','Mínimo','Estado','Costo unit','Valor','Proveedor'];
+  const lines=[head.map(csvCell).join(',')];
+  inventoryReportRows().forEach(p=>lines.push([p.name,p.category||'',INV_AREA_LABEL[p.area||'cocina'],bodegaName(p.bodega),p.stock,p.unit,p.minStock,lowStock(p)?'BAJO':'OK',p.cost,+(p.stock*p.cost).toFixed(2),p.supplier||''].map(csvCell).join(',')));
+  downloadText('inventario.csv', '﻿'+lines.join('\n'), 'text/csv');
+  toast('Reporte CSV descargado','ok');
+}
+function inventoryReportModal(){
+  const rows=inventoryReportRows();
+  const totVal=rows.reduce((s,p)=>s+p.stock*p.cost,0); const lowN=rows.filter(lowStock).length;
+  const body=rows.map(p=>{ const lw=lowStock(p); return `<tr class="${lw?'rep-low':''}">
+    <td class="rep-name">${esc(p.name)}</td><td>${esc(p.category||'—')}</td><td>${esc(INV_AREA_LABEL[p.area||'cocina'])}</td><td>${esc(bodegaName(p.bodega))}</td>
+    <td class="rep-num"><b>${p.stock}</b> ${esc(p.unit)}</td><td class="rep-num">${p.minStock}</td>
+    <td>${lw?'<span class="pill atrasada">Bajo</span>':'<span class="pill hecha">OK</span>'}</td>
+    <td class="rep-num">${money(p.cost)}</td><td class="rep-num">${money(p.stock*p.cost)}</td></tr>`; }).join('');
+  openModal(`<div class="modal-head"><h3>${svgIcon('chart','icon')} Reporte de inventario</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="rep-kpis">
+        <div class="rep-kpi"><div class="rep-kpi-n">${rows.length}</div><div class="rep-kpi-l">Productos</div></div>
+        <div class="rep-kpi ${lowN?'alert':''}"><div class="rep-kpi-n">${lowN}</div><div class="rep-kpi-l">Bajo mínimo</div></div>
+        <div class="rep-kpi"><div class="rep-kpi-n" style="font-size:18px">${money(totVal)}</div><div class="rep-kpi-l">Valor total</div></div>
+      </div>
+      <div class="rep-wrap">
+        <table class="rep-table">
+          <thead><tr><th>Producto</th><th>Familia</th><th>Lado</th><th>Bodega</th><th class="rep-num">Cantidad</th><th class="rep-num">Mín</th><th>Estado</th><th class="rep-num">Costo</th><th class="rep-num">Valor</th></tr></thead>
+          <tbody>${body||'<tr><td colspan="9" style="text-align:center;padding:20px;color:var(--text-soft)">Sin productos</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Ver movimientos</button><div style="flex:1"></div><button class="btn btn-primary" onclick="exportInventoryCSV()">${svgIcon('save','icon icon-sm')} Descargar CSV</button></div>`, true);
+}
+window.inventoryReportModal=inventoryReportModal; window.exportInventoryCSV=exportInventoryCSV;
 function invMoveModal(pid,type){
   const p=DB.inventory.find(x=>x.id===pid); if(!p) return;
   const T=({entrada:{t:'Entrada de stock',v:'entró',b:'Sumar al stock',ic:'up',ph:'Ej: compra a proveedor'},
