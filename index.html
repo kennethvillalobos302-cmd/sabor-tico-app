@@ -789,6 +789,21 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .ibtn .icon{color:var(--text-soft)}
 .ibtn.ok .icon{color:var(--success)}
 .ibtn.danger .icon{color:var(--danger)}
+.ibtn.sale:hover{border-color:#a855f7}
+.ibtn.sale .icon{color:#a855f7}
+.ibtn.move:hover{border-color:var(--accent)}
+.ibtn.move .icon{color:var(--accent)}
+/* ---- inventario: lado (Cocina/Bar), bodega, familias ---- */
+.inv-seg{display:inline-flex;border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;background:var(--bg-soft)}
+.inv-seg button{border:none;background:none;padding:8px 14px;font-size:12.5px;font-weight:600;color:var(--text-soft);cursor:pointer;transition:background var(--t-fast),color var(--t-fast)}
+.inv-seg button+button{border-left:1px solid var(--border)}
+.inv-seg button:hover{color:var(--text)}
+.inv-seg button.on{background:var(--accent);color:#fff}
+.inv-bodega{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;font-weight:600;color:var(--text-soft);background:var(--bg-soft);border:1px solid var(--border-soft);border-radius:999px;padding:1px 9px 1px 6px;margin-left:8px;vertical-align:middle}
+.inv-bodega .icon{color:var(--accent)}
+.inv-fam{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);margin:18px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border-soft)}
+.inv-fam:first-child{margin-top:2px}
+.inv-fam-n{font-weight:600;color:var(--text-soft);text-transform:none;letter-spacing:0}
 /* ---- modal de producto: secciones + vista previa ---- */
 .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
 .ip-sec{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);margin:6px 0 12px;padding-top:6px}

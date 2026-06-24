@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v60 · Reservas: acceso rapido por sucursal';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v61 · Inventario: familias, bodegas, venta y traslado';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -214,7 +214,7 @@ function mergeAppendOnly(localDB, remoteDB){
    el otro aún no tenía), respetando los borrados con "tombstones". Para un objeto que existe en ambos
    lados, gana la EDICIÓN MÁS RECIENTE (por updatedAt), no "el último que sube"; así un cambio (p.ej.
    renombrar una sucursal) se propaga a todos y no lo revierte un dispositivo con datos viejos. */
-const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory','sucursales','calEvents'];
+const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory','sucursales','calEvents','bodegas'];
 const _stamp=o=>(o&&(o.updatedAt||o.at||o.createdAt))||0;   // marca de tiempo para "edición más reciente gana"
 // REGLA: cualquier BORRADO DURO de una colección de RECON_COLLS DEBE marcar tomb(id) antes de filtrar,
 // o el borrado "revivirá" desde otro dispositivo. Usá delEntity(coll,id) para no olvidarlo nunca.
@@ -393,7 +393,7 @@ function seed(){
 // leer (sin conexión / auth / reglas). Evita inventar datos de ejemplo que contaminen la base real.
 function emptyDB(){ return { _dataVersion:DATA_VERSION, sucursales:[], users:[], inventory:[],
   invCats:JSON.parse(JSON.stringify(DEFAULT_CATS)), invMoves:[], recipes:[], shifts:[], tasks:[], pedidos:[],
-  projects:[], chats:[], notifs:[], audit:[], clients:[], reservations:[], souvenirs:[], souvSales:[], attendance:[], calEvents:[] }; }
+  projects:[], chats:[], notifs:[], audit:[], clients:[], reservations:[], souvenirs:[], souvSales:[], attendance:[], calEvents:[], bodegas:[] }; }
 
 /* ---------------- Generadores de datos (inventario / recetas / turnos) ---------------- */
 const money = n => '₡'+Math.round(n||0).toLocaleString('es-CR');
@@ -496,7 +496,7 @@ function seedSouvenirs(suc){
 
 /* Garantiza que todas las colecciones existan como arreglos (defensa universal:
    se llama en cada render por si entran datos incompletos desde la nube). */
-const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','invoices','recipes','shifts','reservations','clients','souvenirs','souvSales'];
+const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','invoices','recipes','shifts','reservations','clients','souvenirs','souvSales','bodegas'];
 function ensureCollections(){ if(!DB||typeof DB!=='object') return; DB_COLLECTIONS.forEach(k=>{ if(!Array.isArray(DB[k])) DB[k]=[]; }); if(!DB.invCats||typeof DB.invCats!=='object') DB.invCats=JSON.parse(JSON.stringify(DEFAULT_CATS)); }
 
 /* ---------------- Migración de DBs existentes ---------------- */
@@ -525,7 +525,7 @@ function migrate(remote){
   // unir puestos viejos de Contabilidad y Recursos en el rol combinado
   (DB.users||[]).forEach(u=>{ if(u.role==='contabilidad'||u.role==='rrhh'){ u.role='contarh'; ch=true; } });
   // asegurar que las colecciones base existan (datos sincronizados pueden venir incompletos)
-  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients','souvenirs','souvSales','attendance','calEvents'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
+  ['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','recipes','shifts','reservations','clients','souvenirs','souvSales','attendance','calEvents','bodegas'].forEach(k=>{ if(!Array.isArray(DB[k])){ DB[k]=[]; ch=true; } });
   const s=DB.sucursales||[]; const s1=s[0]?s[0].id:'all'; const s2=s[1]?s[1].id:s1;
   if(DB.inventory===undefined){ DB.inventory=seedInventory(s1,s2); ch=true; }
   if(DB.invMoves===undefined){ DB.invMoves=[]; ch=true; }
@@ -2996,20 +2996,46 @@ function rolePanel(){
 /* =====================================================================
    VISTA: INVENTARIO  (Proveeduría edita · otros consultan)
    ===================================================================== */
-let invCat='todas', invLowOnly=false, invSearch='', invArea='todas';
+let invCat='todas', invLowOnly=false, invSearch='', invArea='todas', invBodega='todas';
+/* Bodegas (lugares de almacenamiento, ej. Congelador 1) */
+function bodegasFor(){ return (DB.bodegas||[]).filter(b=>b&&inScope(b.sucursalId)); }
+function bodegaName(id){ if(!id) return 'Sin bodega'; const b=(DB.bodegas||[]).find(x=>x&&x.id===id); return b?b.name:'Sin bodega'; }
+/* Adivinar la familia (categoría) por el nombre del producto — para autocompletar al cargar factura */
+const FAMILY_KEYWORDS=[
+  ['Verduras','tomate,cebolla,lechuga,papa,zanahoria,chile,culantro,ajo,limon,limón,aguacate,brocoli,brócoli,vegetal,verdura,banano,fruta,platano,plátano,repollo,pepino,apio,espinaca,yuca,camote'],
+  ['Carnes','carne,res,pollo,cerdo,chuleta,lomo,pescado,atun,atún,jamon,jamón,salchicha,tocineta,bistec,molida,costilla,chorizo,mariscos,camaron,camarón'],
+  ['Abarrotes','arroz,frijol,frijoles,aceite,sal,azucar,azúcar,harina,pasta,salsa,mayonesa,ketchup,mostaza,especias,condimento,enlatado,lata,vinagre,maiz,maíz,avena,cereal,café,cafe'],
+  ['Bebidas','agua,gaseosa,refresco,jugo,te,té,leche,bebida'],
+  ['Desechables','servilleta,vaso,plato,cuchara,tenedor,bolsa,desechable,papel,envase,contenedor,pajilla'],
+  ['Limpieza','jabon,jabón,cloro,desinfectante,detergente,limpiador,esponja,escoba,limpieza,guante'],
+  ['Licores','ron,vodka,whisky,whiskey,tequila,ginebra,gin,licor,vino,guaro,cacique'],
+  ['Cervezas','cerveza,imperial,pilsen,bavaria,heineken,corona'],
+  ['Gaseosas','coca,cola,fanta,sprite,pepsi,gaseosa,fresca'],
+  ['Jugos','jugo,naranja,natural'],
+  ['Garnish','garnish,menta,hierbabuena,decoracion,decoración,cereza'],
+  ['Hielo','hielo'],
+];
+function guessFamily(name, cats){
+  const n=(name||'').toLowerCase(); if(!n) return cats[0]||'';
+  for(const [fam,kw] of FAMILY_KEYWORDS){ if(!cats.includes(fam)) continue; if(kw.split(',').some(k=>k&&n.includes(k))) return fam; }
+  return cats[0]||'';
+}
 function viewInventario(){
   const areas=invAreasFor();
   if(areas.length<=1) invArea='todas';
   const all=invInScope();
+  const searching=!!invSearch;
   const scoped = invArea!=='todas' ? all.filter(p=>(p.area||'cocina')===invArea) : all;
-  let list=[...scoped];
-  if(invCat!=='todas') list=list.filter(p=>p.category===invCat);
+  let list = searching ? [...all] : [...scoped];                 // el buscador cruza Cocina y Bar
+  if(invBodega!=='todas') list=list.filter(p=>(p.bodega||'')===(invBodega==='sin'?'':invBodega));
+  if(!searching && invCat!=='todas') list=list.filter(p=>p.category===invCat);
   if(invLowOnly) list=list.filter(lowStock);
-  if(invSearch) list=list.filter(p=>p.name.toLowerCase().includes(invSearch.toLowerCase()));
+  if(searching) list=list.filter(p=>p.name.toLowerCase().includes(invSearch.toLowerCase()));
   list.sort((a,b)=>(lowStock(b)-lowStock(a))||a.name.localeCompare(b.name));
   const value=scoped.reduce((s,p)=>s+p.stock*p.cost,0);
   const low=scoped.filter(lowStock).length;
   const editor=canInvEdit();
+  const bods=bodegasFor();
   const areaName = areas.length>1 ? (invArea==='todas'?'Cocina y Bar':INV_AREA_LABEL[invArea]) : (areas[0]?INV_AREA_LABEL[areas[0]]:'');
 
   const guide=sectionGuide('inventario','¿Cómo funciona el inventario?',`
@@ -3029,22 +3055,33 @@ function viewInventario(){
     <div class="kpi"><div class="label">Productos</div><div class="value">${scoped.length}</div><div class="sub">en ${sucName(visibleSuc())}</div></div>
     <div class="kpi ${low?'alert':'good'}"><div class="label">Bajo mínimo</div><div class="value">${low}</div><div class="sub">requieren compra</div></div>
     <div class="kpi"><div class="label">Valor total</div><div class="value" style="font-size:22px">${money(value)}</div><div class="sub">cantidad × costo</div></div>
-    <div class="kpi"><div class="label">Categorías</div><div class="value">${new Set(scoped.map(p=>p.category)).size}</div><div class="sub">tipos de insumo</div></div>
+    <div class="kpi"><div class="label">Familias</div><div class="value">${new Set(scoped.map(p=>p.category)).size}</div><div class="sub">tipos de insumo</div></div>
   </div>`;
   html+=`<div class="toolbar">
-    <input class="input search" placeholder="Buscar producto…" value="${esc(invSearch)}" oninput="invSearch=this.value;clearTimeout(window._is);window._is=setTimeout(render,250)">
-    ${areas.length>1?`<button class="chip ${invArea==='todas'?'on':''}" onclick="invArea='todas';invCat='todas';render()">Cocina y Bar</button>`+areas.map(a=>`<button class="chip ${invArea===a?'on':''}" onclick="invArea='${a}';invCat='todas';render()">${INV_AREA_LABEL[a]}</button>`).join(''):''}
+    <input class="input search" placeholder="Buscar producto (Cocina y Bar)…" value="${esc(invSearch)}" oninput="invSearch=this.value;clearTimeout(window._is);window._is=setTimeout(render,250)">
+    ${areas.length>1?`<div class="seg inv-seg">
+      <button type="button" class="seg-b ${invArea==='cocina'?'on':''}" onclick="invArea='cocina';invCat='todas';render()">${svgIcon('utensils','icon icon-sm')} Cocina</button>
+      <button type="button" class="seg-b ${invArea==='bar'?'on':''}" onclick="invArea='bar';invCat='todas';render()">${svgIcon('coffee','icon icon-sm')} Bar</button>
+      <button type="button" class="seg-b ${invArea==='todas'?'on':''}" onclick="invArea='todas';invCat='todas';render()">Ambas</button>
+    </div>`:''}
   </div>
   <div class="toolbar">
-    <select class="select" style="max-width:240px" onchange="invCat=this.value;render()">
-      <option value="todas" ${invCat==='todas'?'selected':''}>Todas las categorías</option>
+    <select class="select" style="max-width:190px" onchange="invCat=this.value;render()">
+      <option value="todas" ${invCat==='todas'?'selected':''}>Todas las familias</option>
       ${catsVisible().map(c=>`<option value="${esc(c)}" ${invCat===c?'selected':''}>${esc(c)}</option>`).join('')}
     </select>
+    <select class="select" style="max-width:190px" onchange="invBodega=this.value;render()">
+      <option value="todas" ${invBodega==='todas'?'selected':''}>Todas las bodegas</option>
+      ${bods.map(b=>`<option value="${b.id}" ${invBodega===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}
+      <option value="sin" ${invBodega==='sin'?'selected':''}>Sin bodega</option>
+    </select>
     <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">Solo inventario bajo</button>
-    ${editor?`<button class="chip" onclick="catManagerModal()">${svgIcon('edit','icon icon-sm')} Categorías</button>`:''}
+    ${editor?`<button class="chip" onclick="catManagerModal()">${svgIcon('edit','icon icon-sm')} Familias</button><button class="chip" onclick="bodegaManagerModal()">${svgIcon('box','icon icon-sm')} Bodegas</button>`:''}
   </div>`;
-  html+= list.length? list.map(invRow).join('')
-    : emptyState('📦','Sin productos','Agregá productos para llevar el control de la bodega.', editor?'+ Producto':'', editor?'invNewModal()':'');
+  if(!list.length) html+= emptyState('📦','Sin productos', searching?'No hay productos que coincidan con la búsqueda.':'Agregá productos para llevar el control de la bodega.', editor?'+ Producto':'', editor?'invNewModal()':'');
+  else if(searching || invCat!=='todas') html+= list.map(invRow).join('');               // plano (buscando o filtrando una familia)
+  else { const g={}; list.forEach(p=>{ const c=p.category||'Sin familia'; (g[c]=g[c]||[]).push(p); });   // agrupado por familia
+    html+= Object.keys(g).sort((a,b)=>a.localeCompare(b)).map(c=>`<div class="inv-fam">${esc(c)} <span class="inv-fam-n">${g[c].length}</span></div>`+g[c].map(invRow).join('')).join(''); }
   return html;
 }
 function invRow(p){
@@ -3058,12 +3095,14 @@ function invRow(p){
       <div class="inv-min">mín ${p.minStock}</div>
     </div>
     <div class="inv-info">
-      <div class="inv-name">${esc(p.name)} <span class="inv-area">${INV_AREA_LABEL[p.area||'cocina']}</span>${lw?' <span class="pill atrasada">Reponer</span>':''}</div>
+      <div class="inv-name">${esc(p.name)} <span class="inv-area">${INV_AREA_LABEL[p.area||'cocina']}</span>${p.bodega?` <span class="inv-bodega">${svgIcon('box','icon icon-sm')} ${esc(bodegaName(p.bodega))}</span>`:''}${lw?' <span class="pill atrasada">Reponer</span>':''}</div>
       <div class="inv-meta">${esc(p.category)} · ${money(p.cost)}/${esc(p.unit)}${p.supplier?' · '+esc(p.supplier):''} · ${esc(sucName(p.sucursalId))}${lw&&sug?` · <b style="color:var(--warn)">Sugerido pedir ${sug} ${esc(p.unit)}</b>`:''}</div>
     </div>
     <div class="inv-actions">
-      ${editor?`<button class="ibtn ok" title="Entrada — sumar stock" onclick="invMoveModal('${p.id}','entrada')">${svgIcon('up','icon icon-sm')}<span>Entrada</span></button>
-        <button class="ibtn danger" title="Salida — restar stock" onclick="invMoveModal('${p.id}','salida')">${svgIcon('down','icon icon-sm')}<span>Salida</span></button>
+      ${editor?`<button class="ibtn ok" title="Entrada — sumar stock (compra)" onclick="invMoveModal('${p.id}','entrada')">${svgIcon('up','icon icon-sm')}<span>Entrada</span></button>
+        <button class="ibtn danger" title="Salida — uso o merma" onclick="invMoveModal('${p.id}','salida')">${svgIcon('down','icon icon-sm')}<span>Salida</span></button>
+        <button class="ibtn sale" title="Venta — restar por venta" onclick="invMoveModal('${p.id}','venta')">${svgIcon('tag','icon icon-sm')}<span>Venta</span></button>
+        <button class="ibtn move" title="Trasladar a otra bodega" onclick="invTrasladoModal('${p.id}')">${svgIcon('truck','icon icon-sm')}<span>Traslado</span></button>
         <button class="ibtn" title="Editar producto" onclick="invEditModal('${p.id}')">${svgIcon('edit','icon icon-sm')}</button>${lw?`<button class="ibtn" title="Pedir reposición a proveeduría" onclick="pedirProducto('${p.id}',${sug||0})">${svgIcon('box','icon icon-sm')}<span>Pedir</span></button>`:''}`
        :`<button class="ibtn" title="Pedir a proveeduría" onclick="pedirProducto('${p.id}',${sug||0})">${svgIcon('box','icon icon-sm')}<span>Pedir${lw&&sug?' '+sug:''}</span></button>`}
     </div>
@@ -3071,19 +3110,21 @@ function invRow(p){
 }
 function invMoveModal(pid,type){
   const p=DB.inventory.find(x=>x.id===pid); if(!p) return;
-  const ent=type==='entrada';
+  const T=({entrada:{t:'Entrada de stock',v:'entró',b:'Sumar al stock',ic:'up',ph:'Ej: compra a proveedor'},
+            salida:{t:'Salida de stock',v:'salió',b:'Restar del stock',ic:'down',ph:'Ej: merma / uso de cocina'},
+            venta:{t:'Venta',v:'se vendió',b:'Restar (venta)',ic:'tag',ph:'Ej: venta del día'}})[type]||{t:'Movimiento',v:'cambió',b:'Aplicar',ic:'box',ph:''};
   openModal(`
-    <div class="modal-head"><h3>${svgIcon(ent?'up':'down','icon')} ${ent?'Entrada de stock':'Salida de stock'}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-head"><h3>${svgIcon(T.ic,'icon')} ${T.t}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
       <div class="card" style="margin:0 0 16px;display:flex;align-items:center;gap:14px;padding:14px">
         <div class="inv-stock-n">${p.stock}<span>${esc(p.unit)}</span></div>
-        <div><div style="font-weight:700">${esc(p.name)}</div><div class="page-sub" style="margin:2px 0 0">${INV_AREA_LABEL[p.area||'cocina']} · mínimo ${p.minStock} ${esc(p.unit)}</div></div>
+        <div><div style="font-weight:700">${esc(p.name)}</div><div class="page-sub" style="margin:2px 0 0">${INV_AREA_LABEL[p.area||'cocina']}${p.bodega?' · '+esc(bodegaName(p.bodega)):''} · mínimo ${p.minStock} ${esc(p.unit)}</div></div>
       </div>
-      <div class="field"><label>¿Cuánto ${ent?'entró':'salió'}? (${esc(p.unit)})</label><input class="input" id="imQty" type="number" min="0" step="any" value="1" oninput="imPreview('${pid}','${type}')"></div>
+      <div class="field"><label>¿Cuánto ${T.v}? (${esc(p.unit)})</label><input class="input" id="imQty" type="number" min="0" step="any" value="1" oninput="imPreview('${pid}','${type}')"></div>
       <div class="sh-preview" id="imRes" style="margin-bottom:14px"></div>
-      <div class="field"><label>Nota (opcional)</label><input class="input" id="imNote" placeholder="${ent?'Ej: compra a proveedor':'Ej: merma / uso de cocina'}"></div>
+      <div class="field"><label>Nota (opcional)</label><input class="input" id="imNote" placeholder="${T.ph}"></div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="applyInvMove('${pid}','${type}')">${ent?'Sumar al stock':'Restar del stock'}</button></div>`);
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="applyInvMove('${pid}','${type}')">${T.b}</button></div>`);
   imPreview(pid,type);
 }
 function imPreview(pid,type){
@@ -3100,10 +3141,33 @@ function applyInvMove(pid,type){
   const note=$('#imNote').value.trim();
   p.stock = type==='entrada' ? +(p.stock+q).toFixed(2) : Math.max(0,+(p.stock-q).toFixed(2));
   DB.invMoves.unshift({id:uid(),productId:p.id,type,qty:q,byId:SES.userId,at:now(),note,refId:null,sucursalId:p.sucursalId});
-  audit('inventario',`${type==='entrada'?'+':'-'}${q} ${p.unit} de "${p.name}"${note?' ('+note+')':''}`,p.sucursalId);
-  if(type==='salida'&&lowStock(p)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Inventario bajo: ${p.name} (${p.stock} ${p.unit})`,'⚠️',{view:'inventario'});
-  closeModal(); toast('Inventario actualizado','ok'); render();
+  audit('inventario',`${type==='entrada'?'+':'-'}${q} ${p.unit} de "${p.name}"${type==='venta'?' (venta)':''}${note?' ('+note+')':''}`,p.sucursalId);
+  if((type==='salida'||type==='venta')&&lowStock(p)) notify(DB.users.filter(u=>u.role==='proveeduria'||u.role==='admin').map(u=>u.id), `Inventario bajo: ${p.name} (${p.stock} ${p.unit})`,'⚠️',{view:'inventario'});
+  closeModal(); toast(type==='venta'?'Venta registrada':'Inventario actualizado','ok'); render();
 }
+function invTrasladoModal(pid){
+  const p=DB.inventory.find(x=>x.id===pid); if(!p) return;
+  const bods=bodegasFor();
+  if(!bods.length){ toast('Primero creá bodegas con el botón "Bodegas"','err'); return; }
+  const dest=bods.filter(b=>b.id!==p.bodega);
+  openModal(`<div class="modal-head"><h3>${svgIcon('truck','icon')} Trasladar de bodega</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="card" style="margin:0 0 16px;padding:14px"><div style="font-weight:700">${esc(p.name)}</div><div class="page-sub" style="margin:2px 0 0">Ahora en: <b>${esc(bodegaName(p.bodega))}</b> · ${p.stock} ${esc(p.unit)}</div></div>
+      <div class="field"><label>Mover a la bodega</label><select class="select" id="trDest">${dest.length?dest.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join(''):'<option value="">(no hay otra bodega)</option>'}</select></div>
+      <div class="field"><label>Nota (opcional)</label><input class="input" id="trNote" placeholder="Ej: se pasó al congelador"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="applyTraslado('${pid}')">Trasladar</button></div>`);
+}
+function applyTraslado(pid){
+  const p=DB.inventory.find(x=>x.id===pid); if(!p) return;
+  const dest=$('#trDest')?$('#trDest').value:''; if(!dest){ toast('Elegí una bodega de destino','err'); return; }
+  const fromN=bodegaName(p.bodega), toN=bodegaName(dest), note=$('#trNote')?$('#trNote').value.trim():'';
+  p.bodega=dest;
+  DB.invMoves.unshift({id:uid(),productId:p.id,type:'traslado',qty:p.stock,byId:SES.userId,at:now(),note:(fromN+' → '+toN)+(note?' · '+note:''),refId:null,sucursalId:p.sucursalId});
+  audit('inventario',`trasladó "${p.name}" de ${fromN} a ${toN}`,p.sucursalId);
+  closeModal(); toast('Producto trasladado ✓','ok'); render();
+}
+window.invTrasladoModal=invTrasladoModal; window.applyTraslado=applyTraslado;
 function invNewModal(){ openModal(invForm('Nuevo producto',null), true); }
 function invEditModal(id){ openModal(invForm('Editar producto',DB.inventory.find(x=>x.id===id)), true); }
 function invForm(title,p){
@@ -3114,9 +3178,10 @@ function invForm(title,p){
     <div class="ip-sec">${svgIcon('box','icon icon-sm')} Información</div>
     <div class="field"><label>Nombre del producto</label><input class="input" id="ipName" value="${p?esc(p.name):''}" placeholder="Ej: Tomate" autocomplete="off"></div>
     <div class="row2">
-      <div class="field"><label>Bodega / área</label><select class="select" id="ipArea" onchange="fillCatOptions()">${editable.map(a=>`<option value="${a}" ${a===defArea?'selected':''}>${INV_AREA_LABEL[a]}</option>`).join('')}</select></div>
-      <div class="field"><label>Categoría</label><select class="select" id="ipCat">${(()=>{const cats=catsForArea(defArea);const list=(p&&p.category&&!cats.includes(p.category))?[p.category,...cats]:cats;return list.map(c=>`<option ${p&&p.category===c?'selected':''}>${esc(c)}</option>`).join('');})()}</select></div>
+      <div class="field"><label>Lado (Cocina / Bar)</label><select class="select" id="ipArea" onchange="fillCatOptions()">${editable.map(a=>`<option value="${a}" ${a===defArea?'selected':''}>${INV_AREA_LABEL[a]}</option>`).join('')}</select></div>
+      <div class="field"><label>Familia</label><select class="select" id="ipCat">${(()=>{const cats=catsForArea(defArea);const list=(p&&p.category&&!cats.includes(p.category))?[p.category,...cats]:cats;return list.map(c=>`<option ${p&&p.category===c?'selected':''}>${esc(c)}</option>`).join('');})()}</select></div>
     </div>
+    <div class="field"><label>Bodega (dónde se guarda)</label><select class="select" id="ipBodega"><option value="">Sin bodega</option>${bodegasFor().map(b=>`<option value="${b.id}" ${p&&p.bodega===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}</select></div>
     <div class="ip-sec">${svgIcon('chart','icon icon-sm')} Existencias</div>
     <div class="row3">
       <div class="field"><label>Unidad</label><select class="select" id="ipUnit">${INV_UNITS.map(u=>`<option ${p&&p.unit===u?'selected':''}>${u}</option>`).join('')}</select></div>
@@ -3145,7 +3210,7 @@ function ipPreview(){
 window.ipPreview=ipPreview;
 function saveProduct(id){
   const name=clip($('#ipName').value,80); if(!name){ toast('Ponele nombre','err'); return; }
-  const data={name,area:($('#ipArea')?$('#ipArea').value:'cocina'),category:$('#ipCat').value,unit:$('#ipUnit').value,stock:numClamp($('#ipStock').value,0,1e7),
+  const data={name,area:($('#ipArea')?$('#ipArea').value:'cocina'),category:$('#ipCat').value,bodega:($('#ipBodega')?$('#ipBodega').value:''),unit:$('#ipUnit').value,stock:numClamp($('#ipStock').value,0,1e7),
     minStock:numClamp($('#ipMin').value,0,1e7),cost:numClamp($('#ipCost').value,0,1e9),supplier:clip($('#ipSup').value,80),sucursalId:$('#ipSuc').value};
   if(id){ const p=DB.inventory.find(x=>x.id===id); Object.assign(p,data); audit('inventario',`editó el producto "${name}"`,p.sucursalId); }
   else { DB.inventory.push({id:uid(),...data}); audit('inventario',`agregó el producto "${name}"`,data.sucursalId); }
@@ -3155,8 +3220,11 @@ function invMovesModal(){
   const moves=DB.invMoves.filter(m=>inScope(m.sucursalId)).slice(0,80);
   const rows=moves.map(m=>{
     const p=DB.inventory.find(x=>x.id===m.productId); const u=userById(m.byId);
-    const sign=m.type==='entrada'?'+':'−'; const col=m.type==='entrada'?'var(--success)':'var(--danger)';
-    return `<div class="log-item"><b style="color:${col}">${sign}${m.qty}</b> ${p?esc(p.name):'—'} · ${esc(m.type)} · ${u?esc((u.name||'').split(' ')[0]):''}${m.note?' · '+esc(m.note):''} <span style="opacity:.7">· ${fmtDateTime(m.at)}</span></div>`;
+    const isTr=m.type==='traslado';
+    const sign=m.type==='entrada'?'+':isTr?'⇄':'−';
+    const col=m.type==='entrada'?'var(--success)':isTr?'var(--accent)':m.type==='venta'?'#a855f7':'var(--danger)';
+    const label={entrada:'entrada',salida:'salida',venta:'venta',traslado:'traslado'}[m.type]||m.type;
+    return `<div class="log-item"><b style="color:${col}">${isTr?'⇄':sign+m.qty}</b> ${p?esc(p.name):'—'} · ${label} · ${u?esc((u.name||'').split(' ')[0]):''}${m.note?' · '+esc(m.note):''} <span style="opacity:.7">· ${fmtDateTime(m.at)}</span></div>`;
   }).join('');
   openModal(`<div class="modal-head"><h3>Movimientos de inventario</h3><button class="modal-close" onclick="closeModal()">×</button></div>
     <div class="modal-body">${moves.length?`<div class="log">${rows}</div>`:'<div class="empty"><div class="em-ico">📜</div><div class="em-d">Sin movimientos todavía.</div></div>'}</div>`,true);
@@ -3189,6 +3257,26 @@ function catManagerModal(){
 function addCat(a){ const el=$('#newcat_'+a); const v=el?el.value.trim():''; if(!v){ toast('Escribí un nombre','err'); return; } DB.invCats[a]=DB.invCats[a]||[]; if(DB.invCats[a].includes(v)){ toast('Esa categoría ya existe','err'); return; } DB.invCats[a].push(v); audit('inventario',`agregó categoría "${v}" a ${INV_AREA_LABEL[a]}`); save(); catManagerModal(); }
 function delCat(a,i){ const c=(DB.invCats[a]||[])[i]; if(c===undefined) return; if(DB.inventory.some(p=>(p.area||'cocina')===a && p.category===c)){ toast('No se puede borrar: hay productos en esa categoría','err'); return; } DB.invCats[a].splice(i,1); audit('inventario',`quitó categoría "${c}" de ${INV_AREA_LABEL[a]}`); save(); catManagerModal(); }
 window.fillCatOptions=fillCatOptions; window.catManagerModal=catManagerModal; window.addCat=addCat; window.delCat=delCat;
+function bodegaManagerModal(){
+  const bods=bodegasFor();
+  openModal(`<div class="modal-head"><h3>${svgIcon('box','icon')} Bodegas</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="page-sub" style="margin-bottom:14px">Lugares de almacenamiento (ej. <b>Congelador 1</b>, Refrigerador, Bodega seca). Cada producto se guarda en una bodega para saber qué hay en cada una.</div>
+      <div class="assignee-pick" style="margin-bottom:10px">${bods.length?bods.map(b=>`<span class="ap">${esc(b.name)}<button class="icon-btn" style="width:22px;height:22px;border:none;background:none;margin-left:2px" title="Quitar" onclick="delBodega('${b.id}')">${svgIcon('x','icon icon-sm')}</button></span>`).join(''):'<span style="color:var(--text-soft);font-size:12.5px">Sin bodegas todavía.</span>'}</div>
+      <div style="display:flex;gap:8px"><input class="input" id="newBodega" placeholder="Nueva bodega (ej. Congelador 1)" onkeydown="if(event.key==='Enter')addBodega()"><button class="btn btn-ghost" style="flex:0 0 auto" onclick="addBodega()">Agregar</button></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Listo</button></div>`);
+}
+function addBodega(){ const el=$('#newBodega'); const v=el?el.value.trim():''; if(!v){ toast('Escribí un nombre','err'); return; }
+  const suc = (me()&&me().sucursalId!=='all') ? me().sucursalId : (visibleSuc()!=='all'?visibleSuc():((DB.sucursales[0]&&DB.sucursales[0].id)||'all'));
+  DB.bodegas=DB.bodegas||[]; DB.bodegas.push({id:uid(),name:clip(v,40),sucursalId:suc,at:now(),updatedAt:now()});
+  audit('inventario',`agregó la bodega "${v}"`,suc); save(); bodegaManagerModal();
+}
+function delBodega(id){ const b=(DB.bodegas||[]).find(x=>x&&x.id===id); if(!b) return;
+  if((DB.inventory||[]).some(p=>p.bodega===id)){ toast('No se puede borrar: hay productos en esa bodega','err'); return; }
+  delEntity('bodegas', id); audit('inventario',`quitó la bodega "${b.name}"`,b.sucursalId); save(); bodegaManagerModal();
+}
+window.bodegaManagerModal=bodegaManagerModal; window.addBodega=addBodega; window.delBodega=delBodega;
 
 /* ---------------- Facturas (entrada de mercadería al inventario) ---------------- */
 let facLines=[];
@@ -3384,7 +3472,7 @@ function applyFacturaAI(out){
     const lc=name.toLowerCase();
     const match=prods.find(p=>p.name.toLowerCase()===lc) || (name.length>3?prods.find(p=>p.name.toLowerCase().includes(lc)||lc.includes(p.name.toLowerCase())):null);
     let unit=String(it.unidad||'').toLowerCase().trim(); if(!INV_UNITS.includes(unit)) unit=match?match.unit:'unid';
-    return {productId:match?match.id:'', name:match?match.name:name, category:match?match.category:(catsForArea(area)[0]||''), unit, qty:+it.cantidad||1, cost:Math.round(+it.costo_unitario||0)};
+    return {productId:match?match.id:'', name:match?match.name:name, category:match?match.category:guessFamily(name, catsForArea(area)), unit, qty:+it.cantidad||1, cost:Math.round(+it.costo_unitario||0)};
   });
   if(lines.length) facLines=lines;
   renderFacLines();
