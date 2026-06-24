@@ -256,7 +256,9 @@ select option,select optgroup{background:var(--bg-elev);color:var(--text)}
 
 .body-wrap{display:flex;flex:1;min-height:0}
 .sidebar{width:218px;border-right:1px solid var(--border-soft);background:var(--bg-elev);
-  padding:14px 12px;overflow-y:auto;flex-shrink:0}
+  padding:14px 12px;overflow-y:auto;flex-shrink:0;transition:width var(--t-med) var(--ease-out),padding var(--t-med) var(--ease-out)}
+.nav-toggle{margin-right:6px}
+.app.nav-collapsed .sidebar{width:0;padding:14px 0;border-right:none;overflow:hidden}
 .nav-item{display:flex;align-items:center;gap:12px;padding:11px 12px;border-radius:var(--r-md);
   font-weight:550;font-size:14px;color:var(--text-soft);margin-bottom:2px;width:100%;text-align:left;position:relative;
   transition:background var(--t-fast),color var(--t-fast)}
@@ -1486,6 +1488,7 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
 /* ---------- RESPONSIVE ---------- */
 @media(max-width:780px){
   .sidebar{display:none}
+  .nav-toggle{display:none}
   .main{padding:16px 15px}
   .kpi-row{grid-template-columns:1fr 1fr;gap:11px}
   .kpi .value{font-size:24px}
@@ -1652,6 +1655,7 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
 <!-- ============ APP ============ -->
 <div class="app" id="app">
   <div class="topbar">
+    <button class="icon-btn nav-toggle" id="navToggle" aria-label="Mostrar/ocultar menú" title="Mostrar/ocultar menú" onclick="toggleNav()"><svg class="icon" viewBox="0 0 24 24"><use href="#i-list"/></svg></button>
     <div class="tb-logo">Sabor Tico<span class="dot">.</span></div>
     <span id="cloudTag" class="cloud-tag hidden">Sincronizado</span>
     <div class="suc-switch" id="sucSwitch">

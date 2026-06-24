@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v67 · Inventario: diseño alineado, tarjetas compactas, bodegas y por persona';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v68 · Menú ordenado por importancia y colapsable (más espacio)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -932,9 +932,12 @@ const ROLE_NAV = {
 // Calendario personal: disponible para todos los puestos (lo agregamos después de Horarios)
 Object.keys(ROLE_NAV).forEach(r=>{ if(!ROLE_NAV[r].includes('calendario')){ const i=ROLE_NAV[r].indexOf('horarios'); if(i>=0) ROLE_NAV[r].splice(i+1,0,'calendario'); else ROLE_NAV[r].splice(1,0,'calendario'); } });
 const ADMIN_GROUP = ['reportes','equipo','auditoria'];
+// Orden por importancia/uso diario (arriba lo más necesario; abajo lo ocasional)
+const NAV_PRIORITY = ['inicio','tareas','pedidos','inventario','reservas','horarios','chat','recetas','souvenir','calendario','proyectos','reportes','equipo','auditoria'];
 function navItems(){
   const ids = ROLE_NAV[me().role] || ['inicio','tareas','pedidos','proyectos','chat'];
-  return ids.map(id=>({id,...NAV_DEF[id]}));
+  const rank = id => { const i=NAV_PRIORITY.indexOf(id); return i<0?999:i; };
+  return ids.slice().sort((a,b)=>rank(a)-rank(b)).map(id=>({id,...NAV_DEF[id]}));
 }
 // Barra inferior del celular: lo más usado a mano. Mensajes va junto a Tareas.
 function bottomNavItems(){
@@ -981,6 +984,8 @@ function renderNav(){
   }).join('') +
     `<button class="bn-item ${moreActive?'active':''}" onclick="openNavSheet()"><span class="ico">${svgIcon('list','icon icon-lg')}</span>Más${moreBadge?`<span class="ncount">${moreBadge}</span>`:''}</button>`;
 }
+function toggleNav(){ const a=$('#app'); if(!a) return; const c=a.classList.toggle('nav-collapsed'); try{ localStorage.setItem('stNavCollapsed', c?'1':'0'); }catch(_){} }
+window.toggleNav=toggleNav;
 function openNavSheet(){
   const items=navItems();
   openModal(`<div class="modal-head"><h3>Menú</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
@@ -1014,6 +1019,7 @@ function render(){
   try{ checkCalReminders(); }catch(_){}
   try{ checkNotifPops(); }catch(_){}   // avisar (popup+sonido) lo nuevo, p.ej. recordatorios de turno/calendario
   const ct=$('#cloudTag'); if(ct) ct.classList.toggle('hidden',!cloudOn);
+  try{ const ap=$('#app'); if(ap) ap.classList.toggle('nav-collapsed', localStorage.getItem('stNavCollapsed')==='1'); }catch(_){}
   // topbar
   const tbAv=$('#tbAv'); if(tbAv){ tbAv.style.background=roleInfo(me().role).color; tbAv.textContent=initials(me().name); }
   if($('#tbName')) $('#tbName').textContent = me().name;
