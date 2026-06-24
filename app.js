@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v68 · Menú ordenado por importancia y colapsable (más espacio)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v69 · Inventario: tarjetas compactas, familias fijas y barra ordenada';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3090,36 +3090,33 @@ function viewInventario(){
       ${list.map(invTile).join('')}
     </div>` : emptyState('📦','Sin productos', searching?'No hay productos que coincidan con la búsqueda.':(editor?'Agregá productos para llevar el control de la bodega.':'Todavía no hay productos.'),'','');
 
+  const bodegaDD=`<div class="dd" id="ddBodega">
+    <button type="button" class="dd-btn" onclick="ddToggle(event,'ddBodega')">${svgIcon('box','icon icon-sm')}<span>${esc(invBodega==='todas'?'Todas las bodegas':(invBodega==='sin'?'Sin bodega':bodegaName(invBodega)))}</span>${svgIcon('chevron','icon icon-sm dd-chev')}</button>
+    <div class="dd-menu">
+      <button class="dd-opt ${invBodega==='todas'?'on':''}" onclick="setBodegaFilter('todas')">${svgIcon('box','icon icon-sm')} Todas las bodegas <span class="dd-c">${scoped.length}</span></button>
+      ${bods.map(b=>`<button class="dd-opt ${invBodega===b.id?'on':''}" onclick="setBodegaFilter('${b.id}')"><span class="inv-dot" style="background:var(--accent)"></span> ${esc(b.name)} <span class="dd-c">${scoped.filter(p=>(p.bodega||'')===b.id).length}</span></button>`).join('')}
+      <button class="dd-opt ${invBodega==='sin'?'on':''}" onclick="setBodegaFilter('sin')"><span class="inv-dot" style="background:var(--border)"></span> Sin bodega <span class="dd-c">${scoped.filter(p=>!p.bodega).length}</span></button>
+    </div>
+  </div>`;
   const main=`<section class="inv-main">
     <div class="inv-main-h">
       <div class="inv-main-title">${esc(title)} <span class="inv-main-n">${list.length}</span></div>
       ${editor?`<div class="seg inv-mode-seg">
         <button type="button" class="seg-b ${invMode==='edit'?'on':''}" onclick="invMode='edit';invSel=null;render()">${svgIcon('edit','icon icon-sm')} Editar</button>
-        <button type="button" class="seg-b ${invMode==='count'?'on':''}" onclick="invMode='count';invSel=null;invSelMode=false;render()">${svgIcon('check','icon icon-sm')} Conteo diario</button>
+        <button type="button" class="seg-b ${invMode==='count'?'on':''}" onclick="invMode='count';invSel=null;invSelMode=false;render()">${svgIcon('check','icon icon-sm')} Conteo</button>
       </div>`:`<span class="inv-mode-tag">${svgIcon('check','icon icon-sm')} Conteo diario</span>`}
-      <div class="inv-search-wrap ${invSearch?'has-val':''}">${svgIcon('search','icon icon-sm')}<input class="input" placeholder="Buscar producto en todo el inventario…" value="${esc(invSearch)}" oninput="invSearch=this.value;clearTimeout(window._is);window._is=setTimeout(render,250)">${invSearch?`<button class="inv-search-x" title="Limpiar" onclick="invSearch='';render()">${svgIcon('x','icon icon-sm')}</button>`:''}</div>
+      ${bodegaDD}
+      <div class="inv-search-wrap ${invSearch?'has-val':''}">${svgIcon('search','icon icon-sm')}<input class="input" placeholder="Buscar producto…" value="${esc(invSearch)}" oninput="invSearch=this.value;clearTimeout(window._is);window._is=setTimeout(render,250)">${invSearch?`<button class="inv-search-x" title="Limpiar" onclick="invSearch='';render()">${svgIcon('x','icon icon-sm')}</button>`:''}</div>
     </div>
     <div class="inv-filters">
-      <div class="inv-filters-l">
-        <div class="dd" id="ddBodega">
-          <button type="button" class="dd-btn" onclick="ddToggle(event,'ddBodega')">${svgIcon('box','icon icon-sm')}<span>${esc(invBodega==='todas'?'Todas las bodegas':(invBodega==='sin'?'Sin bodega':bodegaName(invBodega)))}</span>${svgIcon('chevron','icon icon-sm dd-chev')}</button>
-          <div class="dd-menu">
-            <button class="dd-opt ${invBodega==='todas'?'on':''}" onclick="setBodegaFilter('todas')">${svgIcon('box','icon icon-sm')} Todas las bodegas <span class="dd-c">${scoped.length}</span></button>
-            ${bods.map(b=>`<button class="dd-opt ${invBodega===b.id?'on':''}" onclick="setBodegaFilter('${b.id}')"><span class="inv-dot" style="background:var(--accent)"></span> ${esc(b.name)} <span class="dd-c">${scoped.filter(p=>(p.bodega||'')===b.id).length}</span></button>`).join('')}
-            <button class="dd-opt ${invBodega==='sin'?'on':''}" onclick="setBodegaFilter('sin')"><span class="inv-dot" style="background:var(--border)"></span> Sin bodega <span class="dd-c">${scoped.filter(p=>!p.bodega).length}</span></button>
-          </div>
-        </div>
-        <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">${svgIcon('info','icon icon-sm')} Bajo mínimo${low?' ('+low+')':''}</button>
-      </div>
-      <div class="inv-filters-r">
-        <button class="chip" onclick="inventoryReportModal()">${svgIcon('chart','icon icon-sm')} Reporte</button>
-        <button class="chip" onclick="dailyCountsModal()">${svgIcon('check','icon icon-sm')} Conteos de hoy</button>
-        <button class="chip" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button>
-        ${editMode?`<button class="chip ${invSelMode?'on':''}" onclick="invToggleSelMode()">${svgIcon('check','icon icon-sm')} Organizar</button>
-          <button class="chip" onclick="bodegaManagerModal()">${svgIcon('box','icon icon-sm')} Bodegas</button>
-          <button class="chip" onclick="invoicesModal()">${svgIcon('clipboard','icon icon-sm')} Facturas</button>
-          <button class="chip accent" onclick="invoiceModal()">${svgIcon('truck','icon icon-sm')} Registrar factura</button>`:''}
-      </div>
+      <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">${svgIcon('info','icon icon-sm')} Bajo mínimo${low?' ('+low+')':''}</button>
+      <button class="chip" onclick="inventoryReportModal()">${svgIcon('chart','icon icon-sm')} Reporte</button>
+      <button class="chip" onclick="dailyCountsModal()">${svgIcon('check','icon icon-sm')} Conteos de hoy</button>
+      <button class="chip" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button>
+      ${editMode?`<button class="chip ${invSelMode?'on':''}" onclick="invToggleSelMode()">${svgIcon('check','icon icon-sm')} Organizar</button>
+        <button class="chip" onclick="bodegaManagerModal()">${svgIcon('box','icon icon-sm')} Bodegas</button>
+        <button class="chip" onclick="invoicesModal()">${svgIcon('clipboard','icon icon-sm')} Facturas</button>
+        <button class="chip accent" onclick="invoiceModal()">${svgIcon('truck','icon icon-sm')} Registrar factura</button>`:''}
     </div>
     ${editor&&invSelMode?`<div class="inv-bulk">
       <span class="inv-bulk-n">${invPicks.size} seleccionado(s)</span>
@@ -3134,7 +3131,7 @@ function viewInventario(){
       <button class="btn btn-primary" onclick="movePicks()" ${invPicks.size?'':'disabled'}>${svgIcon('check','icon icon-sm')} Mover</button>
       <button class="btn btn-ghost" onclick="invToggleSelMode()">Salir</button>
     </div>`:''}
-    ${grid}
+    <div class="inv-scroll">${grid}</div>
   </section>`;
 
   // =================== DERECHA: EDITOR o CONTEO ===================
