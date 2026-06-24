@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v56 · Calendario: tocar dia en Mes abre el Dia';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v57 · Calendario de Reservas (pestaña)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4624,6 +4624,8 @@ window.generateMonthlyReport=generateMonthlyReport;
    ===================================================================== */
 const RESERV_EST={pendiente:{l:'Pendiente',c:'pendiente'},confirmada:{l:'Confirmada',c:'proceso'},llego:{l:'Llegó',c:'hecha'},noshow:{l:'No llegó',c:'atrasada'},cancelada:{l:'Cancelada',c:'rechazada'}};
 let resvTab='lista', resvFilter='proximas', resvEstado='todos', resvSearch='', clientSearch='';
+let rvcView='mes', rvcCursor='';
+const RVC_COLOR={pendiente:'#d59b4a',confirmada:'#5b8def',llego:'#5aa777',noshow:'#d9534f',cancelada:'#8d99ae'};
 function reservScoped(){ return (DB.reservations||[]).filter(r=>r&&inScope(r.sucursalId)); }
 function clientById(id){ return (DB.clients||[]).find(c=>c.id===id); }
 function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
@@ -4655,8 +4657,8 @@ function viewReservas(){
   let html=`<div class="page-head"><div><div class="page-title">Reservaciones</div><div class="page-sub">Reservas, clientes y agencias</div></div>
     <div class="ph-spacer"></div>${editor?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="newReservModal()">${svgIcon('plus','icon icon-sm')} Nueva reservación</button>`:''}</div>`;
   html+=guide;
-  html+=`<div class="hor-modes"><button class="chip ${resvTab==='lista'?'on':''}" onclick="resvTab='lista';render()">Reservaciones</button><button class="chip ${resvTab==='clientes'?'on':''}" onclick="resvTab='clientes';render()">Clientes y agencias</button></div>`;
-  html+= resvTab==='clientes' ? reservClientes(editor) : reservLista(editor);
+  html+=`<div class="hor-modes"><button class="chip ${resvTab==='lista'?'on':''}" onclick="resvTab='lista';render()">Reservaciones</button><button class="chip ${resvTab==='cal'?'on':''}" onclick="resvTab='cal';render()">${svgIcon('calendar','icon icon-sm')} Calendario</button><button class="chip ${resvTab==='clientes'?'on':''}" onclick="resvTab='clientes';render()">Clientes y agencias</button></div>`;
+  html+= resvTab==='clientes' ? reservClientes(editor) : resvTab==='cal' ? reservCalendar(editor) : reservLista(editor);
   return html;
 }
 function reservLista(editor){
@@ -4700,6 +4702,87 @@ function reservLista(editor){
   return html;
 }
 function fmtResDate(d){ if(!d) return '—'; const x=new Date(d+'T00:00'); return x.toLocaleDateString('es-CR',{weekday:'short',day:'2-digit',month:'short'}); }
+/* ---- CALENDARIO DE RESERVAS (reusa el estilo del calendario personal) ---- */
+function rvcItems(iso){
+  return reservScoped().filter(r=>r&&r.resDate===iso).sort((a,b)=>(a.resTime||'').localeCompare(b.resTime||''))
+    .map(r=>({id:r.id, name:r.clientName||'Reserva', people:+r.people||0, time:r.resTime||'', color:RVC_COLOR[r.status]||'#d59b4a'}));
+}
+function rvcChip(it){ return `<button class="cal-chip" style="--c:${it.color}" onclick="event.stopPropagation();reservDetail('${it.id}')">${it.time?`<b>${esc(fmt12(it.time))}</b> `:''}${esc(it.name)}${it.people?' ('+it.people+')':''}</button>`; }
+function reservCalendar(editor){
+  if(!rvcCursor) rvcCursor=calToday();
+  const d=calParse(rvcCursor); let title;
+  if(rvcView==='dia') title=d.getDate()+' de '+CAL_MON[d.getMonth()]+' '+d.getFullYear();
+  else if(rvcView==='semana'){ const ws=calParse(calWeekStart(rvcCursor)), we=calParse(calAddDays(calWeekStart(rvcCursor),6)); title=ws.getDate()+(ws.getMonth()!==we.getMonth()?' '+CAL_MON[ws.getMonth()].slice(0,3):'')+' – '+we.getDate()+' '+CAL_MON[we.getMonth()].slice(0,3)+' '+we.getFullYear(); }
+  else if(rvcView==='agenda') title='Agenda · desde '+d.getDate()+' '+CAL_MON[d.getMonth()].slice(0,3);
+  else title=cap1(CAL_MON[d.getMonth()])+' '+d.getFullYear();
+  const views=[['dia','Día'],['semana','Semana'],['mes','Mes'],['agenda','Agenda']];
+  let html=`<div class="cal-toolbar">
+    <button class="btn btn-ghost cal-today" onclick="rvcGo('hoy')">Hoy</button>
+    <button class="icon-btn cal-nav" onclick="rvcGo('prev')" title="Anterior">${svgIcon('back','icon icon-sm')}</button>
+    <button class="icon-btn cal-nav cal-next" onclick="rvcGo('next')" title="Siguiente">${svgIcon('back','icon icon-sm')}</button>
+    <div class="cal-title">${esc(title)}</div><div class="ph-spacer"></div>
+    <div class="cal-views">${views.map(([k,l])=>`<button class="cal-vbtn ${rvcView===k?'on':''}" onclick="rvcView='${k}';render()">${l}</button>`).join('')}</div>
+  </div>`;
+  html+=`<div class="cal-filters">${Object.entries(RESERV_EST).map(([k,v])=>`<span class="cal-fchip on" style="cursor:default"><span class="cal-dot" style="background:${RVC_COLOR[k]}"></span>${v.l}</span>`).join('')}</div>`;
+  html+= rvcView==='mes'?rvcMonthView():rvcView==='semana'?rvcWeekView():rvcView==='dia'?rvcDayView():rvcAgendaView();
+  return html;
+}
+function rvcGo(dir){
+  if(dir==='hoy'){ rvcCursor=calToday(); render(); return; }
+  const n=dir==='next'?1:-1;
+  if(rvcView==='dia') rvcCursor=calAddDays(rvcCursor,n);
+  else if(rvcView==='semana'||rvcView==='agenda') rvcCursor=calAddDays(rvcCursor,7*n);
+  else rvcCursor=calAddMonths(rvcCursor,n);
+  render();
+}
+function rvcOpenDay(iso){ rvcView='dia'; rvcCursor=iso||calToday(); render(); }
+function rvcCreateAt(iso,ev,rowH,startH){
+  if(ev.target.closest('.cal-ev')) return; if(!canReservEdit()) return;
+  let y=0; try{ const r=ev.currentTarget.getBoundingClientRect(); y=ev.clientY-r.top; }catch(_){}
+  const mins=startH*60+Math.max(0,Math.round(y/rowH*60/30)*30);
+  newReservModal({date:iso, time:calMinToHHMM(mins)});
+}
+function rvcMonthView(){
+  const first=calParse(rvcCursor); first.setDate(1);
+  const gridStart=calWeekStart(dISO(first)); const today=calToday(); const curMonth=first.getMonth();
+  let cells='';
+  for(let i=0;i<42;i++){ const iso=calAddDays(gridStart,i); const d=calParse(iso); const items=rvcItems(iso);
+    const shown=items.slice(0,3), more=items.length-shown.length;
+    cells+=`<div class="cal-cell${d.getMonth()!==curMonth?' other':''}${iso===today?' today':''}" data-iso="${iso}" onclick="rvcOpenDay('${iso}')">
+      <div class="cal-cnum">${d.getDate()}</div>
+      <div class="cal-cev">${shown.map(rvcChip).join('')}${more>0?`<div class="cal-more">+${more} más</div>`:''}</div></div>`;
+  }
+  return `<div class="cal-month"><div class="cal-dow">${CAL_DOW.map(x=>`<span>${x}</span>`).join('')}</div><div class="cal-grid">${cells}</div></div>`;
+}
+function rvcTimeGrid(days){
+  const startH=8,endH=23,rowH=46; const hours=[]; for(let h=startH;h<=endH;h++) hours.push(h);
+  const today=calToday(); const cols='58px repeat('+days.length+',minmax(0,1fr))';
+  const head=days.map(iso=>{const d=calParse(iso);return `<div class="cal-tg-dh${iso===today?' today':''}"><span>${CAL_DOW[(d.getDay()+6)%7]}</span><b>${d.getDate()}</b></div>`;}).join('');
+  const gut=`<div class="cal-tg-gut">${hours.map(h=>`<div class="cal-tg-hr" style="height:${rowH}px"><span>${fmt12(String(h).padStart(2,'0')+':00')}</span></div>`).join('')}</div>`;
+  const dayCols=days.map(iso=>{
+    const evs=rvcItems(iso).filter(it=>it.time).map(it=>{ let s=calMin(it.time), e=s+90;
+      const top=(s-startH*60)/60*rowH, h=Math.max(26,(e-s)/60*rowH);
+      return `<button class="cal-ev" style="--c:${it.color};top:${top}px;height:${h}px" onclick="event.stopPropagation();reservDetail('${it.id}')"><b>${esc(fmt12(it.time))}</b> ${esc(it.name)}${it.people?' ('+it.people+'p)':''}</button>`;
+    }).join('');
+    return `<div class="cal-tg-col" data-iso="${iso}" style="height:${hours.length*rowH}px" onclick="rvcCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
+  }).join('');
+  return `<div class="cal-timegrid">
+    <div class="cal-tg-headrow" style="grid-template-columns:${cols}"><div></div>${head}</div>
+    <div class="cal-tg-scroll"><div class="cal-tg-board" style="grid-template-columns:${cols}">${gut}${dayCols}</div></div>
+  </div>`;
+}
+function rvcDayView(){ return rvcTimeGrid([rvcCursor]); }
+function rvcWeekView(){ const ws=calWeekStart(rvcCursor); return rvcTimeGrid([0,1,2,3,4,5,6].map(i=>calAddDays(ws,i))); }
+function rvcAgendaView(){
+  const today=calToday(); let html='<div class="cal-agenda">'; let any=false;
+  for(let i=0;i<35;i++){ const iso=calAddDays(rvcCursor,i); const items=rvcItems(iso); if(!items.length) continue; any=true; const d=calParse(iso);
+    html+=`<div class="cal-ag-day${iso===today?' today':''}"><div class="cal-ag-date"><b>${d.getDate()}</b><span>${CAL_DOW[(d.getDay()+6)%7]}<br>${CAL_MON[d.getMonth()].slice(0,3)}</span></div>
+      <div class="cal-ag-items">${items.map(it=>`<button class="cal-ag-row" style="--c:${it.color}" onclick="reservDetail('${it.id}')"><span class="cal-ag-time">${it.time?fmt12(it.time):'—'}</span><span class="cal-ag-t">${esc(it.name)}${it.people?' · '+it.people+'p':''}</span></button>`).join('')}</div></div>`;
+  }
+  if(!any) html+=emptyState('','Sin reservas','No hay reservas en los próximos días.');
+  return html+'</div>';
+}
+window.rvcGo=rvcGo; window.rvcOpenDay=rvcOpenDay; window.rvcCreateAt=rvcCreateAt;
 function reservClientes(editor){
   let cls=[...(DB.clients||[])];
   if(clientSearch){ const q=clientSearch.toLowerCase(); cls=cls.filter(c=>(c.name||'').toLowerCase().includes(q)||(c.phone||'').includes(clientSearch)); }
@@ -4776,10 +4859,11 @@ function rvSetStatus(s){ const h=$('#rvStatus'); if(h)h.value=s; document.queryS
 function rvPeopleStep(d){ const el=$('#rvPeople'); if(!el)return; let v=(parseInt(el.value,10)||1)+d; v=Math.max(1,v); el.value=v; }
 function rvSetOcc(o){ const el=$('#rvOcc'); if(!el)return; const cur=el.value.trim(); el.value = cur? (cur+', '+o) : o; }
 window.rvSetType=rvSetType; window.rvSetStatus=rvSetStatus; window.rvPeopleStep=rvPeopleStep; window.rvSetOcc=rvSetOcc;
-function newReservModal(){ openModal(reservForm('Nueva reservación',null), true); }
-function reservForm(title,r){
+function newReservModal(prefill){ openModal(reservForm('Nueva reservación',null,prefill), true); }
+function reservForm(title,r,prefill){
   const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
-  const date=r?r.resDate:d.toISOString().slice(0,10);
+  const date=r?r.resDate:((prefill&&prefill.date)||d.toISOString().slice(0,10));
+  const time0=r?r.resTime:((prefill&&prefill.time)||'19:00');
   const cls=DB.clients||[];
   return `<div class="modal-head"><h3>${svgIcon('reserva','icon')} ${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
@@ -4797,7 +4881,7 @@ function reservForm(title,r){
     <div class="ip-sec">${svgIcon('reserva','icon icon-sm')} Reserva</div>
     <div class="row2 rv-when">
       <div class="field"><label>Fecha</label>${dateField(date,'rv')}</div>
-      <div class="field"><label>Hora</label>${timePicker('rvTime', r?r.resTime:'19:00', '')}</div>
+      <div class="field"><label>Hora</label>${timePicker('rvTime', time0, '')}</div>
     </div>
     <div class="row2 rv-pt">
       <div class="field"><label>Personas</label><div class="qty-step"><button type="button" onclick="rvPeopleStep(-1)">−</button><input id="rvPeople" type="number" min="1" value="${r?r.people:2}"><button type="button" onclick="rvPeopleStep(1)">+</button></div></div>
