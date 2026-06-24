@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v61 · Inventario: familias, bodegas, venta y traslado';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v62 · Inventario: vista de 3 paneles (familias · tarjetas · editor)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2996,10 +2996,13 @@ function rolePanel(){
 /* =====================================================================
    VISTA: INVENTARIO  (Proveeduría edita · otros consultan)
    ===================================================================== */
-let invCat='todas', invLowOnly=false, invSearch='', invArea='todas', invBodega='todas';
+let invCat='todas', invLowOnly=false, invSearch='', invArea='todas', invBodega='todas', invSel=null;
 /* Bodegas (lugares de almacenamiento, ej. Congelador 1) */
 function bodegasFor(){ return (DB.bodegas||[]).filter(b=>b&&inScope(b.sucursalId)); }
 function bodegaName(id){ if(!id) return 'Sin bodega'; const b=(DB.bodegas||[]).find(x=>x&&x.id===id); return b?b.name:'Sin bodega'; }
+/* Color para la familia (puntito del menú izquierdo y borde de la tarjeta) */
+const FAM_COLORS=['#22c55e','#f59e0b','#ea580c','#0ea5b7','#16a34a','#8b5cf6','#e11d48','#475569','#d97706','#0891b2','#db2777','#64748b'];
+function famColor(name){ let h=0; const s=String(name||''); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return FAM_COLORS[h%FAM_COLORS.length]; }
 /* Adivinar la familia (categoría) por el nombre del producto — para autocompletar al cargar factura */
 const FAMILY_KEYWORDS=[
   ['Verduras','tomate,cebolla,lechuga,papa,zanahoria,chile,culantro,ajo,limon,limón,aguacate,brocoli,brócoli,vegetal,verdura,banano,fruta,platano,plátano,repollo,pepino,apio,espinaca,yuca,camote'],
@@ -3023,91 +3026,175 @@ function guessFamily(name, cats){
 function viewInventario(){
   const areas=invAreasFor();
   if(areas.length<=1) invArea='todas';
+  const editor=canInvEdit();
   const all=invInScope();
   const searching=!!invSearch;
   const scoped = invArea!=='todas' ? all.filter(p=>(p.area||'cocina')===invArea) : all;
-  let list = searching ? [...all] : [...scoped];                 // el buscador cruza Cocina y Bar
+  const famList = catsVisible();
+  window._invFams = famList;                            // para los onclick del menú izquierdo
+  const inFam = (p,c)=>{ if(c==='__sin__') return !p.category || !famList.includes(p.category); return (p.category||'')===c; };
+  if(invSel && invSel!=='__new__' && !DB.inventory.find(x=>x.id===invSel)) invSel=null;  // se borró
+
+  // ----- lista central -----
+  let list = searching ? [...all] : [...scoped];
   if(invBodega!=='todas') list=list.filter(p=>(p.bodega||'')===(invBodega==='sin'?'':invBodega));
-  if(!searching && invCat!=='todas') list=list.filter(p=>p.category===invCat);
+  if(!searching && invCat!=='todas') list=list.filter(p=>inFam(p,invCat));
   if(invLowOnly) list=list.filter(lowStock);
   if(searching) list=list.filter(p=>p.name.toLowerCase().includes(invSearch.toLowerCase()));
   list.sort((a,b)=>(lowStock(b)-lowStock(a))||a.name.localeCompare(b.name));
-  const value=scoped.reduce((s,p)=>s+p.stock*p.cost,0);
   const low=scoped.filter(lowStock).length;
-  const editor=canInvEdit();
-  const bods=bodegasFor();
-  const areaName = areas.length>1 ? (invArea==='todas'?'Cocina y Bar':INV_AREA_LABEL[invArea]) : (areas[0]?INV_AREA_LABEL[areas[0]]:'');
+  const sinFam = scoped.filter(p=>!p.category || !famList.includes(p.category)).length;
+  const sel = invSel==='__new__' ? '__new__' : (invSel?DB.inventory.find(x=>x.id===invSel):null);
 
-  const guide=sectionGuide('inventario','¿Cómo funciona el inventario?',`
-    Es la <b>bodega del restaurante</b>. Cada producto tiene su stock, su mínimo y su costo.
-    <ul style="margin:8px 0 0 18px">
-      <li>Proveeduría registra <b>entradas</b> (compras) y <b>salidas</b> (uso, merma).</li>
-      <li>Cuando se entrega un <b>pedido ligado a un producto</b>, el inventario se descuenta solo.</li>
-      <li>Si algo baja del mínimo, sale una <b>alerta</b> de inventario bajo.</li>
-    </ul>
-    <div class="tip"><b>Tip:</b> ligá los pedidos a un producto para no tener que descontar a mano.</div>`);
-
-  let html=`<div class="page-head"><div><div class="page-title">Inventario · ${areaName}</div><div class="page-sub">${scoped.length} productos · valor ${money(value)}${editor?'':' · solo lectura'}</div></div>
-    <div class="ph-spacer"></div>
-    ${editor?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="invoicesModal()">${svgIcon('clipboard','icon icon-sm')} Facturas</button><button class="btn btn-ghost" style="flex:0 0 auto" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button><button class="btn btn-ghost" style="flex:0 0 auto" onclick="invNewModal()">${svgIcon('plus','icon icon-sm')} Producto</button><button class="btn btn-primary" style="flex:0 0 auto" onclick="invoiceModal()">${svgIcon('truck','icon icon-sm')} Registrar factura</button>`:''}</div>`;
-  html+=guide;
-  html+=`<div class="kpi-row">
-    <div class="kpi"><div class="label">Productos</div><div class="value">${scoped.length}</div><div class="sub">en ${sucName(visibleSuc())}</div></div>
-    <div class="kpi ${low?'alert':'good'}"><div class="label">Bajo mínimo</div><div class="value">${low}</div><div class="sub">requieren compra</div></div>
-    <div class="kpi"><div class="label">Valor total</div><div class="value" style="font-size:22px">${money(value)}</div><div class="sub">cantidad × costo</div></div>
-    <div class="kpi"><div class="label">Familias</div><div class="value">${new Set(scoped.map(p=>p.category)).size}</div><div class="sub">tipos de insumo</div></div>
-  </div>`;
-  html+=`<div class="toolbar">
-    <input class="input search" placeholder="Buscar producto (Cocina y Bar)…" value="${esc(invSearch)}" oninput="invSearch=this.value;clearTimeout(window._is);window._is=setTimeout(render,250)">
-    ${areas.length>1?`<div class="seg inv-seg">
-      <button type="button" class="seg-b ${invArea==='cocina'?'on':''}" onclick="invArea='cocina';invCat='todas';render()">${svgIcon('utensils','icon icon-sm')} Cocina</button>
-      <button type="button" class="seg-b ${invArea==='bar'?'on':''}" onclick="invArea='bar';invCat='todas';render()">${svgIcon('coffee','icon icon-sm')} Bar</button>
+  // =================== MENÚ IZQUIERDO: FAMILIAS ===================
+  const side=`<aside class="inv-side">
+    <div class="inv-side-h"><span>${svgIcon('list','icon icon-sm')} Familias</span><span class="inv-side-count">${famList.length}</span></div>
+    ${areas.length>1?`<div class="seg inv-seg inv-side-seg">
       <button type="button" class="seg-b ${invArea==='todas'?'on':''}" onclick="invArea='todas';invCat='todas';render()">Ambas</button>
+      <button type="button" class="seg-b ${invArea==='cocina'?'on':''}" onclick="invArea='cocina';invCat='todas';render()">${svgIcon('utensils','icon icon-sm')}</button>
+      <button type="button" class="seg-b ${invArea==='bar'?'on':''}" onclick="invArea='bar';invCat='todas';render()">${svgIcon('coffee','icon icon-sm')}</button>
     </div>`:''}
-  </div>
-  <div class="toolbar">
-    <select class="select" style="max-width:190px" onchange="invCat=this.value;render()">
-      <option value="todas" ${invCat==='todas'?'selected':''}>Todas las familias</option>
-      ${catsVisible().map(c=>`<option value="${esc(c)}" ${invCat===c?'selected':''}>${esc(c)}</option>`).join('')}
-    </select>
-    <select class="select" style="max-width:190px" onchange="invBodega=this.value;render()">
-      <option value="todas" ${invBodega==='todas'?'selected':''}>Todas las bodegas</option>
-      ${bods.map(b=>`<option value="${b.id}" ${invBodega===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}
-      <option value="sin" ${invBodega==='sin'?'selected':''}>Sin bodega</option>
-    </select>
-    <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">Solo inventario bajo</button>
-    ${editor?`<button class="chip" onclick="catManagerModal()">${svgIcon('edit','icon icon-sm')} Familias</button><button class="chip" onclick="bodegaManagerModal()">${svgIcon('box','icon icon-sm')} Bodegas</button>`:''}
-  </div>`;
-  if(!list.length) html+= emptyState('📦','Sin productos', searching?'No hay productos que coincidan con la búsqueda.':'Agregá productos para llevar el control de la bodega.', editor?'+ Producto':'', editor?'invNewModal()':'');
-  else if(searching || invCat!=='todas') html+= list.map(invRow).join('');               // plano (buscando o filtrando una familia)
-  else { const g={}; list.forEach(p=>{ const c=p.category||'Sin familia'; (g[c]=g[c]||[]).push(p); });   // agrupado por familia
-    html+= Object.keys(g).sort((a,b)=>a.localeCompare(b)).map(c=>`<div class="inv-fam">${esc(c)} <span class="inv-fam-n">${g[c].length}</span></div>`+g[c].map(invRow).join('')).join(''); }
-  return html;
+    <div class="inv-fam-list">
+      <button class="inv-fam-row ${invCat==='todas'?'on':''}" onclick="invCat='todas';invSearch='';render()">
+        <span class="inv-fam-ico">${svgIcon('box','icon icon-sm')}</span><span class="inv-fam-lbl">Todas las familias</span><span class="inv-fam-c">${scoped.length}</span></button>
+      ${famList.map((c,i)=>`<button class="inv-fam-row ${invCat===c?'on':''}" onclick="invPickFam(${i})">
+        <span class="inv-dot" style="background:${famColor(c)}"></span><span class="inv-fam-lbl">${esc(c)}</span><span class="inv-fam-c">${scoped.filter(p=>(p.category||'')===c).length}</span></button>`).join('')}
+      <button class="inv-fam-row ${invCat==='__sin__'?'on':''}" onclick="invCat='__sin__';invSearch='';render()">
+        <span class="inv-dot" style="background:var(--border)"></span><span class="inv-fam-lbl">Sin familia</span><span class="inv-fam-c">${sinFam}</span></button>
+    </div>
+    ${editor?`<div class="inv-side-foot">
+      <input class="input" id="newFamSide" placeholder="Nueva familia" onkeydown="if(event.key==='Enter')addFamilyInline()">
+      <button class="iconbtn-sq" title="Agregar familia" onclick="addFamilyInline()">${svgIcon('plus','icon icon-sm')}</button>
+    </div>`:''}</aside>`;
+
+  // =================== CENTRO: TARJETAS ===================
+  const title = searching?'Resultados':(invCat==='todas'?'Todos los productos':(invCat==='__sin__'?'Sin familia':invCat));
+  const grid = list.length||editor ? `<div class="inv-grid">
+      ${editor && !searching ? `<button class="inv-tile inv-tile-new" onclick="invNewInline()"><span class="inv-tile-plus">${svgIcon('plus','icon')}</span><span>Nuevo</span></button>`:''}
+      ${list.map(invTile).join('')}
+    </div>` : emptyState('📦','Sin productos', searching?'No hay productos que coincidan con la búsqueda.':'Agregá productos para llevar el control de la bodega.','','');
+
+  const main=`<section class="inv-main">
+    <div class="inv-main-h">
+      <div class="inv-main-title">${esc(title)} <span class="inv-main-n">${list.length}</span></div>
+      <div class="inv-search-wrap">${svgIcon('search','icon icon-sm')}<input class="input" placeholder="Buscar producto…" value="${esc(invSearch)}" oninput="invSearch=this.value;clearTimeout(window._is);window._is=setTimeout(render,250)"></div>
+      ${editor?`<button class="btn btn-primary inv-new-btn" onclick="invNewInline()">${svgIcon('plus','icon icon-sm')} Nuevo</button>`:''}
+    </div>
+    <div class="inv-filters">
+      <select class="select" onchange="invBodega=this.value;render()">
+        <option value="todas" ${invBodega==='todas'?'selected':''}>Todas las bodegas</option>
+        ${bodegasFor().map(b=>`<option value="${b.id}" ${invBodega===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}
+        <option value="sin" ${invBodega==='sin'?'selected':''}>Sin bodega</option>
+      </select>
+      <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">${svgIcon('info','icon icon-sm')} Bajo mínimo${low?' ('+low+')':''}</button>
+      ${editor?`<button class="chip" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button>
+        <button class="chip" onclick="bodegaManagerModal()">${svgIcon('box','icon icon-sm')} Bodegas</button>
+        <button class="chip" onclick="invoicesModal()">${svgIcon('clipboard','icon icon-sm')} Facturas</button>
+        <button class="chip" onclick="invoiceModal()">${svgIcon('truck','icon icon-sm')} Registrar factura</button>`:''}
+    </div>
+    ${grid}
+  </section>`;
+
+  // =================== DERECHA: EDITOR ===================
+  const panel = (editor && sel) ? invPanel(sel==='__new__'?null:sel) : '';
+
+  return `<div class="inv-shell ${panel?'has-panel':''}">${side}${main}${panel}</div>`;
 }
-function invRow(p){
-  const editor=canInvEditArea(p.area||'cocina'); const lw=lowStock(p);
-  const sug=lw?suggestReorder(p):0;
-  const pct=p.minStock>0 ? Math.max(4,Math.min(100,Math.round(p.stock/(p.minStock*1.5)*100))) : 100;
-  return `<div class="inv-card ${lw?'low':''}">
-    <div class="inv-stock">
-      <div class="inv-stock-n">${p.stock}<span>${esc(p.unit)}</span></div>
-      <div class="inv-bar"><div style="width:${pct}%"></div></div>
-      <div class="inv-min">mín ${p.minStock}</div>
-    </div>
-    <div class="inv-info">
-      <div class="inv-name">${esc(p.name)} <span class="inv-area">${INV_AREA_LABEL[p.area||'cocina']}</span>${p.bodega?` <span class="inv-bodega">${svgIcon('box','icon icon-sm')} ${esc(bodegaName(p.bodega))}</span>`:''}${lw?' <span class="pill atrasada">Reponer</span>':''}</div>
-      <div class="inv-meta">${esc(p.category)} · ${money(p.cost)}/${esc(p.unit)}${p.supplier?' · '+esc(p.supplier):''} · ${esc(sucName(p.sucursalId))}${lw&&sug?` · <b style="color:var(--warn)">Sugerido pedir ${sug} ${esc(p.unit)}</b>`:''}</div>
-    </div>
-    <div class="inv-actions">
-      ${editor?`<button class="ibtn ok" title="Entrada — sumar stock (compra)" onclick="invMoveModal('${p.id}','entrada')">${svgIcon('up','icon icon-sm')}<span>Entrada</span></button>
-        <button class="ibtn danger" title="Salida — uso o merma" onclick="invMoveModal('${p.id}','salida')">${svgIcon('down','icon icon-sm')}<span>Salida</span></button>
-        <button class="ibtn sale" title="Venta — restar por venta" onclick="invMoveModal('${p.id}','venta')">${svgIcon('tag','icon icon-sm')}<span>Venta</span></button>
-        <button class="ibtn move" title="Trasladar a otra bodega" onclick="invTrasladoModal('${p.id}')">${svgIcon('truck','icon icon-sm')}<span>Traslado</span></button>
-        <button class="ibtn" title="Editar producto" onclick="invEditModal('${p.id}')">${svgIcon('edit','icon icon-sm')}</button>${lw?`<button class="ibtn" title="Pedir reposición a proveeduría" onclick="pedirProducto('${p.id}',${sug||0})">${svgIcon('box','icon icon-sm')}<span>Pedir</span></button>`:''}`
-       :`<button class="ibtn" title="Pedir a proveeduría" onclick="pedirProducto('${p.id}',${sug||0})">${svgIcon('box','icon icon-sm')}<span>Pedir${lw&&sug?' '+sug:''}</span></button>`}
-    </div>
-  </div>`;
+function invTile(p){
+  const lw=lowStock(p); const col=p.color||famColor(p.category);
+  return `<button class="inv-tile ${lw?'low':''} ${invSel===p.id?'sel':''}" style="--fc:${col}" onclick="invSelect('${p.id}')">
+    <span class="inv-tile-top">${svgIcon('edit','icon icon-sm inv-tile-eye')}${lw?`<span class="inv-tile-warn" title="Bajo el mínimo">${svgIcon('info','icon icon-sm')}</span>`:''}</span>
+    <span class="inv-tile-name">${esc(p.name)}</span>
+    <span class="inv-tile-qty ${lw?'low':''}">${p.stock}<i>${esc(p.unit)}</i></span>
+    <span class="inv-tile-min">${p.minStock>0?`mín ${p.minStock}`:'&nbsp;'}${p.bodega?` · ${esc(bodegaName(p.bodega))}`:''}</span>
+  </button>`;
 }
+function invPanel(p){
+  const isNew=!p;
+  const editable=invAreasFor().filter(canInvEditArea);
+  const defArea=(p&&p.area)||(editable.includes(invArea)?invArea:editable[0])||'cocina';
+  const cats=catsForArea(defArea);
+  const catList=(p&&p.category&&!cats.includes(p.category))?[p.category,...cats]:cats;
+  const swatches=['',...FAM_COLORS.slice(0,7)];
+  return `<aside class="inv-edit">
+    <div class="inv-edit-h">
+      <div><div class="inv-edit-kick">${isNew?'NUEVO PRODUCTO':'EDITAR PRODUCTO'}</div><div class="inv-edit-name">${isNew?'Producto nuevo':esc(p.name)}</div></div>
+      <button class="modal-close" onclick="invClosePanel()">${svgIcon('x','icon')}</button>
+    </div>
+    <div class="inv-edit-body">
+      <div class="ip-sec">${svgIcon('box','icon icon-sm')} Información básica</div>
+      <div class="field"><label>Nombre *</label><input class="input" id="ipName" value="${p?esc(p.name):''}" placeholder="Ej: Tomate" autocomplete="off"></div>
+      <div class="field"><label>Descripción</label><textarea class="input" id="ipDesc" rows="2" placeholder="Breve nota visible al personal (opcional)">${p?esc(p.desc||''):''}</textarea></div>
+      <div class="row2">
+        <div class="field"><label>Categoría / Familia</label><select class="select" id="ipCat">${catList.map(c=>`<option ${p&&p.category===c?'selected':''}>${esc(c)}</option>`).join('')}</select></div>
+        <div class="field"><label>Unidad de medida</label><select class="select" id="ipUnit">${INV_UNITS.map(u=>`<option ${p&&p.unit===u?'selected':''}>${u}</option>`).join('')}</select></div>
+      </div>
+      <div class="row2">
+        ${editable.length>1?`<div class="field"><label>Lado (Cocina / Bar)</label><select class="select" id="ipArea" onchange="fillCatOptions()">${editable.map(a=>`<option value="${a}" ${a===defArea?'selected':''}>${INV_AREA_LABEL[a]}</option>`).join('')}</select></div>`:`<input type="hidden" id="ipArea" value="${defArea}">`}
+        <div class="field"><label>Bodega (dónde se guarda)</label><select class="select" id="ipBodega"><option value="">Sin bodega</option>${bodegasFor().map(b=>`<option value="${b.id}" ${p&&p.bodega===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}</select></div>
+      </div>
+      <div class="ip-sec">${svgIcon('chart','icon icon-sm')} Existencias y medidas</div>
+      <div class="row2">
+        <div class="field"><label>Cantidad actual</label><input class="input" id="ipStock" type="number" step="any" min="0" value="${p?p.stock:0}" oninput="ipPreview()"></div>
+        <div class="field"><label>Mínimo (alerta)</label><input class="input" id="ipMin" type="number" step="any" min="0" value="${p?p.minStock:0}" oninput="ipPreview()"></div>
+      </div>
+      <div class="row2">
+        <div class="field"><label>Costo por unidad (₡)</label><input class="input" id="ipCost" type="number" step="any" min="0" value="${p?p.cost:0}" oninput="ipPreview()"></div>
+        <div class="field"><label>Proveedor</label><input class="input" id="ipSup" value="${p?esc(p.supplier||''):''}" placeholder="Opcional" autocomplete="off"></div>
+      </div>
+      <div class="field"><label>Sucursal</label><select class="select" id="ipSuc">${p?sucOptionsSel(p.sucursalId):sucOptionsFor()}</select></div>
+      <div class="ip-prev" id="ipPrev"></div>
+      <div class="field"><label>Color de la tarjeta</label>
+        <div class="inv-colors" id="ipColors">${swatches.map(c=>`<button type="button" class="inv-color ${((p&&p.color)||'')===c?'on':''} ${c?'':'none'}" data-c="${c}" style="${c?`background:${c}`:''}" onclick="invPickColor('${c}')"></button>`).join('')}</div>
+        <input type="hidden" id="ipColor" value="${p?esc(p.color||''):''}">
+      </div>
+      ${!isNew?`<div class="ip-sec">${svgIcon('truck','icon icon-sm')} Movimientos rápidos</div>
+      <div class="inv-edit-actions">
+        <button class="ibtn ok" onclick="invMoveModal('${p.id}','entrada')">${svgIcon('up','icon icon-sm')}<span>Entrada</span></button>
+        <button class="ibtn danger" onclick="invMoveModal('${p.id}','salida')">${svgIcon('down','icon icon-sm')}<span>Salida</span></button>
+        <button class="ibtn sale" onclick="invMoveModal('${p.id}','venta')">${svgIcon('tag','icon icon-sm')}<span>Venta</span></button>
+        <button class="ibtn move" onclick="invTrasladoModal('${p.id}')">${svgIcon('truck','icon icon-sm')}<span>Traslado</span></button>
+      </div>`:''}
+    </div>
+    <div class="inv-edit-foot">
+      ${!isNew?`<button class="iconbtn-sq danger" title="Eliminar producto" onclick="delProduct('${p.id}')">${svgIcon('trash','icon icon-sm')}</button>`:'<span></span>'}
+      <div class="inv-edit-foot-r">
+        <button class="btn btn-ghost" onclick="invClosePanel()">Cancelar</button>
+        <button class="btn btn-primary" onclick="saveProductPanel('${p?p.id:''}')">${svgIcon('save','icon icon-sm')} Guardar</button>
+      </div>
+    </div>
+  </aside>`;
+}
+function invSelect(id){ invSel=id; render(); }
+function invClosePanel(){ invSel=null; render(); }
+function invNewInline(){ invSel='__new__'; render(); }
+function invPickFam(i){ invCat=window._invFams[i]; invSearch=''; render(); }
+function invPickColor(c){ const h=$('#ipColor'); if(h) h.value=c; document.querySelectorAll('#ipColors .inv-color').forEach(b=>b.classList.toggle('on', (b.getAttribute('data-c')||'')===c)); }
+function addFamilyInline(){
+  const el=$('#newFamSide'); const v=el?el.value.trim():''; if(!v){ toast('Escribí un nombre','err'); return; }
+  const area=(invArea!=='todas')?invArea:(invAreasFor().filter(canInvEditArea)[0]||'cocina');
+  DB.invCats=DB.invCats||{}; if(!Array.isArray(DB.invCats[area])) DB.invCats[area]=(DEFAULT_CATS[area]?[...DEFAULT_CATS[area]]:[]);
+  if(DB.invCats[area].some(c=>c.toLowerCase()===v.toLowerCase())){ toast('Esa familia ya existe','err'); return; }
+  DB.invCats[area].push(clip(v,40)); invCat=v; audit('inventario',`agregó la familia "${v}"`); render();
+}
+async function delProduct(id){
+  const p=DB.inventory.find(x=>x.id===id); if(!p) return;
+  if(!await confirmDialog(`Se elimina el producto "${p.name}" del inventario. No se puede deshacer.`,{title:'¿Eliminar producto?',okText:'Sí, eliminar'})) return;
+  delEntity('inventory', id); if(invSel===id) invSel=null;
+  audit('inventario',`eliminó el producto "${p.name}"`,p.sucursalId); toast('Producto eliminado','ok'); render();
+}
+function saveProductPanel(id){
+  const name=clip($('#ipName').value,80); if(!name){ toast('Ponele nombre','err'); return; }
+  const data={name,area:($('#ipArea')?$('#ipArea').value:'cocina'),category:$('#ipCat').value,bodega:($('#ipBodega')?$('#ipBodega').value:''),
+    unit:$('#ipUnit').value,desc:clip($('#ipDesc')?$('#ipDesc').value:'',300),color:($('#ipColor')?$('#ipColor').value:''),
+    stock:numClamp($('#ipStock').value,0,1e7),minStock:numClamp($('#ipMin').value,0,1e7),
+    cost:numClamp($('#ipCost').value,0,1e9),supplier:clip($('#ipSup').value,80),sucursalId:$('#ipSuc').value};
+  if(id){ const p=DB.inventory.find(x=>x.id===id); Object.assign(p,data); audit('inventario',`editó el producto "${name}"`,p.sucursalId); }
+  else { const nid=uid(); DB.inventory.push({id:nid,...data}); invSel=nid; audit('inventario',`agregó el producto "${name}"`,data.sucursalId); }
+  toast('Producto guardado','ok'); render();
+}
+window.invSelect=invSelect; window.invClosePanel=invClosePanel; window.invNewInline=invNewInline; window.invPickFam=invPickFam;
+window.invPickColor=invPickColor; window.addFamilyInline=addFamilyInline; window.delProduct=delProduct; window.saveProductPanel=saveProductPanel;
 function invMoveModal(pid,type){
   const p=DB.inventory.find(x=>x.id===pid); if(!p) return;
   const T=({entrada:{t:'Entrada de stock',v:'entró',b:'Sumar al stock',ic:'up',ph:'Ej: compra a proveedor'},
