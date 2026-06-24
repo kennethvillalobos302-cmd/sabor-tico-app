@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v69 · Inventario: tarjetas compactas, familias fijas y barra ordenada';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v70 · Reportes interactivos (período + persona + gráficos) y notas de voz en Proyectos';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1979,7 +1979,7 @@ document.addEventListener('fullscreenchange',()=>{ if(!document.fullscreenElemen
 window.toggleBoardFull=toggleBoardFull;
 function projSide(proj){
   const msgs=(proj.chat||[]).filter(m=>m&&!msgDeleted(m)).map(m=>{const u=userById(m.byId);const mine=m.byId===SES.userId;const canDel=mine||isAdmin();
-    const media=m.media?(m.media.type==='video'?mediaTag(m.media.mid||m.media.data,'video','controls'):m.media.type==='image'?mediaTag(m.media.mid||m.media.data,'image'):`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
+    const media=m.media?(m.media.type==='video'?mediaTag(m.media.mid||m.media.data,'video','controls'):m.media.type==='image'?mediaTag(m.media.mid||m.media.data,'image'):m.media.type==='audio'?audioMsgHTML(m.media.mid||m.media.data,m.media.dur):`<div class="chat-file"><span class="chat-file-ic">${svgIcon(fileIconFor(m.media.mime,m.media.filename),'icon icon-sm')}</span><div class="chat-file-tx"><div class="chat-file-n">${esc(m.media.filename||'Archivo')}</div><div class="chat-file-s">${m.media.size?fmtFileSize(m.media.size):''}</div></div><button class="chat-file-b" title="Abrir" onclick="openProjChatFile('${proj.id}','${m.id}')">${svgIcon('search','icon icon-sm')}</button><button class="chat-file-b" title="Descargar" onclick="downloadProjChatFile('${proj.id}','${m.id}')">${svgIcon('save','icon icon-sm')}</button></div>`):'';
     return `<div class="msg ${mine?'mine':''}">${(!mine)?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?esc(m.text):''}${media}<div class="mtime">${new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})}${canDel?` <button class="msg-del" title="Eliminar" onclick="delProjMsg('${proj.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}</div></div>`;}).join('');
   watchProjectCall(proj.id);                              // presencia EN VIVO desde signals/peers
   const others=(_projPeers[proj.id]||[]).filter(id=>id!==SES.userId);
@@ -1991,13 +1991,18 @@ function projSide(proj){
     <div class="proj-side-head"><span style="font-weight:700;font-size:13px">Chat del grupo</span><div class="ph-spacer"></div>
       ${callBtns}</div>
     <div class="proj-chat" id="projChatMsgs">${msgs||'<div style="margin:auto;color:var(--text-soft);font-size:13px;text-align:center;padding:24px">Escribí acá para coordinar mientras trabajan la pizarra.</div>'}</div>
-    ${projPending?`<div class="chat-pending">${projPending.type==='video'?`<video src="${safeVid(projPending.data)}"></video>`:projPending.type==='image'?`<img src="${safeImg(projPending.data)}">`:`<span class="chat-file-ic">${svgIcon(fileIconFor(projPending.mime,projPending.filename),'icon icon-sm')}</span>`}<span>${projPending.type==='file'?esc(projPending.filename):(projPending.type==='video'?'Video':'Foto')+' listo'}</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="projPending=null;render()">Quitar</button></div>`:''}
-    <div class="chat-input">
+    ${projPending?`<div class="chat-pending">${projPending.type==='video'?`<video src="${safeVid(projPending.data)}"></video>`:projPending.type==='image'?`<img src="${safeImg(projPending.data)}">`:projPending.type==='audio'?vaPreviewHTML(projPending.data,projPending.dur):`<span class="chat-file-ic">${svgIcon(fileIconFor(projPending.mime,projPending.filename),'icon icon-sm')}</span>`}<span>${projPending.type==='file'?esc(projPending.filename):projPending.type==='audio'?'Nota de voz lista':(projPending.type==='video'?'Video':'Foto')+' listo'}</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="projPending=null;render()">Quitar</button></div>`:''}
+    ${vaRecording(proj.id)?`<div class="chat-input chat-rec">
+      <button class="chat-attach rec-cancel" title="Cancelar" onclick="vaRecCancel()">${svgIcon('trash')}</button>
+      <div class="rec-mid"><span class="rec-dot"></span><span id="vaRecTime">0:00</span> <span class="rec-lbl">Grabando…</span></div>
+      <button class="chat-send" title="Listo" onclick="vaRecStop()">${svgIcon('check')}</button>
+    </div>`:`<div class="chat-input">
       <input type="file" id="projFile" accept="image/*,video/*,.pdf,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" style="display:none" onchange="projAttachPick('${proj.id}')">
       <button class="chat-attach" title="Adjuntar foto o video" onclick="document.getElementById('projFile').click()">${svgIcon('clip')}</button>
       <input id="projMsg" placeholder="Mensaje al grupo…" onkeydown="if(event.key==='Enter')sendProjMsg('${proj.id}')">
+      <button class="chat-mic" title="Grabar nota de voz" onclick="vaRecStart('${proj.id}',true)">${svgIcon('mic')}</button>
       <button class="chat-send" onclick="sendProjMsg('${proj.id}')">${svgIcon('send')}</button>
-    </div>
+    </div>`}
   </div>`;
 }
 window.openProj=id=>{ activeProj=id; _boardHist=[]; render(); };
@@ -2184,9 +2189,9 @@ async function sendProjMsg(projId){
   if(!v && !projPending) return;
   const m={id:uid(),byId:SES.userId,text:v,at:now()};
   if(projPending){ const mid=await putMedia(projPending.data); m.media={type:projPending.type,mid};
-    if(projPending.filename) m.media.filename=projPending.filename; if(projPending.mime) m.media.mime=projPending.mime; if(projPending.size!=null) m.media.size=projPending.size; }
+    if(projPending.filename) m.media.filename=projPending.filename; if(projPending.mime) m.media.mime=projPending.mime; if(projPending.size!=null) m.media.size=projPending.size; if(projPending.dur!=null) m.media.dur=projPending.dur; }
   p.chat=p.chat||[]; p.chat.push(m);
-  const prev=v?v.slice(0,40):(projPending?(projPending.type==='video'?'envió un video':projPending.type==='file'?'envió un archivo':'envió una foto'):'');
+  const prev=v?v.slice(0,40):(projPending?(projPending.type==='video'?'envió un video':projPending.type==='audio'?'envió una nota de voz':projPending.type==='file'?'envió un archivo':'envió una foto'):'');
   notify(p.memberIds.filter(i=>i!==SES.userId), `${me().name.split(' ')[0]} en "${p.name}": ${prev}`,'clipboard',{view:'proyectos'});
   projPending=null; save(); render();
 }
@@ -2577,7 +2582,7 @@ window.vaToggle=vaToggle; window.vaTick=vaTick; window.vaState=vaState; window.v
 /* grabación */
 let _vaRec=null;   // {mr, chunks, stream, chatId, t0, timer, cancel}
 function vaRecording(chatId){ return _vaRec && _vaRec.chatId===chatId; }
-async function vaRecStart(chatId){
+async function vaRecStart(chatId, isProj){
   if(_vaRec) return;
   if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia||typeof MediaRecorder==='undefined'){ toast('Tu dispositivo no permite grabar audio','err'); return; }
   let stream; try{ stream=await navigator.mediaDevices.getUserMedia({audio:true}); }catch(e){ toast('No se pudo usar el micrófono','err'); return; }
@@ -2586,7 +2591,7 @@ async function vaRecStart(chatId){
   const chunks=[];
   mr.ondataavailable=e=>{ if(e.data&&e.data.size) chunks.push(e.data); };
   mr.onstop=()=>{ try{ stream.getTracks().forEach(t=>t.stop()); }catch(_){} vaRecFinish(); };
-  _vaRec={mr, chunks, stream, chatId, t0:Date.now(), cancel:false, timer:null};
+  _vaRec={mr, chunks, stream, chatId, isProj:!!isProj, t0:Date.now(), cancel:false, timer:null};
   try{ mr.start(); }catch(e){ try{stream.getTracks().forEach(t=>t.stop());}catch(_){}; _vaRec=null; toast('No se pudo iniciar la grabación','err'); return; }
   _vaRec.timer=setInterval(()=>{ const el=document.getElementById('vaRecTime'); if(el&&_vaRec) el.textContent=vaFmtDur((Date.now()-_vaRec.t0)/1000); }, 300);
   render();
@@ -2596,12 +2601,12 @@ function vaRecCancel(){ if(!_vaRec) return; _vaRec.cancel=true; try{ _vaRec.mr.s
 function vaRecFinish(){
   const r=_vaRec; if(!r) return; if(r.timer) clearInterval(r.timer);
   if(r.cancel){ _vaRec=null; render(); return; }
-  const dur=Math.round((Date.now()-r.t0)/1000);
+  const dur=Math.round((Date.now()-r.t0)/1000); const isProj=r.isProj;
   const blob=new Blob(r.chunks, {type:(r.mr&&r.mr.mimeType)?r.mr.mimeType.split(';')[0]:'audio/webm'});
   _vaRec=null;
   if(!blob.size || dur<1){ toast('Grabación muy corta','err'); render(); return; }
   if(blob.size>6*1024*1024){ toast('La nota de voz es muy larga (máx ~6 MB)','err'); render(); return; }
-  const rd=new FileReader(); rd.onload=()=>{ chatPending={type:'audio', data:rd.result, dur}; render(); }; rd.readAsDataURL(blob);
+  const rd=new FileReader(); rd.onload=()=>{ if(isProj) projPending={type:'audio', data:rd.result, dur}; else chatPending={type:'audio', data:rd.result, dur}; render(); }; rd.readAsDataURL(blob);
 }
 window.vaRecStart=vaRecStart; window.vaRecStop=vaRecStop; window.vaRecCancel=vaRecCancel;
 let chatPending=null;
@@ -5004,6 +5009,46 @@ window.calDragStart=calDragStart;
    VISTA: REPORTES (Gerencia / Contabilidad)
    ===================================================================== */
 let repMonth='';
+let repRange={mode:'mes', anchor:Date.now(), from:'', to:''};   // día | semana | mes | rango (de-a)
+let repPerson='todos';
+const REP_COLORS=['#5b8def','#5aa777','#d9534f','#d59b4a','#8b5cf6','#c879a9','#0ea5b7','#64748b','#e0b341','#db2777'];
+function weekStartMon(d){ const s=new Date(d); s.setHours(0,0,0,0); const dow=(s.getDay()+6)%7; s.setDate(s.getDate()-dow); return s; }
+function repFmtD(d){ return new Date(d).toLocaleDateString('es-CR',{day:'2-digit',month:'short'}); }
+function repBounds(){
+  const a=new Date(repRange.anchor||Date.now());
+  if(repRange.mode==='dia'){ const s=new Date(a); s.setHours(0,0,0,0); const e=new Date(s); e.setDate(e.getDate()+1);
+    return {start:s.getTime(), end:e.getTime(), label:s.toLocaleDateString('es-CR',{weekday:'long',day:'2-digit',month:'long'})}; }
+  if(repRange.mode==='semana'){ const s=weekStartMon(a); const e=new Date(s); e.setDate(e.getDate()+7);
+    return {start:s.getTime(), end:e.getTime(), label:'Semana · '+repFmtD(s)+' al '+repFmtD(new Date(e.getTime()-1))}; }
+  if(repRange.mode==='rango' && repRange.from && repRange.to){ const s=new Date(repRange.from+'T00:00:00'); const e=new Date(repRange.to+'T00:00:00'); e.setDate(e.getDate()+1);
+    if(e.getTime()<=s.getTime()) return {start:s.getTime(), end:s.getTime()+864e5, label:repFmtD(s)};
+    return {start:s.getTime(), end:e.getTime(), label:repFmtD(s)+' al '+repFmtD(new Date(e.getTime()-1))}; }
+  const s=new Date(a.getFullYear(),a.getMonth(),1), e=new Date(a.getFullYear(),a.getMonth()+1,1);
+  return {start:s.getTime(), end:e.getTime(), label:s.toLocaleDateString('es-CR',{month:'long',year:'numeric'})};
+}
+function repNav(dir){ const a=new Date(repRange.anchor||Date.now());
+  if(repRange.mode==='dia') a.setDate(a.getDate()+dir); else if(repRange.mode==='semana') a.setDate(a.getDate()+7*dir); else a.setMonth(a.getMonth()+dir);
+  repRange.anchor=a.getTime(); render(); }
+function repSetMode(m){ repRange.mode=m; if(m==='rango' && (!repRange.from||!repRange.to)){ const b=repBounds(); repRange.from=new Date(b.start).toISOString().slice(0,10); repRange.to=new Date(b.end-864e5).toISOString().slice(0,10); } render(); }
+function repSetFrom(v){ repRange.from=v; repRange.mode='rango'; render(); }
+function repSetTo(v){ repRange.to=v; repRange.mode='rango'; render(); }
+function repSetPerson(v){ repPerson=v; render(); }
+window.repNav=repNav; window.repSetMode=repSetMode; window.repSetFrom=repSetFrom; window.repSetTo=repSetTo; window.repSetPerson=repSetPerson;
+function svgDonut(segs,opts){
+  opts=opts||{}; const size=opts.size||148, sw=opts.stroke||22, cx=size/2, r=(size-sw)/2, c=2*Math.PI*r;
+  const total=segs.reduce((s,x)=>s+(+x.value||0),0); let off=0;
+  const arcs= total>0 ? segs.filter(s=>(+s.value)>0).map(s=>{ const len=(+s.value)/total*c; const el=`<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="${s.color}" stroke-width="${sw}" stroke-dasharray="${len.toFixed(2)} ${(c-len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}" transform="rotate(-90 ${cx} ${cx})"/>`; off+=len; return el; }).join('')
+    : `<circle cx="${cx}" cy="${cx}" r="${r}" fill="none" stroke="var(--bg-soft)" stroke-width="${sw}"/>`;
+  return `<div class="donut-wrap" style="width:${size}px;height:${size}px"><svg class="donut" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">${arcs}</svg>${opts.center!=null?`<div class="donut-center">${opts.center}</div>`:''}</div>`;
+}
+function donutLegend(segs){ const total=segs.reduce((s,x)=>s+(+x.value||0),0)||1;
+  return `<div class="donut-legend">${segs.map(s=>`<div class="dleg"><span class="dleg-dot" style="background:${s.color}"></span><span class="dleg-l">${esc(s.label)}</span><span class="dleg-v">${s.fmt||s.value} · ${Math.round((+s.value||0)/total*100)}%</span></div>`).join('')}</div>`;
+}
+function donutCard(title,icon,segs,centerHtml){
+  const total=segs.reduce((s,x)=>s+(+x.value||0),0);
+  return `<div class="chartcard"><div class="chart-title">${svgIcon(icon,'icon icon-sm')} ${esc(title)}</div>
+    ${total>0?`<div class="donut-row">${svgDonut(segs,{center:centerHtml!=null?centerHtml:`<div class="donut-c-n">${total}</div><div class="donut-c-l">total</div>`})}${donutLegend(segs)}</div>`:'<div class="chart-empty">Sin datos en este período.</div>'}</div>`;
+}
 function ymOf(ts){ const d=new Date(ts); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
 function monthRange(ym){ const [y,m]=ym.split('-').map(Number); return {start:new Date(y,m-1,1).getTime(), end:new Date(y,m,1).getTime(), days:new Date(y,m,0).getDate(), y, m}; }
 function inMonth(ts,ym){ if(!ts) return false; const r=monthRange(ym); return ts>=r.start && ts<r.end; }
@@ -5014,16 +5059,18 @@ function repVBars(items){
   const max=Math.max(1,...items.map(i=>+i.value||0));
   return `<div class="chart-bars">`+items.map(i=>`<div class="cbar" title="${esc(i.title!=null?String(i.title):String(i.value))}"><div class="cbar-val">${i.show!=null?esc(String(i.show)):''}</div><div class="cbar-track"><div class="cbar-fill" style="height:${Math.round((+i.value||0)/max*100)}%"></div></div><div class="cbar-lbl">${esc(String(i.lbl||''))}</div></div>`).join('')+`</div>`;
 }
-function reportData(ym){
+function reportData(start,end){
+  const inR=ts=>ts!=null&&ts>=start&&ts<end;
+  const dInR=ds=>{ if(!ds) return false; const t=new Date(ds+'T00:00:00').getTime(); return t>=start&&t<end; };
   const tasks=(DB.tasks||[]).filter(t=>t&&inScope(t.sucursalId));
   const peds=(DB.pedidos||[]).filter(p=>p&&inScope(p.sucursalId));
-  const sales=(DB.souvSales||[]).filter(v=>v&&inScope(v.sucursalId)&&inMonth(v.at,ym));
+  const sales=(DB.souvSales||[]).filter(v=>v&&inScope(v.sucursalId)&&inR(v.at));
   const inv=invInScope();
-  const tMonth=tasks.filter(t=>inMonth(t.createdAt,ym));
+  const tMonth=tasks.filter(t=>inR(t.createdAt));
   const st=s=>tMonth.filter(t=>t.status===s).length;
   const done=st('hecha'),late=st('atrasada'),rej=st('rechazada'),proc=st('proceso'),pend=st('pendiente');
   const compl=tMonth.length?Math.round(done/tMonth.length*100):0;
-  const pMonth=peds.filter(p=>inMonth(p.createdAt,ym));
+  const pMonth=peds.filter(p=>inR(p.createdAt));
   const pDeliv=pMonth.filter(p=>p.status==='entregado').length;
   const areas={proveeduria:0,contabilidad:0,rrhh:0}; pMonth.forEach(p=>{ if(areas[p.area]!==undefined) areas[p.area]++; });
   const ingresos=sales.reduce((s,v)=>s+(+v.price||0)*(+v.qty||0),0);
@@ -5031,77 +5078,117 @@ function reportData(ym){
   const unidades=sales.reduce((s,v)=>s+(+v.qty||0),0);
   const invVal=inv.reduce((s,p)=>s+p.stock*p.cost,0);
   const invLow=inv.filter(lowStock).length;
-  const shifts=(DB.shifts||[]).filter(s=>s&&inScope(s.sucursalId)&&!s.off&&(s.date||'').startsWith(ym));
-  const att=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&(a.date||'').startsWith(ym)&&attLiveSessions(a).length);
+  const shifts=(DB.shifts||[]).filter(s=>s&&inScope(s.sucursalId)&&!s.off&&dInR(s.date));
+  const att=(DB.attendance||[]).filter(a=>a&&inScope(a.sucursalId)&&dInR(a.date)&&attLiveSessions(a).length);
+  const auditRange=(DB.audit||[]).filter(a=>a&&inScope(a.sucursalId)&&inR(a.at));
   const prod=DB.users.filter(u=>u.active).map(u=>{
     const mine=tMonth.filter(t=>(t.toIds||[]).includes(u.id));
     const h=mine.filter(t=>t.status==='hecha').length, a=mine.filter(t=>t.status==='atrasada').length, rj=mine.filter(t=>t.status==='rechazada').length;
+    const pr=mine.filter(t=>t.status==='proceso').length, pe=mine.filter(t=>t.status==='pendiente').length;
     const dias=shifts.filter(s=>s.userId===u.id).length;
     const myAtt=att.filter(x=>x.userId===u.id);
-    const presente=myAtt.length;                                              // días con marca real de entrada
-    const horas=Math.round(myAtt.reduce((s,x)=>s+attWorkedMin(x),0)/60*10)/10;  // horas reales trabajadas (suma todas las sesiones del día)
+    const presente=myAtt.length;
+    const horas=Math.round(myAtt.reduce((s,x)=>s+attWorkedMin(x),0)/60*10)/10;
+    const acts=auditRange.filter(x=>x.byId===u.id).length;
     const pct=mine.length?Math.round(h/mine.length*100):0;
-    return {u,total:mine.length,h,a,rj,dias,presente,horas,pct};
-  }).filter(x=>x.total>0||x.dias>0||x.presente>0).sort((a,b)=>b.pct-a.pct||b.h-a.h||b.presente-a.presente);
-  const r=monthRange(ym);
-  const salesDay=[]; for(let dd=1;dd<=r.days;dd++){ const v=sales.filter(s=>new Date(s.at).getDate()===dd).reduce((a,b)=>a+(+b.price||0)*(+b.qty||0),0); salesDay.push({day:dd,value:v}); }
-  const catVal={}; inv.forEach(p=>{ catVal[p.category]=(catVal[p.category]||0)+p.stock*p.cost; });
-  return {ym,tasks,tMonth,done,late,rej,proc,pend,compl,peds,pMonth,pDeliv,areas,sales,ingresos,ganancia,unidades,inv,invVal,invLow,shifts,prod,salesDay,catVal};
+    return {u,total:mine.length,h,a,rj,pr,pe,dias,presente,horas,acts,pct};
+  }).filter(x=>x.total>0||x.dias>0||x.presente>0||x.acts>0).sort((a,b)=>b.pct-a.pct||b.h-a.h||b.presente-a.presente);
+  const days=Math.max(1,Math.round((end-start)/864e5));
+  const salesDay=[]; for(let i=0;i<days;i++){ const ds=start+i*864e5, de=ds+864e5; const v=sales.filter(s=>s.at>=ds&&s.at<de).reduce((a,b)=>a+(+b.price||0)*(+b.qty||0),0); salesDay.push({ts:ds,value:v}); }
+  const catVal={}; inv.forEach(p=>{ const c=p.category||'Sin familia'; catVal[c]=(catVal[c]||0)+p.stock*p.cost; });
+  return {start,end,days,tasks,tMonth,done,late,rej,proc,pend,compl,peds,pMonth,pDeliv,areas,sales,ingresos,ganancia,unidades,inv,invVal,invLow,shifts,att,auditRange,prod,salesDay,catVal};
 }
 function viewReportes(){
-  if(!repMonth) repMonth=ymOf(Date.now());
-  const ym=repMonth; const d=reportData(ym);
-  const guide=sectionGuide('reportes','Reportes de Gerencia',`
-    Resumen del restaurante <b>mes a mes</b> para tomar decisiones: cumplimiento por puesto, asistencia, pedidos, ventas e inventario.
-    <ul style="margin:8px 0 0 18px"><li>Cambiá de mes con las flechas; todo se recalcula.</li><li>Tocá <b>Generar reporte</b> para una versión imprimible / PDF.</li></ul>
-    <div class="tip"><b>Importante:</b> el cumplimiento sale del historial real de tareas, no se puede inflar.</div>`);
+  const B=repBounds(); const d=reportData(B.start,B.end);
+  const person = repPerson!=='todos' ? userById(repPerson) : null;
   let html=`<div class="page-head"><div><div class="page-title">Reportes</div><div class="page-sub">${esc(sucName(visibleSuc()))}</div></div>
     <div class="ph-spacer"></div>
-    <div class="rep-month"><button class="icon-btn" style="width:32px;height:32px" onclick="repShift(-1)" title="Mes anterior">${svgIcon('back','icon icon-sm')}</button><b>${esc(cap(monthLabel(ym)))}</b><button class="icon-btn" style="width:32px;height:32px" onclick="repShift(1)" title="Mes siguiente"><svg class="icon icon-sm" viewBox="0 0 24 24" style="transform:scaleX(-1)"><use href="#i-back"/></svg></button></div>
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="exportReportCSV()">${svgIcon('down','icon icon-sm')} Exportar CSV</button>
-    <button class="btn btn-primary" style="flex:0 0 auto" onclick="generateMonthlyReport()">${svgIcon('save','icon icon-sm')} Generar reporte</button></div>`;
-  html+=guide;
-  html+=`<div class="kpi-row">
+    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="exportReportCSV()">${svgIcon('down','icon icon-sm')} CSV</button>
+    <button class="btn btn-primary" style="flex:0 0 auto" onclick="generateMonthlyReport()">${svgIcon('save','icon icon-sm')} Generar PDF</button></div>`;
+  // ---- controles: período + persona ----
+  html+=`<div class="rep-controls">
+    <div class="seg rep-modeseg">
+      ${[['dia','Día'],['semana','Semana'],['mes','Mes'],['rango','Rango']].map(([m,l])=>`<button type="button" class="seg-b ${repRange.mode===m?'on':''}" onclick="repSetMode('${m}')">${l}</button>`).join('')}
+    </div>
+    ${repRange.mode!=='rango'
+      ? `<div class="rep-nav"><button class="icon-btn" style="width:34px;height:34px" onclick="repNav(-1)" title="Anterior">${svgIcon('back','icon icon-sm')}</button><b class="rep-lbl">${esc(cap(B.label))}</b><button class="icon-btn" style="width:34px;height:34px" onclick="repNav(1)" title="Siguiente"><svg class="icon icon-sm" viewBox="0 0 24 24" style="transform:scaleX(-1)"><use href="#i-back"/></svg></button></div>`
+      : `<div class="rep-range"><label>Desde</label><input type="date" class="input" value="${repRange.from||''}" onchange="repSetFrom(this.value)"><label>Hasta</label><input type="date" class="input" value="${repRange.to||''}" onchange="repSetTo(this.value)"></div>`}
+    <div class="rep-person">${svgIcon('user','icon icon-sm')}
+      <select class="select" onchange="repSetPerson(this.value)">
+        <option value="todos">Todo el equipo</option>
+        ${DB.users.filter(u=>u.active).slice().sort((a,b)=>a.name.localeCompare(b.name)).map(u=>`<option value="${u.id}" ${repPerson===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}
+      </select>
+    </div>
+  </div>`;
+  html += person ? repPersonView(person,d,B) : repTeamView(d,B);
+  return html;
+}
+function repTeamView(d,B){
+  let html=`<div class="kpi-row">
     <div class="kpi ${d.compl>=70?'good':d.compl>=40?'warn':'alert'}"><div class="label">Cumplimiento</div><div class="value">${d.compl}%</div><div class="sub">${d.done}/${d.tMonth.length} tareas hechas</div></div>
     <div class="kpi ${d.late?'alert':'good'}"><div class="label">Atrasadas</div><div class="value">${d.late}</div><div class="sub">${d.rej} rechazadas</div></div>
-    <div class="kpi"><div class="label">Pedidos del mes</div><div class="value">${d.pMonth.length}</div><div class="sub">${d.pDeliv} entregados</div></div>
+    <div class="kpi"><div class="label">Pedidos</div><div class="value">${d.pMonth.length}</div><div class="sub">${d.pDeliv} entregados</div></div>
     <div class="kpi ok"><div class="label">Ventas souvenirs</div><div class="value" style="font-size:20px">${money(d.ingresos)}</div><div class="sub">ganancia ${money(d.ganancia)}</div></div>
   </div>`;
-  const stMax=Math.max(1,d.done,d.proc,d.pend,d.late,d.rej);
-  const aMax=Math.max(1,...Object.values(d.areas));
-  const catE=Object.entries(d.catVal).sort((a,b)=>b[1]-a[1]); const cMax=Math.max(1,...catE.map(e=>e[1]),1);
+  const taskSegs=[{label:'Hechas',value:d.done,color:'#5aa777'},{label:'En proceso',value:d.proc,color:'#5b8def'},{label:'Pendientes',value:d.pend,color:'#94a3b8'},{label:'Atrasadas',value:d.late,color:'#d59b4a'},{label:'Rechazadas',value:d.rej,color:'#d9534f'}];
+  const areaSegs=[{label:'Proveeduría',value:d.areas.proveeduria,color:REP_COLORS[0]},{label:'Contabilidad',value:d.areas.contabilidad,color:REP_COLORS[1]},{label:'Recursos Humanos',value:d.areas.rrhh,color:REP_COLORS[4]}];
+  const catE=Object.entries(d.catVal).sort((a,b)=>b[1]-a[1]); const topC=catE.slice(0,6); const otherV=catE.slice(6).reduce((s,e)=>s+e[1],0);
+  const catSegs=topC.map((e,i)=>({label:e[0],value:Math.round(e[1]),color:REP_COLORS[i%REP_COLORS.length],fmt:money(e[1])})); if(otherV>0) catSegs.push({label:'Otros',value:Math.round(otherV),color:'#64748b',fmt:money(otherV)});
   html+=`<div class="chart-grid">
-    <div class="chartcard"><div class="chart-title">${svgIcon('check','icon icon-sm')} Estado de tareas del mes</div>
-      ${bar('Hechas',d.done,stMax,'var(--success)')}${bar('En proceso',d.proc,stMax,'var(--info)')}${bar('Pendientes',d.pend,stMax,'var(--text-soft)')}${bar('Atrasadas',d.late,stMax,'var(--warn)')}${bar('Rechazadas',d.rej,stMax,'var(--danger)')}</div>
-    <div class="chartcard"><div class="chart-title">${svgIcon('box','icon icon-sm')} Pedidos por área</div>
-      ${bar('Proveeduría',d.areas.proveeduria,aMax,'var(--success)')}${bar('Contabilidad',d.areas.contabilidad,aMax,'var(--info)')}${bar('Recursos Humanos',d.areas.rrhh,aMax,'var(--accent)')}</div>
+    ${donutCard('Estado de tareas','check',taskSegs,`<div class="donut-c-n">${d.compl}%</div><div class="donut-c-l">cumplido</div>`)}
+    ${donutCard('Pedidos por área','box',areaSegs)}
   </div>`;
   html+=`<div class="chart-grid">
-    <div class="chartcard"><div class="chart-title">${svgIcon('chart','icon icon-sm')} Valor de inventario por categoría</div>
-      ${catE.length?catE.map(([c,v])=>bar(c,Math.round(v),cMax,'var(--accent-2)')).join(''):'<div class="chart-empty">Sin inventario cargado.</div>'}</div>
+    ${donutCard('Valor de inventario','chart',catSegs,`<div class="donut-c-n" style="font-size:15px">${money(d.invVal)}</div><div class="donut-c-l">en bodega</div>`)}
     <div class="chartcard"><div class="chart-title">${svgIcon('trend','icon icon-sm')} Ventas de souvenirs por día</div>
-      ${d.sales.length?repVBars(d.salesDay.map(x=>({lbl:(x.day%5===0||x.day===1)?x.day:'',value:x.value,title:`Día ${x.day}: ${money(x.value)}`}))):'<div class="chart-empty">Sin ventas de souvenirs este mes.</div>'}</div>
+      ${d.sales.length?repVBars(d.salesDay.map(x=>({lbl:repDayLbl(x.ts,d.days),value:x.value,title:repFmtD(x.ts)+': '+money(x.value)}))):'<div class="chart-empty">Sin ventas en este período.</div>'}</div>
   </div>`;
-  html+=`<div class="card"><div class="rep-tbl-title">${svgIcon('users','icon icon-sm')} Cumplimiento y asistencia por persona</div>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th title="Días con turno planificado">Días plan.</th><th title="Días que marcó entrada">Presente</th><th title="Horas reales (entrada→salida)">Horas</th><th>Asign.</th><th>Hechas</th><th>Atras.</th><th>%</th></tr></thead><tbody>
-    ${d.prod.map(x=>`<tr><td><div style="display:flex;align-items:center;gap:8px">${avatarHTML(x.u)}<span style="font-weight:600">${esc(x.u.name)}</span></div></td>
+  html+=`<div class="card"><div class="rep-tbl-title">${svgIcon('users','icon icon-sm')} Cumplimiento y asistencia por persona <span style="font-weight:400;color:var(--text-soft);font-size:12px">· tocá una fila para ver el detalle</span></div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Persona</th><th>Puesto</th><th title="Días con turno planificado">Días plan.</th><th title="Días que marcó entrada">Presente</th><th title="Horas reales">Horas</th><th>Asign.</th><th>Hechas</th><th>Atras.</th><th>%</th></tr></thead><tbody>
+    ${d.prod.map(x=>`<tr class="clickrow" onclick="repSetPerson('${x.u.id}')"><td><div style="display:flex;align-items:center;gap:8px">${avatarHTML(x.u)}<span style="font-weight:600">${esc(x.u.name)}</span></div></td>
       <td>${roleInfo(x.u.role).short}</td><td>${x.dias}</td><td style="font-weight:700">${x.presente}</td><td><b>${x.horas?x.horas+'h':'—'}</b></td><td>${x.total}</td><td style="color:var(--success);font-weight:700">${x.h}</td>
       <td style="color:${x.a?'var(--warn)':'inherit'};font-weight:${x.a?700:400}">${x.a}</td>
-      <td><b>${x.pct}%</b></td></tr>`).join('') || '<tr><td colspan="9" style="color:var(--text-soft)">Sin actividad registrada en el mes.</td></tr>'}
+      <td><b>${x.pct}%</b></td></tr>`).join('') || '<tr><td colspan="9" style="color:var(--text-soft)">Sin actividad registrada en el período.</td></tr>'}
     </tbody></table></div></div>`;
   if(isAdmin()){
-    const sucAct=DB.sucursales.map(s=>({s,n:(DB.audit||[]).filter(a=>a.sucursalId===s.id&&inMonth(a.at,ym)).length}));
+    const sucAct=DB.sucursales.map(s=>({s,n:d.auditRange.filter(a=>a.sucursalId===s.id).length}));
     const sMax=Math.max(1,...sucAct.map(y=>y.n));
-    html+=`<div class="chartcard"><div class="chart-title">${svgIcon('pin','icon icon-sm')} Actividad por sucursal (mes)</div>${sucAct.map(x=>bar(x.s.name,x.n,sMax,'var(--accent)')).join('')}</div>`;
+    html+=`<div class="chartcard" style="margin-top:14px"><div class="chart-title">${svgIcon('pin','icon icon-sm')} Actividad por sucursal</div>${sucAct.map(x=>bar(x.s.name,x.n,sMax,'var(--accent)')).join('')}</div>`;
   }
+  return html;
+}
+function repDayLbl(ts,days){ const dt=new Date(ts); if(days<=14) return dt.getDate(); return (dt.getDate()===1||dt.getDate()%5===0)?dt.getDate():''; }
+function repPersonView(u,d,B){
+  const x=d.prod.find(p=>p.u.id===u.id) || {u,total:0,h:0,a:0,rj:0,pr:0,pe:0,dias:0,presente:0,horas:0,acts:0,pct:0};
+  const mineAud=d.auditRange.filter(a=>a.byId===u.id);
+  const actDay=[]; for(let i=0;i<d.days;i++){ const ds=d.start+i*864e5,de=ds+864e5; actDay.push({ts:ds,value:mineAud.filter(a=>a.at>=ds&&a.at<de).length}); }
+  const taskSegs=[{label:'Hechas',value:x.h,color:'#5aa777'},{label:'En proceso',value:x.pr,color:'#5b8def'},{label:'Pendientes',value:x.pe,color:'#94a3b8'},{label:'Atrasadas',value:x.a,color:'#d59b4a'},{label:'Rechazadas',value:x.rj,color:'#d9534f'}];
+  const recent=mineAud.slice(0,18);
+  let html=`<div class="rep-person-head">
+    <button class="chip rep-back" onclick="repSetPerson('todos')">${svgIcon('back','icon icon-sm')} Todo el equipo</button>
+    <div style="display:flex;align-items:center;gap:12px">${avatarHTML(u,'av-lg')}<div><div style="font-size:18px;font-weight:800">${esc(u.name)}</div><div class="page-sub">${esc(roleInfo(u.role).label)} · ${esc(cap(B.label))}</div></div></div>
+  </div>`;
+  html+=`<div class="kpi-row">
+    <div class="kpi ${x.pct>=70?'good':x.pct>=40?'warn':'alert'}"><div class="label">Cumplimiento</div><div class="value">${x.pct}%</div><div class="sub">${x.h}/${x.total} tareas</div></div>
+    <div class="kpi ${x.a?'alert':'good'}"><div class="label">Atrasadas</div><div class="value">${x.a}</div><div class="sub">${x.rj} rechazadas</div></div>
+    <div class="kpi"><div class="label">Asistencia</div><div class="value">${x.presente}<span style="font-size:13px;color:var(--text-soft)">/${x.dias}</span></div><div class="sub">${x.horas?x.horas+' h trabajadas':'sin marcas'}</div></div>
+    <div class="kpi"><div class="label">Acciones</div><div class="value">${x.acts}</div><div class="sub">registros en el período</div></div>
+  </div>`;
+  html+=`<div class="chart-grid">
+    ${donutCard('Sus tareas','check',taskSegs,`<div class="donut-c-n">${x.total}</div><div class="donut-c-l">asignadas</div>`)}
+    <div class="chartcard"><div class="chart-title">${svgIcon('trend','icon icon-sm')} Actividad por día</div>
+      ${mineAud.length?repVBars(actDay.map(p=>({lbl:repDayLbl(p.ts,d.days),value:p.value,title:repFmtD(p.ts)+': '+p.value+' acción(es)'}))):'<div class="chart-empty">Sin actividad registrada en este período.</div>'}</div>
+  </div>`;
+  html+=`<div class="card"><div class="rep-tbl-title">${svgIcon('list','icon icon-sm')} Últimas acciones</div>
+    ${recent.length?`<div class="log">${recent.map(a=>`<div class="log-item">${esc(a.detail||a.action||'')} <span style="opacity:.7">· ${fmtDateTime(a.at)}</span></div>`).join('')}</div>`:'<div class="chart-empty">Sin acciones registradas.</div>'}</div>`;
   return html;
 }
 // Exportar el reporte del mes a CSV (para contabilidad / Excel)
 function exportReportCSV(){
-  const ym=repMonth||ymOf(Date.now()); const d=reportData(ym);
+  const B=repBounds(); const d=reportData(B.start,B.end);
   const esc=s=>{ s=String(s==null?'':s); return /[",;\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
   const rows=[];
-  rows.push(['Reporte', cap(monthLabel(ym)), sucName(visibleSuc())]);
+  rows.push(['Reporte', cap(B.label), sucName(visibleSuc())]);
   rows.push([]);
   rows.push(['Resumen']);
   rows.push(['Tareas del mes', d.tMonth.length]); rows.push(['Hechas', d.done]); rows.push(['Atrasadas', d.late]); rows.push(['Cumplimiento %', d.compl]);
@@ -5114,13 +5201,13 @@ function exportReportCSV(){
   const csv='﻿'+rows.map(r=>r.map(esc).join(';')).join('\r\n');   // BOM + ';' para Excel en español
   const blob=new Blob([csv],{type:'text/csv;charset=utf-8'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob);
-  a.download='sabor-tico-reporte-'+ym+'.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),60000);
+  a.download='sabor-tico-reporte.csv'; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),60000);
   toast('Reporte CSV descargado','ok');
 }
 window.exportReportCSV=exportReportCSV;
 function generateMonthlyReport(){
-  const ym=repMonth||ymOf(Date.now()); const d=reportData(ym);
-  const ml=cap(monthLabel(ym)); const suc=sucName(visibleSuc());
+  const B=repBounds(); const d=reportData(B.start,B.end);
+  const ml=cap(B.label); const suc=sucName(visibleSuc());
   const gen=new Date().toLocaleString('es-CR',{day:'2-digit',month:'long',year:'numeric',hour:'2-digit',minute:'2-digit'});
   const k=(l,v)=>`<div class="k"><div class="kl">${l}</div><div class="kv">${v}</div></div>`;
   const prow=d.prod.map(x=>`<tr><td>${esc(x.u.name)}</td><td>${esc(roleInfo(x.u.role).short)}</td><td>${x.dias}</td><td>${x.total}</td><td>${x.h}</td><td>${x.a}</td><td>${x.rj}</td><td><b>${x.pct}%</b></td></tr>`).join('')||'<tr><td colspan="8" style="color:#999">Sin actividad en el mes</td></tr>';
