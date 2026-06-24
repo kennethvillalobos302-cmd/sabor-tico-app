@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v66 · Inventario: movimientos con filtros/quién y conteos de hoy';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v67 · Inventario: diseño alineado, tarjetas compactas, bodegas y por persona';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3090,22 +3090,29 @@ function viewInventario(){
         <button type="button" class="seg-b ${invMode==='edit'?'on':''}" onclick="invMode='edit';invSel=null;render()">${svgIcon('edit','icon icon-sm')} Editar</button>
         <button type="button" class="seg-b ${invMode==='count'?'on':''}" onclick="invMode='count';invSel=null;invSelMode=false;render()">${svgIcon('check','icon icon-sm')} Conteo diario</button>
       </div>`:`<span class="inv-mode-tag">${svgIcon('check','icon icon-sm')} Conteo diario</span>`}
-      <div class="inv-search-wrap">${svgIcon('search','icon icon-sm')}<input class="input" placeholder="Buscar producto…" value="${esc(invSearch)}" oninput="invSearch=this.value;clearTimeout(window._is);window._is=setTimeout(render,250)"></div>
+      <div class="inv-search-wrap ${invSearch?'has-val':''}">${svgIcon('search','icon icon-sm')}<input class="input" placeholder="Buscar producto en todo el inventario…" value="${esc(invSearch)}" oninput="invSearch=this.value;clearTimeout(window._is);window._is=setTimeout(render,250)">${invSearch?`<button class="inv-search-x" title="Limpiar" onclick="invSearch='';render()">${svgIcon('x','icon icon-sm')}</button>`:''}</div>
     </div>
     <div class="inv-filters">
-      <select class="select" onchange="invBodega=this.value;render()">
-        <option value="todas" ${invBodega==='todas'?'selected':''}>Todas las bodegas</option>
-        ${bodegasFor().map(b=>`<option value="${b.id}" ${invBodega===b.id?'selected':''}>${esc(b.name)}</option>`).join('')}
-        <option value="sin" ${invBodega==='sin'?'selected':''}>Sin bodega</option>
-      </select>
-      <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">${svgIcon('info','icon icon-sm')} Bajo mínimo${low?' ('+low+')':''}</button>
-      <button class="chip" onclick="inventoryReportModal()">${svgIcon('chart','icon icon-sm')} Reporte</button>
-      <button class="chip" onclick="dailyCountsModal()">${svgIcon('check','icon icon-sm')} Conteos de hoy</button>
-      <button class="chip" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button>
-      ${editMode?`<button class="chip ${invSelMode?'on':''}" onclick="invToggleSelMode()">${svgIcon('check','icon icon-sm')} Organizar</button>
-        <button class="chip" onclick="bodegaManagerModal()">${svgIcon('box','icon icon-sm')} Bodegas</button>
-        <button class="chip" onclick="invoicesModal()">${svgIcon('clipboard','icon icon-sm')} Facturas</button>
-        <button class="chip" onclick="invoiceModal()">${svgIcon('truck','icon icon-sm')} Registrar factura</button>`:''}
+      <div class="inv-filters-l">
+        <div class="dd" id="ddBodega">
+          <button type="button" class="dd-btn" onclick="ddToggle(event,'ddBodega')">${svgIcon('box','icon icon-sm')}<span>${esc(invBodega==='todas'?'Todas las bodegas':(invBodega==='sin'?'Sin bodega':bodegaName(invBodega)))}</span>${svgIcon('chevron','icon icon-sm dd-chev')}</button>
+          <div class="dd-menu">
+            <button class="dd-opt ${invBodega==='todas'?'on':''}" onclick="setBodegaFilter('todas')">${svgIcon('box','icon icon-sm')} Todas las bodegas <span class="dd-c">${scoped.length}</span></button>
+            ${bods.map(b=>`<button class="dd-opt ${invBodega===b.id?'on':''}" onclick="setBodegaFilter('${b.id}')"><span class="inv-dot" style="background:var(--accent)"></span> ${esc(b.name)} <span class="dd-c">${scoped.filter(p=>(p.bodega||'')===b.id).length}</span></button>`).join('')}
+            <button class="dd-opt ${invBodega==='sin'?'on':''}" onclick="setBodegaFilter('sin')"><span class="inv-dot" style="background:var(--border)"></span> Sin bodega <span class="dd-c">${scoped.filter(p=>!p.bodega).length}</span></button>
+          </div>
+        </div>
+        <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">${svgIcon('info','icon icon-sm')} Bajo mínimo${low?' ('+low+')':''}</button>
+      </div>
+      <div class="inv-filters-r">
+        <button class="chip" onclick="inventoryReportModal()">${svgIcon('chart','icon icon-sm')} Reporte</button>
+        <button class="chip" onclick="dailyCountsModal()">${svgIcon('check','icon icon-sm')} Conteos de hoy</button>
+        <button class="chip" onclick="invMovesModal()">${svgIcon('list','icon icon-sm')} Movimientos</button>
+        ${editMode?`<button class="chip ${invSelMode?'on':''}" onclick="invToggleSelMode()">${svgIcon('check','icon icon-sm')} Organizar</button>
+          <button class="chip" onclick="bodegaManagerModal()">${svgIcon('box','icon icon-sm')} Bodegas</button>
+          <button class="chip" onclick="invoicesModal()">${svgIcon('clipboard','icon icon-sm')} Facturas</button>
+          <button class="chip accent" onclick="invoiceModal()">${svgIcon('truck','icon icon-sm')} Registrar factura</button>`:''}
+      </div>
     </div>
     ${editor&&invSelMode?`<div class="inv-bulk">
       <span class="inv-bulk-n">${invPicks.size} seleccionado(s)</span>
@@ -3506,21 +3513,26 @@ function saveProduct(id){
   else { DB.inventory.push({id:uid(),...data}); audit('inventario',`agregó el producto "${name}"`,data.sucursalId); }
   closeModal(); toast('Producto guardado','ok'); render();
 }
-let mvRange='hoy', mvType='todos';
+let mvRange='hoy', mvType='todos', mvPerson='todos';
 function todayStart(){ const d=new Date(); d.setHours(0,0,0,0); return d.getTime(); }
+function mvInRange(m){ const fromTs={hoy:todayStart(),'7d':todayStart()-6*864e5,'30d':todayStart()-29*864e5,todo:0}[mvRange]||0; return m.at>=fromTs && (mvPerson==='todos'||m.byId===mvPerson); }
 function mvMatch(m){
-  const fromTs={hoy:todayStart(),'7d':todayStart()-6*864e5,'30d':todayStart()-29*864e5,todo:0}[mvRange]||0;
-  if(m.at<fromTs) return false;
+  if(!mvInRange(m)) return false;
   if(mvType==='todos') return true;
   if(mvType==='conteo') return m.src==='conteo';
   return m.type===mvType;
 }
 function mvSetRange(r){ mvRange=r; invMovesModal(); }
 function mvSetType(t){ mvType=t; invMovesModal(); }
+function mvSetPerson(v){ mvPerson=v; invMovesModal(); }
 function invMvType(m){ return {entrada:{l:'Entrada',c:'var(--success)',s:'+'},salida:{l:'Salida',c:'var(--danger)',s:'−'},venta:{l:'Venta',c:'#a855f7',s:'−'},traslado:{l:'Traslado',c:'var(--accent)',s:'⇄'}}[m.type]||{l:m.type,c:'var(--text-soft)',s:''}; }
 function invMovesModal(){
-  const moves=DB.invMoves.filter(m=>inScope(m.sucursalId) && mvMatch(m)).slice(0,400);
-  const cnt=t=> DB.invMoves.filter(m=>inScope(m.sucursalId) && mvMatch(m) && (t==='conteo'?m.src==='conteo':m.type===t)).length;
+  const inScopeMoves=DB.invMoves.filter(m=>inScope(m.sucursalId));
+  const people=[...new Set(inScopeMoves.map(m=>m.byId))].map(id=>userById(id)).filter(Boolean).sort((a,b)=>a.name.localeCompare(b.name));
+  if(mvPerson!=='todos' && !people.some(u=>u.id===mvPerson)) mvPerson='todos';
+  const baseMoves=inScopeMoves.filter(mvInRange);                 // rango + persona (sin filtro de tipo) → para KPIs
+  const cnt=t=> baseMoves.filter(m=> t==='conteo'?m.src==='conteo':m.type===t).length;
+  const moves=baseMoves.filter(m=> mvType==='todos'?true:(mvType==='conteo'?m.src==='conteo':m.type===mvType)).slice(0,400);
   const rangeChip=(k,l)=>`<button class="chip sm ${mvRange===k?'on':''}" onclick="mvSetRange('${k}')">${l}</button>`;
   const typeChip=(k,l)=>`<button class="chip sm ${mvType===k?'on':''}" onclick="mvSetType('${k}')">${l}</button>`;
   const rows=moves.map(m=>{
@@ -3542,6 +3554,13 @@ function invMovesModal(){
         <span class="mv-sep"></span>
         ${typeChip('todos','Todos')}${typeChip('conteo','Conteos')}${typeChip('entrada','Entradas')}${typeChip('salida','Salidas')}${typeChip('venta','Ventas')}${typeChip('traslado','Traslados')}
       </div>
+      <div class="mv-person">
+        <span class="mv-person-l">${svgIcon('user','icon icon-sm')} Persona:</span>
+        <select class="select" onchange="mvSetPerson(this.value)">
+          <option value="todos" ${mvPerson==='todos'?'selected':''}>Todo el restaurante</option>
+          ${people.map(u=>`<option value="${u.id}" ${mvPerson===u.id?'selected':''}>${esc(u.name)}</option>`).join('')}
+        </select>
+      </div>
       <div class="mv-kpis">
         <div class="mv-kpi"><b>${cnt('entrada')}</b><span>Entradas</span></div>
         <div class="mv-kpi"><b>${cnt('salida')}</b><span>Salidas</span></div>
@@ -3561,7 +3580,7 @@ function exportMovesCSV(){
   downloadText('movimientos.csv','﻿'+lines.join('\n'),'text/csv'); toast('CSV descargado','ok');
 }
 function dailyCountsModal(){ mvRange='hoy'; mvType='conteo'; invMovesModal(); }
-window.mvSetRange=mvSetRange; window.mvSetType=mvSetType; window.exportMovesCSV=exportMovesCSV; window.dailyCountsModal=dailyCountsModal;
+window.mvSetRange=mvSetRange; window.mvSetType=mvSetType; window.mvSetPerson=mvSetPerson; window.exportMovesCSV=exportMovesCSV; window.dailyCountsModal=dailyCountsModal;
 // Cuánto conviene pedir para llevar el stock a ~2× el mínimo
 function suggestReorder(p){ if(!p || !(+p.minStock>0)) return 0; const s=Math.ceil((+p.minStock*2)-(+p.stock||0)); return s>0?s:0; }
 function pedirProducto(pid, qty){
@@ -3592,14 +3611,42 @@ function delCat(a,i){ const c=(DB.invCats[a]||[])[i]; if(c===undefined) return; 
 window.fillCatOptions=fillCatOptions; window.catManagerModal=catManagerModal; window.addCat=addCat; window.delCat=delCat;
 function bodegaManagerModal(){
   const bods=bodegasFor();
+  const cnt=id=>(DB.inventory||[]).filter(p=>inScope(p.sucursalId)&&p.bodega===id).length;
   openModal(`<div class="modal-head"><h3>${svgIcon('box','icon')} Bodegas</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
       <div class="page-sub" style="margin-bottom:14px">Lugares de almacenamiento (ej. <b>Congelador 1</b>, Refrigerador, Bodega seca). Cada producto se guarda en una bodega para saber qué hay en cada una.</div>
-      <div class="assignee-pick" style="margin-bottom:10px">${bods.length?bods.map(b=>`<span class="ap">${esc(b.name)}<button class="icon-btn" style="width:22px;height:22px;border:none;background:none;margin-left:2px" title="Quitar" onclick="delBodega('${b.id}')">${svgIcon('x','icon icon-sm')}</button></span>`).join(''):'<span style="color:var(--text-soft);font-size:12.5px">Sin bodegas todavía.</span>'}</div>
-      <div style="display:flex;gap:8px"><input class="input" id="newBodega" placeholder="Nueva bodega (ej. Congelador 1)" onkeydown="if(event.key==='Enter')addBodega()"><button class="btn btn-ghost" style="flex:0 0 auto" onclick="addBodega()">Agregar</button></div>
+      <div class="bod-list">${bods.length?bods.map(b=>`<div class="bod-row">
+        <span class="bod-name">${svgIcon('box','icon icon-sm')} ${esc(b.name)}</span>
+        <span class="bod-c">${cnt(b.id)} producto(s)</span>
+        <button class="inv-fam-act" title="Quitar" onclick="delBodega('${b.id}')">${svgIcon('trash','icon icon-sm')}</button>
+      </div>`).join(''):'<div class="page-sub">Sin bodegas todavía.</div>'}</div>
+      <div class="bod-add"><input class="input" id="newBodega" placeholder="Nueva bodega (ej. Congelador 1)" onkeydown="if(event.key==='Enter')addBodega()"><button class="btn btn-ghost" style="flex:0 0 auto" onclick="addBodega()">${svgIcon('plus','icon icon-sm')} Agregar</button></div>
+      ${bods.length>=2?`<div class="ip-sec" style="margin-top:18px">${svgIcon('truck','icon icon-sm')} Pasar productos de una bodega a otra</div>
+      <div class="bod-move">
+        <select class="select" id="bodFrom">${bods.map(b=>`<option value="${b.id}">${esc(b.name)} (${cnt(b.id)})</option>`).join('')}</select>
+        <span class="bod-arrow">${svgIcon('truck','icon icon-sm')}</span>
+        <select class="select" id="bodTo"><option value="">Sin bodega</option>${bods.map(b=>`<option value="${b.id}">${esc(b.name)}</option>`).join('')}</select>
+        <button class="btn btn-primary" style="flex:0 0 auto" onclick="transferBodega()">Pasar</button>
+      </div>
+      <div class="page-sub" style="margin-top:6px">Mueve <b>todos</b> los productos de la primera bodega a la segunda.</div>`:''}
     </div>
     <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Listo</button></div>`);
 }
+function transferBodega(){
+  const from=$('#bodFrom')?$('#bodFrom').value:''; const to=$('#bodTo')?$('#bodTo').value:'';
+  if(from===to){ toast('Elegí dos bodegas distintas','err'); return; }
+  const prods=(DB.inventory||[]).filter(p=>inScope(p.sucursalId)&&p.bodega===from);
+  if(!prods.length){ toast('Esa bodega no tiene productos','err'); return; }
+  prods.forEach(p=>{ p.bodega=to; });
+  audit('inventario',`pasó ${prods.length} producto(s) de "${bodegaName(from)}" a "${to?bodegaName(to):'Sin bodega'}"`);
+  toast(`${prods.length} producto(s) movidos`,'ok'); bodegaManagerModal();
+}
+window.transferBodega=transferBodega;
+/* Dropdown personalizado (filtro de bodegas) */
+function ddToggle(e,id){ e.stopPropagation(); const el=document.getElementById(id); if(!el) return; const open=el.classList.contains('open'); document.querySelectorAll('.dd.open').forEach(d=>d.classList.remove('open')); if(!open) el.classList.add('open'); }
+function setBodegaFilter(v){ invBodega=v; render(); }
+document.addEventListener('click',()=>{ document.querySelectorAll('.dd.open').forEach(d=>d.classList.remove('open')); });
+window.ddToggle=ddToggle; window.setBodegaFilter=setBodegaFilter;
 function addBodega(){ const el=$('#newBodega'); const v=el?el.value.trim():''; if(!v){ toast('Escribí un nombre','err'); return; }
   const suc = (me()&&me().sucursalId!=='all') ? me().sucursalId : (visibleSuc()!=='all'?visibleSuc():((DB.sucursales[0]&&DB.sucursales[0].id)||'all'));
   DB.bodegas=DB.bodegas||[]; DB.bodegas.push({id:uid(),name:clip(v,40),sucursalId:suc,at:now(),updatedAt:now()});
