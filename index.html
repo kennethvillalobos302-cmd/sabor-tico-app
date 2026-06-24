@@ -272,6 +272,7 @@ select option,select optgroup{background:var(--bg-elev);color:var(--text)}
 
 .main{flex:1;overflow-y:auto;padding:26px 28px;min-width:0}
 .view{max-width:1120px;margin:0 auto}
+.view.view-wide{max-width:1600px}
 .bottom-nav{display:none}
 
 /* ---------- HEADINGS / SECTIONS ---------- */
@@ -862,7 +863,7 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .inv-tile-new:hover{color:var(--accent);border-color:var(--accent-line)}
 .inv-tile-plus .icon{width:26px;height:26px;color:var(--text-soft)}
 /* --- derecha: editor --- */
-.inv-edit{flex:0 0 360px;position:sticky;top:8px;max-height:calc(100vh - 96px);display:flex;flex-direction:column;background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--r-lg);box-shadow:var(--e2);overflow:hidden}
+.inv-edit{flex:0 0 380px;position:sticky;top:8px;max-height:calc(100vh - 96px);display:flex;flex-direction:column;background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--r-lg);box-shadow:var(--e2);overflow:hidden}
 .inv-edit-h{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:16px 16px 12px;border-bottom:1px solid var(--border-soft)}
 .inv-edit-kick{font-size:10.5px;font-weight:800;letter-spacing:1px;color:var(--text-soft);text-transform:uppercase}
 .inv-edit-name{font-size:18px;font-weight:800;letter-spacing:-.3px;margin-top:3px}
@@ -878,6 +879,25 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .inv-edit-actions .ibtn{justify-content:center}
 .inv-edit-foot{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px;border-top:1px solid var(--border-soft);background:var(--bg-soft)}
 .inv-edit-foot-r{display:flex;gap:8px}
+/* familias: acciones al pasar el mouse (renombrar / eliminar) */
+.inv-fam-acts{display:none;align-items:center;gap:2px;margin-left:auto}
+.inv-fam-row:hover .inv-fam-acts{display:inline-flex}
+.inv-fam-row:hover .inv-fam-c{display:none}
+.inv-fam-act{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border:none;background:none;border-radius:6px;color:var(--text-soft);cursor:pointer}
+.inv-fam-act:hover{background:rgba(0,0,0,.08);color:var(--text)}
+.inv-fam-row.on .inv-fam-act{color:rgba(255,255,255,.85)}
+.inv-fam-row.on .inv-fam-act:hover{background:rgba(255,255,255,.2);color:#fff}
+/* foto del producto: tarjeta */
+.inv-tile-img{width:62px;height:62px;border-radius:12px;overflow:hidden;background:var(--bg-soft);display:flex;align-items:center;justify-content:center;margin-top:2px}
+.inv-tile-img img{width:100%;height:100%;object-fit:cover}
+.inv-tile.has-img{min-height:170px}
+/* foto del producto: editor */
+.ip-img-row{display:flex;align-items:center;gap:12px}
+.ip-img-prev{position:relative;width:74px;height:74px;flex:0 0 auto;border:1px solid var(--border-soft);border-radius:var(--r-md);overflow:hidden;background:var(--bg-soft);display:flex;align-items:center;justify-content:center}
+.ip-img-prev img{width:100%;height:100%;object-fit:cover}
+.ip-img-empty .icon{width:26px;height:26px;color:var(--text-dim)}
+.ip-img-x{position:absolute;top:3px;right:3px;width:20px;height:20px;border:none;border-radius:50%;background:rgba(0,0,0,.55);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.ip-img-up{flex:0 0 auto;cursor:pointer}
 @media(max-width:980px){
   .inv-shell{flex-direction:column}
   .inv-side,.inv-edit{position:static;flex:none;width:100%;max-height:none}
