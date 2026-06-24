@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v53 · Calendario: mas colores, atrasados, 6am';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v54 · Calendario: recordatorios, repetir, arrastrar, agenda, equipo';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -722,6 +722,8 @@ function checkNotifPops(){
 }
 // Desbloquear el audio en el primer gesto del usuario (móvil exige interacción)
 ['pointerdown','touchstart','keydown'].forEach(ev=>document.addEventListener(ev,unlockAudio,{passive:true}));
+// Revisar recordatorios (calendario y turnos) cada minuto, aunque no se navegue
+setInterval(()=>{ if(!SES.userId) return; try{ checkCalReminders(); }catch(_){} try{ checkShiftReminders(); }catch(_){} try{ checkNotifPops(); }catch(_){} }, 60000);
 
 /* ---------------- Toasts ---------------- */
 function toast(text, kind=''){
@@ -1008,7 +1010,8 @@ function render(){
   try{
   checkShiftReminders();
   try{ checkReservReminders(); }catch(_){}
-  try{ checkNotifPops(); }catch(_){}   // avisar (popup+sonido) lo nuevo, p.ej. recordatorios de turno
+  try{ checkCalReminders(); }catch(_){}
+  try{ checkNotifPops(); }catch(_){}   // avisar (popup+sonido) lo nuevo, p.ej. recordatorios de turno/calendario
   const ct=$('#cloudTag'); if(ct) ct.classList.toggle('hidden',!cloudOn);
   // topbar
   const tbAv=$('#tbAv'); if(tbAv){ tbAv.style.background=roleInfo(me().role).color; tbAv.textContent=initials(me().name); }
@@ -4104,10 +4107,31 @@ function calWeekStart(iso){ const d=calParse(iso); const wd=(d.getDay()+6)%7; d.
 function calHHMM(ts){ const d=new Date(ts); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
 function calMin(t){ if(!t) return 0; const a=t.split(':').map(Number); return a[0]*60+(a[1]||0); }
 function cap1(s){ return s.charAt(0).toUpperCase()+s.slice(1); }
+function calEvBy(e){ return e.byId||e.userId; }
+function calEventVisible(e){
+  if(calEvBy(e)===SES.userId) return true;
+  if(e.audience==='all') return inScope(e.sucursalId||'all');
+  if(e.audience==='sel') return (e.members||[]).includes(SES.userId);
+  return false;
+}
+function calEventCanEdit(e){ return calEvBy(e)===SES.userId || isAdmin(); }
+function calEventOccurs(e, iso){
+  if(!e.date || iso<e.date) return false;
+  if(!e.repeat || e.repeat==='no') return iso===e.date;
+  if(e.repeatUntil && iso>e.repeatUntil) return false;
+  const d0=calParse(e.date), d=calParse(iso), diff=Math.round((d-d0)/86400000);
+  if(diff<0) return false;
+  if(e.repeat==='diario') return true;
+  if(e.repeat==='semanal') return diff%7===0;
+  if(e.repeat==='quincenal') return diff%14===0;
+  if(e.repeat==='mensual') return d.getDate()===d0.getDate();
+  return iso===e.date;
+}
 function calDayItems(iso){
   const items=[];
-  if(calShow.eventos) (DB.calEvents||[]).filter(e=>e&&e.userId===SES.userId && e.date===iso).forEach(e=>{
-    items.push({kind:'event', id:e.id, title:e.title||'(sin título)', start:e.allDay?'':e.start, end:e.allDay?'':e.end, allDay:!!e.allDay||!e.start, color:e.color||CAL_COLORS[0]});
+  if(calShow.eventos) (DB.calEvents||[]).filter(e=>e&&calEventVisible(e)&&calEventOccurs(e,iso)).forEach(e=>{
+    const rec=!!(e.repeat&&e.repeat!=='no');
+    items.push({kind:'event', id:e.id, title:e.title||'(sin título)', start:e.allDay?'':e.start, end:e.allDay?'':e.end, allDay:!!e.allDay||!e.start, color:e.color||CAL_COLORS[0], shared:e.audience&&e.audience!=='me', repeat:rec, draggable:!rec&&calEventCanEdit(e)});
   });
   if(calShow.turnos) (DB.shifts||[]).filter(s=>s&&s.userId===SES.userId && s.date===iso).forEach(s=>{
     if(s.off) items.push({kind:'shift', id:s.id, title:'Día libre', allDay:true, color:'#7fa9b8'});
@@ -4115,7 +4139,7 @@ function calDayItems(iso){
   });
   if(calShow.tareas) (DB.tasks||[]).filter(t=>t&&(t.toIds||[]).includes(SES.userId) && t.due && dISO(new Date(t.due))===iso && t.status!=='hecha' && t.status!=='rechazada').forEach(t=>{
     const d=new Date(t.due); const hasTime=!(d.getHours()===0&&d.getMinutes()===0);
-    items.push({kind:'task', id:t.id, title:t.title||'Tarea', start:hasTime?calHHMM(t.due):'', end:'', allDay:!hasTime, color:'#d59b4a'});
+    items.push({kind:'task', id:t.id, title:t.title||'Tarea', start:hasTime?calHHMM(t.due):'', end:'', allDay:!hasTime, color:'#d59b4a', draggable:calCanMoveTask(t)});
   });
   return items.sort((a,b)=> (a.allDay?0:1)-(b.allDay?0:1) || calMin(a.start)-calMin(b.start));
 }
@@ -4126,8 +4150,9 @@ function viewCalendario(){
   if(calView==='dia') title=d.getDate()+' de '+CAL_MON[d.getMonth()]+' '+d.getFullYear();
   else if(calView==='semana'){ const ws=calParse(calWeekStart(calCursor)), we=calParse(calAddDays(calWeekStart(calCursor),6)); title=ws.getDate()+(ws.getMonth()!==we.getMonth()?' '+CAL_MON[ws.getMonth()].slice(0,3):'')+' – '+we.getDate()+' '+CAL_MON[we.getMonth()].slice(0,3)+' '+we.getFullYear(); }
   else if(calView==='anio') title=''+d.getFullYear();
+  else if(calView==='agenda') title='Agenda · desde '+d.getDate()+' '+CAL_MON[d.getMonth()].slice(0,3);
   else title=cap1(CAL_MON[d.getMonth()])+' '+d.getFullYear();
-  const views=[['dia','Día'],['semana','Semana'],['mes','Mes'],['anio','Año']];
+  const views=[['dia','Día'],['semana','Semana'],['mes','Mes'],['anio','Año'],['agenda','Agenda']];
   const guide=sectionGuide('calendario','Tu calendario',`Agendá tus cosas y vé tus <b>turnos</b> y <b>tareas</b> en un solo lugar. Tocá un día (o <b>Crear</b>) para agregar algo.`);
   let html=`<div class="page-head"><div><div class="page-title">Calendario</div><div class="page-sub">Tu agenda personal</div></div>
     <div class="ph-spacer"></div><button class="btn btn-primary" style="flex:0 0 auto" onclick="calCreate('${calCursor}')">${svgIcon('plus','icon icon-sm')} Crear</button></div>`;
@@ -4147,7 +4172,7 @@ function viewCalendario(){
     <div class="cal-od-h">${svgIcon('clock','icon icon-sm')} ${odTasks.length} ${odTasks.length===1?'pendiente atrasado':'pendientes atrasados'} — pasalos de día</div>
     ${odTasks.slice(0,6).map(t=>`<div class="cal-od-row"><span class="cal-od-t" onclick="calTaskModal('${t.id}')">${esc(t.title||'Tarea')}</span><span class="cal-od-d">venció ${esc(fmtDate(t.due))}</span><div class="cal-od-act"><button class="cal-od-b" onclick="calTaskMove('${t.id}','hoy')">Hoy</button><button class="cal-od-b" onclick="calTaskMove('${t.id}','manana')">Mañana</button></div></div>`).join('')}
     ${odTasks.length>6?`<div class="cal-od-more">y ${odTasks.length-6} más…</div>`:''}</div>`;
-  html+= calView==='mes'?calMonthView():calView==='semana'?calWeekView():calView==='dia'?calDayView():calYearView();
+  html+= calView==='mes'?calMonthView():calView==='semana'?calWeekView():calView==='dia'?calDayView():calView==='agenda'?calAgendaView():calYearView();
   return html;
 }
 function calGo(dir){
@@ -4155,11 +4180,15 @@ function calGo(dir){
   const n=dir==='next'?1:-1;
   if(calView==='dia') calCursor=calAddDays(calCursor,n);
   else if(calView==='semana') calCursor=calAddDays(calCursor,7*n);
+  else if(calView==='agenda') calCursor=calAddDays(calCursor,7*n);
   else if(calView==='anio') calCursor=calAddMonths(calCursor,12*n);
   else calCursor=calAddMonths(calCursor,n);
   render();
 }
-function calChip(it){ return `<button class="cal-chip" style="--c:${it.color}" onclick="event.stopPropagation();calItemClick('${it.kind}','${it.id}')">${it.allDay?'':`<b>${esc(fmt12(it.start))}</b> `}${esc(it.title)}</button>`; }
+function calChip(it, iso){
+  const h = it.draggable ? `onpointerdown="calDragStart(event,'${it.kind}','${it.id}','${iso||''}')" onclick="event.stopPropagation()"` : `onclick="event.stopPropagation();calItemClick('${it.kind}','${it.id}')"`;
+  return `<button class="cal-chip${it.draggable?' cdraggable':''}" style="--c:${it.color}" ${h}>${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}${it.allDay?'':`<b>${esc(fmt12(it.start))}</b> `}${esc(it.title)}</button>`;
+}
 function calMonthView(){
   const first=calParse(calCursor); first.setDate(1);
   const gridStart=calWeekStart(dISO(first)); const today=calToday(); const curMonth=first.getMonth();
@@ -4167,9 +4196,9 @@ function calMonthView(){
   for(let i=0;i<42;i++){
     const iso=calAddDays(gridStart,i); const d=calParse(iso); const items=calDayItems(iso);
     const shown=items.slice(0,3), more=items.length-shown.length;
-    cells+=`<div class="cal-cell${d.getMonth()!==curMonth?' other':''}${iso===today?' today':''}" onclick="calCreate('${iso}')">
+    cells+=`<div class="cal-cell${d.getMonth()!==curMonth?' other':''}${iso===today?' today':''}" data-iso="${iso}" onclick="calCreate('${iso}')">
       <div class="cal-cnum">${d.getDate()}</div>
-      <div class="cal-cev">${shown.map(calChip).join('')}${more>0?`<div class="cal-more">+${more} más</div>`:''}</div>
+      <div class="cal-cev">${shown.map(it=>calChip(it,iso)).join('')}${more>0?`<div class="cal-more">+${more} más</div>`:''}</div>
     </div>`;
   }
   return `<div class="cal-month"><div class="cal-dow">${CAL_DOW.map(x=>`<span>${x}</span>`).join('')}</div><div class="cal-grid">${cells}</div></div>`;
@@ -4178,15 +4207,16 @@ function calTimeGrid(days){
   const startH=6,endH=23,rowH=46; const hours=[]; for(let h=startH;h<=endH;h++) hours.push(h);
   const today=calToday(); const cols='58px repeat('+days.length+',minmax(0,1fr))';
   const head=days.map(iso=>{const d=calParse(iso);return `<div class="cal-tg-dh${iso===today?' today':''}"><span>${CAL_DOW[(d.getDay()+6)%7]}</span><b>${d.getDate()}</b></div>`;}).join('');
-  const adcells=days.map(iso=>`<div class="cal-tg-ad">${calDayItems(iso).filter(it=>it.allDay).map(calChip).join('')}</div>`).join('');
+  const adcells=days.map(iso=>`<div class="cal-tg-ad">${calDayItems(iso).filter(it=>it.allDay).map(it=>calChip(it,iso)).join('')}</div>`).join('');
   const gut=`<div class="cal-tg-gut">${hours.map(h=>`<div class="cal-tg-hr" style="height:${rowH}px"><span>${fmt12(String(h).padStart(2,'0')+':00')}</span></div>`).join('')}</div>`;
   const dayCols=days.map(iso=>{
     const evs=calDayItems(iso).filter(it=>!it.allDay&&it.start).map(it=>{
       let s=calMin(it.start), e=it.end?calMin(it.end):s+45; if(e<=s)e=s+45;
       const top=(s-startH*60)/60*rowH, h=Math.max(20,(e-s)/60*rowH);
-      return `<button class="cal-ev" style="--c:${it.color};top:${top}px;height:${h}px" onclick="event.stopPropagation();calItemClick('${it.kind}','${it.id}')"><b>${esc(fmt12(it.start))}</b> ${esc(it.title)}</button>`;
+      const handler=it.draggable?`onpointerdown="calDragStart(event,'${it.kind}','${it.id}','${iso}')" onclick="event.stopPropagation()"`:`onclick="event.stopPropagation();calItemClick('${it.kind}','${it.id}')"`;
+      return `<button class="cal-ev${it.draggable?' cdraggable':''}" style="--c:${it.color};top:${top}px;height:${h}px" ${handler}>${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}<b>${esc(fmt12(it.start))}</b> ${esc(it.title)}</button>`;
     }).join('');
-    return `<div class="cal-tg-col" style="height:${hours.length*rowH}px" onclick="calCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
+    return `<div class="cal-tg-col" data-iso="${iso}" style="height:${hours.length*rowH}px" onclick="calCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
   }).join('');
   return `<div class="cal-timegrid">
     <div class="cal-tg-headrow" style="grid-template-columns:${cols}"><div></div>${head}</div>
@@ -4208,6 +4238,19 @@ function calYearView(){
   }
   return html+'</div>';
 }
+function calAgendaView(){
+  const today=calToday(); let html='<div class="cal-agenda">'; let any=false;
+  for(let i=0;i<35;i++){
+    const iso=calAddDays(calCursor,i); const items=calDayItems(iso); if(!items.length) continue; any=true;
+    const d=calParse(iso);
+    html+=`<div class="cal-ag-day${iso===today?' today':''}">
+      <div class="cal-ag-date"><b>${d.getDate()}</b><span>${CAL_DOW[(d.getDay()+6)%7]}<br>${CAL_MON[d.getMonth()].slice(0,3)}</span></div>
+      <div class="cal-ag-items">${items.map(it=>`<button class="cal-ag-row" style="--c:${it.color}" onclick="calItemClick('${it.kind}','${it.id}')"><span class="cal-ag-time">${it.allDay?'Todo el día':fmt12(it.start)+(it.end?' – '+fmt12(it.end):'')}</span><span class="cal-ag-t">${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}${esc(it.title)}</span></button>`).join('')}</div>
+    </div>`;
+  }
+  if(!any) html+=emptyState('','Nada agendado','No hay eventos, turnos ni tareas en los próximos días. Tocá "Crear" para agregar algo.');
+  return html+'</div>';
+}
 function calCreate(iso, time){ _calEdit=null; calForm({date:iso||calToday(), start:time||'', end:time?calMinToHHMM(calMin(time)+60):'', allDay:!time, title:'', color:CAL_COLORS[0], note:''}); }
 function calMinToHHMM(m){ m=Math.max(0,Math.min(1439,m)); return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0'); }
 function calCreateAt(iso,ev,rowH,startH){
@@ -4216,7 +4259,17 @@ function calCreateAt(iso,ev,rowH,startH){
   const mins=startH*60+Math.max(0,Math.round(y/rowH*60/30)*30);
   calCreate(iso, calMinToHHMM(mins));
 }
-function calEditEvent(id){ const e=(DB.calEvents||[]).find(x=>x.id===id); if(!e) return; _calEdit=id; calForm(e); }
+function calEditEvent(id){ const e=(DB.calEvents||[]).find(x=>x.id===id); if(!e) return; if(!calEventCanEdit(e)) return calEventView(e); _calEdit=id; calForm(e); }
+function calEventView(e){
+  const by=userById(calEvBy(e));
+  openModal(`<div class="modal-head"><h3>${svgIcon('calendar','icon')} Evento</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div style="font-weight:700;font-size:16px;margin-bottom:5px">${esc(e.title||'')}</div>
+      <div class="page-sub" style="margin:0 0 8px">${esc(fmtDate(calParse(e.date).getTime()))}${e.allDay?' · Todo el día':' · '+fmt12(e.start)+(e.end?' – '+fmt12(e.end):'')}${(e.repeat&&e.repeat!=='no')?' · se repite':''}</div>
+      ${e.note?`<div style="font-size:14px;white-space:pre-wrap;color:var(--text-soft)">${esc(e.note)}</div>`:''}
+      <div class="page-sub" style="margin-top:12px">Lo agendó: <b>${by?esc(by.name):'—'}</b></div>
+    </div>`);
+}
 function calItemClick(kind,id){
   if(kind==='event') return calEditEvent(id);
   if(kind==='task') return calTaskModal(id);
@@ -4257,6 +4310,10 @@ window.calTaskMove=calTaskMove; window.calTaskModal=calTaskModal; window.calTask
 function calForm(e){
   _calColor=e.color||CAL_COLORS[0];
   const colors=CAL_COLORS.map(c=>`<button type="button" class="cal-colsw ${_calColor===c?'on':''}" style="background:${c}" data-c="${c}" onclick="calPickColor('${c}')"></button>`).join('');
+  const reps=[['no','No se repite'],['diario','Cada día'],['semanal','Cada semana'],['quincenal','Cada 2 semanas'],['mensual','Cada mes']];
+  const rems=[['no','Sin aviso'],['at','A la hora'],['10','10 min antes'],['30','30 min antes'],['60','1 hora antes'],['1440','1 día antes']];
+  const aud=e.audience||'me'; const canAll=canShiftManage();
+  const auds=[['me','Solo yo'],['sel','Personas específicas']].concat(canAll?[['all','Todo el equipo']]:[]);
   openModal(`<div class="modal-head"><h3>${svgIcon('calendar','icon')} ${_calEdit?'Editar':'Nuevo'} evento</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
       <div class="field"><label>Título</label><input class="input" id="ceTitle" value="${esc(e.title||'')}" placeholder="Ej: Reunión con proveedor" autocomplete="off"></div>
@@ -4268,6 +4325,13 @@ function calForm(e){
         <div class="field"><label>Desde</label><input class="input" type="time" id="ceStart" value="${esc(e.start||'09:00')}"></div>
         <div class="field"><label>Hasta</label><input class="input" type="time" id="ceEnd" value="${esc(e.end||'10:00')}"></div>
       </div>
+      <div class="row2">
+        <div class="field"><label>Repetir</label><select class="select" id="ceRepeat" onchange="document.getElementById('ceUntilW').style.display=this.value==='no'?'none':''">${reps.map(([v,l])=>`<option value="${v}" ${(e.repeat||'no')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+        <div class="field"><label>${svgIcon('clock','icon icon-sm')} Recordatorio</label><select class="select" id="ceRemind">${rems.map(([v,l])=>`<option value="${v}" ${(e.remind||'no')===v?'selected':''}>${l}</option>`).join('')}</select></div>
+      </div>
+      <div class="field" id="ceUntilW" style="${(e.repeat&&e.repeat!=='no')?'':'display:none'}"><label>Repetir hasta (opcional)</label><input class="input" type="date" id="ceUntil" value="${esc(e.repeatUntil||'')}"></div>
+      <div class="field"><label>¿Para quién?</label><select class="select" id="ceAud" onchange="document.getElementById('ceMembersW').style.display=this.value==='sel'?'':'none'">${auds.map(([v,l])=>`<option value="${v}" ${aud===v?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="field" id="ceMembersW" style="${aud==='sel'?'':'display:none'}"><label>Elegí las personas</label>${peoplePicker('ceMembers', scopedPeople(false), e.members||[])}</div>
       <div class="field"><label>Color</label><div class="cal-colors">${colors}</div></div>
       <div class="field"><label>Nota (opcional)</label><textarea class="textarea" id="ceNote" placeholder="Detalle…">${esc(e.note||'')}</textarea></div>
     </div>
@@ -4280,10 +4344,17 @@ function calSaveEvent(){
   const allDay=$('#ceAllday').checked;
   let start=allDay?'':$('#ceStart').value, end=allDay?'':$('#ceEnd').value;
   if(!allDay && start && end && calMin(end)<=calMin(start)) end=calMinToHHMM(calMin(start)+60);
+  const repeat=$('#ceRepeat')?$('#ceRepeat').value:'no';
+  const repeatUntil=(repeat!=='no'&&$('#ceUntil'))?$('#ceUntil').value:'';
+  const remind=$('#ceRemind')?$('#ceRemind').value:'no';
+  let audience=$('#ceAud')?$('#ceAud').value:'me', members=[];
+  if(audience==='sel'){ members=pickedIds('ceMembers'); if(!members.length){ toast('Elegí al menos una persona (o cambiá "¿Para quién?")','err'); return; } }
   const note=$('#ceNote').value.trim(), color=_calColor||CAL_COLORS[0];
+  const sucursalId = me()?me().sucursalId:'all';
   DB.calEvents=DB.calEvents||[];
-  if(_calEdit){ const ev=DB.calEvents.find(x=>x.id===_calEdit); if(ev) Object.assign(ev,{title,date,allDay,start,end,note,color,updatedAt:now()}); }
-  else DB.calEvents.push({id:uid(),userId:SES.userId,title,date,allDay,start,end,note,color,at:now(),updatedAt:now()});
+  if(_calEdit){ const ev=DB.calEvents.find(x=>x.id===_calEdit); if(ev) Object.assign(ev,{title,date,allDay,start,end,repeat,repeatUntil,remind,audience,members,sucursalId,note,color,updatedAt:now()}); }
+  else DB.calEvents.push({id:uid(),byId:SES.userId,title,date,allDay,start,end,repeat,repeatUntil,remind,audience,members,sucursalId,note,color,at:now(),updatedAt:now()});
+  if(audience&&audience!=='me'){ const targets = audience==='all'? scopedPeople(true).map(u=>u.id) : members.filter(id=>id!==SES.userId); if(targets.length) notify(targets, `${me().name.split(' ')[0]} te agendó: ${title}`, 'calendar', {view:'calendario'}); }
   audit('calendario',`${_calEdit?'editó':'agregó'} un evento: ${title}`);
   closeModal(); toast('Guardado ✓','ok'); render();
 }
@@ -4293,8 +4364,71 @@ function calDelEvent(){
   closeModal(); audit('calendario','eliminó un evento'); save(); render();
   if(ev) undoDelete('calEvents', ev, 'Evento');
 }
+/* arrastrar para mover (mes: cambia día · día/semana: cambia día y hora) */
+let _calDrag=null;
+function calDragStart(ev, kind, id, fromIso){
+  ev.preventDefault(); ev.stopPropagation();
+  _calDrag={kind,id,fromIso,moved:false,sx:ev.clientX,sy:ev.clientY};
+  document.addEventListener('pointermove',calDragMove); document.addEventListener('pointerup',calDragEnd);
+}
+function calDragMove(e){
+  if(!_calDrag) return;
+  if(!_calDrag.moved){ if(Math.abs(e.clientX-_calDrag.sx)+Math.abs(e.clientY-_calDrag.sy)<6) return; _calDrag.moved=true; }
+  let g=document.getElementById('calGhost'); if(!g){ g=document.createElement('div'); g.id='calGhost'; g.className='cal-ghost'; g.textContent='Soltá en otro día/hora'; document.body.appendChild(g); }
+  g.style.left=(e.clientX+12)+'px'; g.style.top=(e.clientY+12)+'px';
+  document.querySelectorAll('.cal-cell.cdrop,.cal-tg-col.cdrop').forEach(x=>x.classList.remove('cdrop'));
+  const el=document.elementFromPoint(e.clientX,e.clientY), cell=el&&el.closest('.cal-cell,.cal-tg-col'); if(cell) cell.classList.add('cdrop');
+}
+function calDragEnd(e){
+  document.removeEventListener('pointermove',calDragMove); document.removeEventListener('pointerup',calDragEnd);
+  const g=document.getElementById('calGhost'); if(g) g.remove();
+  document.querySelectorAll('.cal-cell.cdrop,.cal-tg-col.cdrop').forEach(x=>x.classList.remove('cdrop'));
+  const dd=_calDrag; _calDrag=null; if(!dd) return;
+  if(!dd.moved){ calItemClick(dd.kind, dd.id); return; }   // no se movió = toque normal
+  const el=document.elementFromPoint(e.clientX,e.clientY); const cell=el&&el.closest('[data-iso]'); if(!cell) return;
+  const iso=cell.getAttribute('data-iso'); let time=null;
+  if(cell.classList.contains('cal-tg-col')){ const r=cell.getBoundingClientRect(); const mins=6*60+Math.max(0,Math.round((e.clientY-r.top)/46*60/15)*15); time=calMinToHHMM(mins); }
+  calMoveItem(dd.kind, dd.id, iso, time);
+}
+function calMoveItem(kind,id,iso,time){
+  if(kind==='event'){ const ev=(DB.calEvents||[]).find(x=>x.id===id); if(!ev||!calEventCanEdit(ev)){ toast('No podés mover este evento','err'); return; }
+    if(ev.date===iso && !time){ return; }
+    ev.date=iso; if(time && !ev.allDay){ const dur=(ev.start&&ev.end)?calMin(ev.end)-calMin(ev.start):60; ev.start=time; ev.end=calMinToHHMM(calMin(time)+Math.max(15,dur)); }
+    ev.updatedAt=now(); audit('calendario',`movió "${ev.title}"`); toast('Evento movido ✓','ok'); save(); render(); return;
+  }
+  if(kind==='task'){ const t=(DB.tasks||[]).find(x=>x.id===id); if(!t||!calCanMoveTask(t)) return;
+    const nd=calParse(iso);
+    if(time){ const a=time.split(':').map(Number); nd.setHours(a[0],a[1]||0,0,0); }
+    else { const od=new Date(t.due); if(od.getHours()||od.getMinutes()) nd.setHours(od.getHours(),od.getMinutes(),0,0); else nd.setHours(12,0,0,0); }
+    t.due=nd.getTime(); if(t.status==='atrasada') t.status='pendiente'; t.updatedAt=now();
+    audit('tarea',`movió "${t.title}"`,t.sucursalId); toast('Tarea movida ✓','ok'); save(); render(); return;
+  }
+}
+/* recordatorios de eventos -> notificación (popup + sonido), una sola vez */
+function checkCalReminders(){
+  if(!me() || !Array.isArray(DB.calEvents)) return;
+  DB._calNotif=DB._calNotif||{}; let ch=false; const t0=Date.now();
+  const days=[calToday(), calAddDays(calToday(),1)];
+  DB.calEvents.forEach(e=>{
+    if(!e || !calEventVisible(e) || !e.remind || e.remind==='no') return;
+    const off=e.remind==='at'?0:(parseInt(e.remind)||0);
+    days.forEach(iso=>{
+      if(!calEventOccurs(e,iso)) return;
+      const st=e.allDay?'09:00':(e.start||'09:00'); const a=st.split(':').map(Number);
+      const dt=calParse(iso); dt.setHours(a[0]||0,a[1]||0,0,0);
+      const remindAt=dt.getTime()-off*60000; const key=SES.userId+'|'+e.id+'|'+iso;
+      if(DB._calNotif[key]) return;
+      if(t0>=remindAt && t0 < dt.getTime()+3600000){
+        DB.notifs.unshift({id:uid(),userId:SES.userId,text:`Recordatorio: ${e.title} (${e.allDay?'hoy':fmt12(st)})`,ico:'clock',link:{view:'calendario'},at:now(),read:false});
+        DB._calNotif[key]=1; ch=true;
+      }
+    });
+  });
+  if(ch) save();
+}
 window.calGo=calGo; window.calCreate=calCreate; window.calCreateAt=calCreateAt; window.calItemClick=calItemClick;
 window.calEditEvent=calEditEvent; window.calForm=calForm; window.calPickColor=calPickColor; window.calSaveEvent=calSaveEvent; window.calDelEvent=calDelEvent;
+window.calDragStart=calDragStart;
 
 /* =====================================================================
    VISTA: REPORTES (Gerencia / Contabilidad)
