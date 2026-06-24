@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v59 · Mensajes: notas de voz';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v60 · Reservas: acceso rapido por sucursal';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4702,10 +4702,14 @@ window.generateMonthlyReport=generateMonthlyReport;
    VISTA: RESERVACIONES (clientes / agencias + tabla por día)
    ===================================================================== */
 const RESERV_EST={pendiente:{l:'Pendiente',c:'pendiente'},confirmada:{l:'Confirmada',c:'proceso'},llego:{l:'Llegó',c:'hecha'},noshow:{l:'No llegó',c:'atrasada'},cancelada:{l:'Cancelada',c:'rechazada'}};
-let resvTab='lista', resvFilter='proximas', resvEstado='todos', resvSearch='', clientSearch='';
+let resvTab='lista', resvFilter='proximas', resvEstado='todos', resvSearch='', clientSearch='', resvSuc='all';
 let rvcView='mes', rvcCursor='';
 const RVC_COLOR={pendiente:'#d59b4a',confirmada:'#5b8def',llego:'#5aa777',noshow:'#d9534f',cancelada:'#8d99ae'};
 function reservScoped(){ return (DB.reservations||[]).filter(r=>r&&inScope(r.sucursalId)); }
+// reservas ya filtradas por el acceso rápido de sucursal (Todas / Centro Comercial / Plaza)
+function reservFiltered(){ return reservScoped().filter(r=> resvSuc==='all' || r.sucursalId===resvSuc); }
+// ¿mostrar los accesos rápidos por sucursal? (cuando el usuario ve más de una)
+function reservMultiSuc(){ return (DB.sucursales||[]).length>1 && (isAdmin() || (me()&&me().sucursalId==='all')); }
 function clientById(id){ return (DB.clients||[]).find(c=>c.id===id); }
 function todayISO(){ const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); }
 function isoLocal(dt){ const d=new Date(dt); d.setMinutes(d.getMinutes()-d.getTimezoneOffset()); return d.toISOString().slice(0,10); } // fecha local (igual base que todayISO) para cualquier día
@@ -4736,22 +4740,23 @@ function viewReservas(){
   let html=`<div class="page-head"><div><div class="page-title">Reservaciones</div><div class="page-sub">Reservas, clientes y agencias</div></div>
     <div class="ph-spacer"></div>${editor?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="newReservModal()">${svgIcon('plus','icon icon-sm')} Nueva reservación</button>`:''}</div>`;
   html+=guide;
-  html+=`<div class="hor-modes"><button class="chip ${resvTab==='lista'?'on':''}" onclick="resvTab='lista';render()">Reservaciones</button><button class="chip ${resvTab==='cal'?'on':''}" onclick="resvTab='cal';render()">${svgIcon('calendar','icon icon-sm')} Calendario</button><button class="chip ${resvTab==='clientes'?'on':''}" onclick="resvTab='clientes';render()">Clientes y agencias</button></div>`;
+  const sucQuick = reservMultiSuc() ? `<span class="hm-sep"></span>`+[{id:'all',name:'Todas'},...DB.sucursales].map(s=>`<button class="chip ${resvSuc===s.id?'on':''}" onclick="resvSuc='${s.id}';render()">${s.id!=='all'?svgIcon('pin','icon icon-sm')+' ':''}${esc(s.name)}</button>`).join('') : '';
+  html+=`<div class="hor-modes"><button class="chip ${resvTab==='lista'?'on':''}" onclick="resvTab='lista';render()">Reservaciones</button><button class="chip ${resvTab==='cal'?'on':''}" onclick="resvTab='cal';render()">${svgIcon('calendar','icon icon-sm')} Calendario</button><button class="chip ${resvTab==='clientes'?'on':''}" onclick="resvTab='clientes';render()">Clientes y agencias</button>${sucQuick}</div>`;
   html+= resvTab==='clientes' ? reservClientes(editor) : resvTab==='cal' ? reservCalendar(editor) : reservLista(editor);
   return html;
 }
 function reservLista(editor){
   const today=todayISO();
-  let list=reservScoped();
+  let list=reservFiltered();
   if(resvFilter==='hoy') list=list.filter(r=>r.resDate===today);
   else if(resvFilter==='proximas') list=list.filter(r=>r.resDate>=today);
   else if(resvFilter==='pasadas') list=list.filter(r=>r.resDate<today);
   if(resvEstado!=='todos') list=list.filter(r=>r.status===resvEstado);
   if(resvSearch){ const q=resvSearch.toLowerCase(); list=list.filter(r=>(r.clientName||'').toLowerCase().includes(q)||(r.phone||'').includes(resvSearch)); }
   list.sort((a,b)=> (a.resDate+a.resTime).localeCompare(b.resDate+b.resTime));
-  const hoyN=reservScoped().filter(r=>r.resDate===today && r.status!=='cancelada').length;
-  const proxN=reservScoped().filter(r=>r.resDate>today && (r.status==='pendiente'||r.status==='confirmada')).length;
-  const persHoy=reservScoped().filter(r=>r.resDate===today && r.status!=='cancelada').reduce((s,r)=>s+(+r.people||0),0);
+  const hoyN=reservFiltered().filter(r=>r.resDate===today && r.status!=='cancelada').length;
+  const proxN=reservFiltered().filter(r=>r.resDate>today && (r.status==='pendiente'||r.status==='confirmada')).length;
+  const persHoy=reservFiltered().filter(r=>r.resDate===today && r.status!=='cancelada').reduce((s,r)=>s+(+r.people||0),0);
   let html=`<div class="kpi-row">
     <div class="kpi"><div class="label">Hoy</div><div class="value">${hoyN}</div><div class="sub">reservas de hoy</div></div>
     <div class="kpi"><div class="label">Personas hoy</div><div class="value">${persHoy}</div><div class="sub">total esperado</div></div>
@@ -4783,7 +4788,7 @@ function reservLista(editor){
 function fmtResDate(d){ if(!d) return '—'; const x=new Date(d+'T00:00'); return x.toLocaleDateString('es-CR',{weekday:'short',day:'2-digit',month:'short'}); }
 /* ---- CALENDARIO DE RESERVAS (reusa el estilo del calendario personal) ---- */
 function rvcItems(iso){
-  return reservScoped().filter(r=>r&&r.resDate===iso).sort((a,b)=>(a.resTime||'').localeCompare(b.resTime||''))
+  return reservFiltered().filter(r=>r&&r.resDate===iso).sort((a,b)=>(a.resTime||'').localeCompare(b.resTime||''))
     .map(r=>({id:r.id, name:r.clientName||'Reserva', people:+r.people||0, time:r.resTime||'', color:RVC_COLOR[r.status]||'#d59b4a'}));
 }
 function rvcChip(it){ return `<button class="cal-chip" style="--c:${it.color}" onclick="event.stopPropagation();reservDetail('${it.id}')">${it.time?`<b>${esc(fmt12(it.time))}</b> `:''}${esc(it.name)}${it.people?' ('+it.people+')':''}</button>`; }
