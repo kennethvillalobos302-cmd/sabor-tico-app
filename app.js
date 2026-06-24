@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v52 · Calendario personal (dia/semana/mes/año)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v53 · Calendario: mas colores, atrasados, 6am';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4092,7 +4092,7 @@ window.addBreakRow=addBreakRow; window.renderBreakRows=renderBreakRows;
    ===================================================================== */
 let calView='mes', calCursor='', _calEdit=null, _calColor='#b83a52';
 let calShow={eventos:true, turnos:true, tareas:true};
-const CAL_COLORS=['#b83a52','#f4b740','#5aa777','#7fa9b8','#9b6dd6','#e07a5f'];
+const CAL_COLORS=['#b83a52','#e07a5f','#f4b740','#e8b84b','#5aa777','#3fa7a0','#7fa9b8','#5b8def','#9b6dd6','#d46aa8','#a0826d','#8d99ae'];
 const CAL_DOW=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 const CAL_MON=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
 function dISO(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -4141,6 +4141,12 @@ function viewCalendario(){
     <div class="cal-views">${views.map(([k,l])=>`<button class="cal-vbtn ${calView===k?'on':''}" onclick="calView='${k}';render()">${l}</button>`).join('')}</div>
   </div>`;
   html+=`<div class="cal-filters">${[['eventos','Mis eventos','#b83a52'],['turnos','Turnos','#5aa777'],['tareas','Tareas','#d59b4a']].map(([k,l,c])=>`<button class="cal-fchip ${calShow[k]?'on':''}" onclick="calShow.${k}=!calShow.${k};render()"><span class="cal-dot" style="background:${c}"></span>${l}</button>`).join('')}</div>`;
+  // Atrasados: tareas tuyas vencidas y sin terminar -> pasarlas de día rápido
+  const odTasks=(DB.tasks||[]).filter(t=>t&&(t.toIds||[]).includes(SES.userId)&&t.due&&dISO(new Date(t.due))<calToday()&&t.status!=='hecha'&&t.status!=='rechazada').sort((a,b)=>a.due-b.due);
+  if(odTasks.length) html+=`<div class="cal-overdue">
+    <div class="cal-od-h">${svgIcon('clock','icon icon-sm')} ${odTasks.length} ${odTasks.length===1?'pendiente atrasado':'pendientes atrasados'} — pasalos de día</div>
+    ${odTasks.slice(0,6).map(t=>`<div class="cal-od-row"><span class="cal-od-t" onclick="calTaskModal('${t.id}')">${esc(t.title||'Tarea')}</span><span class="cal-od-d">venció ${esc(fmtDate(t.due))}</span><div class="cal-od-act"><button class="cal-od-b" onclick="calTaskMove('${t.id}','hoy')">Hoy</button><button class="cal-od-b" onclick="calTaskMove('${t.id}','manana')">Mañana</button></div></div>`).join('')}
+    ${odTasks.length>6?`<div class="cal-od-more">y ${odTasks.length-6} más…</div>`:''}</div>`;
   html+= calView==='mes'?calMonthView():calView==='semana'?calWeekView():calView==='dia'?calDayView():calYearView();
   return html;
 }
@@ -4213,9 +4219,41 @@ function calCreateAt(iso,ev,rowH,startH){
 function calEditEvent(id){ const e=(DB.calEvents||[]).find(x=>x.id===id); if(!e) return; _calEdit=id; calForm(e); }
 function calItemClick(kind,id){
   if(kind==='event') return calEditEvent(id);
-  if(kind==='task'){ SES.view='tareas'; render(); if(typeof taskDetail==='function') setTimeout(()=>{ try{ taskDetail(id); }catch(_){} },60); return; }
+  if(kind==='task') return calTaskModal(id);
   if(kind==='shift'){ SES.view='horarios'; render(); return; }
 }
+function calCanMoveTask(t){ return t && (t.fromId===SES.userId || isAdmin() || (t.toIds||[]).includes(SES.userId)); }
+function calSetTaskDue(t, baseDate){
+  const od=new Date(t.due); if(od.getHours()||od.getMinutes()) baseDate.setHours(od.getHours(),od.getMinutes(),0,0); else baseDate.setHours(12,0,0,0);
+  t.due=baseDate.getTime(); if(t.status==='atrasada') t.status='pendiente'; t.updatedAt=now();
+}
+function calTaskMove(taskId, when){
+  const t=(DB.tasks||[]).find(x=>x&&x.id===taskId); if(!t) return;
+  if(!calCanMoveTask(t)){ toast('No podés mover esta tarea','err'); return; }
+  const base=new Date(); base.setHours(12,0,0,0); if(when==='manana') base.setDate(base.getDate()+1);
+  calSetTaskDue(t, base);
+  audit('tarea',`reprogramó "${t.title}" a ${when==='manana'?'mañana':'hoy'}`,t.sucursalId);
+  toast('Tarea movida ✓','ok'); save(); render();
+}
+function calTaskModal(id){
+  const t=(DB.tasks||[]).find(x=>x&&x.id===id); if(!t) return;
+  const canMove=calCanMoveTask(t);
+  openModal(`<div class="modal-head"><h3>${svgIcon('check','icon')} Tarea</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div style="font-weight:700;font-size:16px;margin-bottom:3px">${esc(t.title||'Tarea')}</div>
+      <div class="page-sub" style="margin:0 0 14px">Vence: ${esc(fmtDateTime(t.due))}</div>
+      ${canMove?`<div class="field"><label>Mover a otro día</label><input class="input" type="date" id="ctMove" value="${esc(dISO(new Date(t.due)))}"></div>`:'<div class="page-sub">No tenés permiso para moverla.</div>'}
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal();SES.view='tareas';render();setTimeout(()=>{try{taskDetail('${id}')}catch(_){}}, 60)">Ver tarea</button>${canMove?`<button class="btn btn-primary" onclick="calTaskSaveMove('${id}')">Mover</button>`:''}</div>`);
+}
+function calTaskSaveMove(id){
+  const t=(DB.tasks||[]).find(x=>x&&x.id===id); if(!t||!calCanMoveTask(t)) return;
+  const v=$('#ctMove')&&$('#ctMove').value; if(!v) return;
+  calSetTaskDue(t, calParse(v));
+  audit('tarea',`movió "${t.title}" al ${v}`,t.sucursalId);
+  closeModal(); toast('Tarea movida ✓','ok'); save(); render();
+}
+window.calTaskMove=calTaskMove; window.calTaskModal=calTaskModal; window.calTaskSaveMove=calTaskSaveMove;
 function calForm(e){
   _calColor=e.color||CAL_COLORS[0];
   const colors=CAL_COLORS.map(c=>`<button type="button" class="cal-colsw ${_calColor===c?'on':''}" style="background:${c}" data-c="${c}" onclick="calPickColor('${c}')"></button>`).join('');
