@@ -850,6 +850,25 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .inv-filters::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
 .inv-filters .chip{flex:0 0 auto;padding:7px 11px;font-size:12px;display:inline-flex;align-items:center;gap:5px}
 .inv-filters .chip .icon{width:15px;height:15px}
+.chip-select{flex:0 0 auto;padding:7px 9px;font-size:12px;font-weight:650;color:var(--text);cursor:pointer;max-width:150px}
+/* tira de estadísticas */
+.inv-stats{display:flex;flex-wrap:wrap;gap:10px;margin-bottom:12px;flex:0 0 auto}
+.inv-stat{display:flex;flex-direction:column;gap:1px;background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--r-md);padding:7px 14px;min-width:108px}
+button.inv-stat{cursor:pointer;text-align:left;font-family:inherit;transition:border-color var(--t-fast),background var(--t-fast)}
+button.inv-stat:hover{border-color:var(--accent-line)}
+.inv-stat-n{font-size:17px;font-weight:800;letter-spacing:-.3px}
+.inv-stat-l{font-size:10px;color:var(--text-soft);text-transform:uppercase;letter-spacing:.4px;font-weight:700}
+.inv-stat.alert .inv-stat-n{color:var(--danger)}
+.inv-stat.on{border-color:var(--accent);background:var(--accent-soft)}
+.inv-stat.on .inv-stat-l{color:var(--accent)}
+/* barra de nivel en la tarjeta */
+.inv-tile-bar{display:block;width:100%;height:4px;border-radius:3px;background:var(--bg-soft);overflow:hidden;margin-top:3px}
+.inv-tile-bar i{display:block;height:100%;background:var(--success);border-radius:3px}
+.inv-tile-bar i.low{background:var(--danger)}
+/* aviso de bajo mínimo en el panel */
+.inv-low-banner{display:flex;align-items:center;gap:9px;background:rgba(220,80,70,.08);border:1px solid #f3c0c0;border-radius:var(--r-md);padding:9px 11px;margin-bottom:14px;font-size:12.5px}
+.inv-low-banner>.icon{color:var(--danger);flex:0 0 auto}
+.ilb-tx{flex:1;line-height:1.35}
 .inv-filters-l,.inv-filters-r{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
 .inv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(166px,1fr));gap:10px}
 .inv-tile{position:relative;display:flex;flex-direction:column;align-items:flex-start;justify-content:flex-start;text-align:left;gap:4px;min-height:80px;padding:10px 12px 10px 14px;border:1px solid var(--border-soft);border-radius:var(--r-md);background:var(--bg-card);cursor:pointer;box-shadow:var(--e1);transition:transform var(--t-fast),border-color var(--t-fast),box-shadow var(--t-fast)}

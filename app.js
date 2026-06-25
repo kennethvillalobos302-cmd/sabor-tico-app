@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v71 · Inventario: barra en una línea y ancho completo al cerrar el menú';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v72 · Inventario: resumen, orden, nivel de stock y pedir; Tareas: Todas a la derecha';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1156,8 +1156,8 @@ function viewTareas(){
   const lateN=all.filter(t=>t.status==='atrasada').length;
   const doneN=all.filter(t=>t.status==='hecha').length;
 
-  const chips = [['todas','Todas'],['mias','Para mí'],['asignadas','Yo asigné'],['pendiente','Pendientes'],['proceso','En proceso'],['atrasada','Atrasadas'],['hecha','Hechas']]
-    .map(([k,l])=>`<button class="chip ${taskFilter===k?'on':''}" onclick="setTaskFilter('${k}')">${l}</button>`).join('');
+  const chips = [['mias','Para mí'],['asignadas','Yo asigné'],['pendiente','Pendientes'],['proceso','En proceso'],['atrasada','Atrasadas'],['hecha','Hechas'],['todas','Todas']]
+    .map(([k,l],i)=>`<button class="chip ${taskFilter===k?'on':''}" ${k==='todas'?'style="margin-left:auto"':''} onclick="setTaskFilter('${k}')">${l}</button>`).join('');
 
   let html = `<div class="page-head"><div><div class="page-title">Tareas</div><div class="page-sub">Asigná, seguí y controlá el trabajo</div></div>
     <div class="ph-spacer"></div><button class="btn btn-primary" style="flex:0 0 auto" onclick="newTaskModal()">${svgIcon('plus','icon icon-sm')} Nueva tarea</button></div>`;
@@ -3008,7 +3008,7 @@ function rolePanel(){
 /* =====================================================================
    VISTA: INVENTARIO  (Proveeduría edita · otros consultan)
    ===================================================================== */
-let invCat='todas', invLowOnly=false, invSearch='', invArea='todas', invBodega='todas', invSel=null, ipImgData=null;
+let invCat='todas', invLowOnly=false, invSearch='', invArea='todas', invBodega='todas', invSel=null, ipImgData=null, invSort='manual';
 let invSelMode=false; const invPicks=new Set();   // modo "Organizar": mover varios productos de familia a la vez
 let invMode='edit', invDragId=null;                // 'edit' (gerencia/admin) | 'count' (conteo diario, colaboradores)
 /* Bodegas (lugares de almacenamiento, ej. Congelador 1) */
@@ -3017,6 +3017,9 @@ function bodegaName(id){ if(!id) return 'Sin bodega'; const b=(DB.bodegas||[]).f
 /* Color para la familia (puntito del menú izquierdo y borde de la tarjeta) */
 const FAM_COLORS=['#22c55e','#f59e0b','#ea580c','#0ea5b7','#16a34a','#8b5cf6','#e11d48','#475569','#d97706','#0891b2','#db2777','#64748b'];
 function famColor(name){ let h=0; const s=String(name||''); for(let i=0;i<s.length;i++) h=(h*31+s.charCodeAt(i))>>>0; return FAM_COLORS[h%FAM_COLORS.length]; }
+const INV_SORT_LABEL={manual:'Orden manual',nombre:'Nombre A-Z',stockDesc:'Más cantidad',stockAsc:'Menos cantidad',valor:'Mayor valor',bajo:'Bajo mínimo primero'};
+function setInvSort(v){ invSort=v; render(); }
+window.setInvSort=setInvSort;
 /* Adivinar la familia (categoría) por el nombre del producto — para autocompletar al cargar factura */
 const FAMILY_KEYWORDS=[
   ['Verduras','tomate,cebolla,lechuga,papa,zanahoria,chile,culantro,ajo,limon,limón,aguacate,brocoli,brócoli,vegetal,verdura,banano,fruta,platano,plátano,repollo,pepino,apio,espinaca,yuca,camote'],
@@ -3057,11 +3060,20 @@ function viewInventario(){
   if(invLowOnly) list=list.filter(lowStock);
   if(searching) list=list.filter(p=>p.name.toLowerCase().includes(invSearch.toLowerCase()));
   const ordOf = p => (p.ord==null?1e9:p.ord);
-  list.sort((a,b)=>(ordOf(a)-ordOf(b))||a.name.localeCompare(b.name));   // orden manual (arrastrar) y luego alfabético
+  const SORTERS={
+    manual:(a,b)=>(ordOf(a)-ordOf(b))||a.name.localeCompare(b.name),
+    nombre:(a,b)=>a.name.localeCompare(b.name),
+    stockAsc:(a,b)=>((+a.stock||0)-(+b.stock||0))||a.name.localeCompare(b.name),
+    stockDesc:(a,b)=>((+b.stock||0)-(+a.stock||0))||a.name.localeCompare(b.name),
+    valor:(a,b)=>((b.stock*b.cost)-(a.stock*a.cost))||a.name.localeCompare(b.name),
+    bajo:(a,b)=>(lowStock(b)-lowStock(a))||((+a.stock||0)-(+b.stock||0))
+  };
+  list.sort(SORTERS[invSort]||SORTERS.manual);
   window._invList = list.map(p=>p.id);                  // para "Seleccionar todo" del modo organizar
   if(invSelMode) invSel=null;                           // en modo organizar no se edita
   const mode = editor ? invMode : 'count';              // colaboradores: siempre conteo diario
   const low=scoped.filter(lowStock).length;
+  const totVal=scoped.reduce((s,p)=>s+(+p.stock||0)*(+p.cost||0),0);
   const sinFam = scoped.filter(p=>!p.category || !famList.includes(p.category)).length;
   const sel = invSel==='__new__' ? '__new__' : (invSel?DB.inventory.find(x=>x.id===invSel):null);
 
@@ -3114,6 +3126,9 @@ function viewInventario(){
       <div class="inv-search-wrap ${invSearch?'has-val':''}">${svgIcon('search','icon icon-sm')}<input class="input" placeholder="Buscar producto…" value="${esc(invSearch)}" oninput="invSearch=this.value;clearTimeout(window._is);window._is=setTimeout(render,250)">${invSearch?`<button class="inv-search-x" title="Limpiar" onclick="invSearch='';render()">${svgIcon('x','icon icon-sm')}</button>`:''}</div>
     </div>
     <div class="inv-filters">
+      <select class="chip chip-select" title="Ordenar productos" onchange="setInvSort(this.value)">
+        ${Object.entries(INV_SORT_LABEL).map(([k,l])=>`<option value="${k}" ${invSort===k?'selected':''}>${l}</option>`).join('')}
+      </select>
       <button class="chip ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()">${svgIcon('info','icon icon-sm')} Bajo mínimo${low?' ('+low+')':''}</button>
       <button class="chip" onclick="inventoryReportModal()">${svgIcon('chart','icon icon-sm')} Reporte</button>
       <button class="chip" onclick="dailyCountsModal()">${svgIcon('check','icon icon-sm')} Conteos de hoy</button>
@@ -3122,6 +3137,12 @@ function viewInventario(){
         <button class="chip" onclick="bodegaManagerModal()">${svgIcon('box','icon icon-sm')} Bodegas</button>
         <button class="chip" onclick="invoicesModal()">${svgIcon('clipboard','icon icon-sm')} Facturas</button>
         <button class="chip accent" onclick="invoiceModal()">${svgIcon('truck','icon icon-sm')} Registrar factura</button>`:''}
+    </div>
+    <div class="inv-stats">
+      <div class="inv-stat"><span class="inv-stat-n">${scoped.length}</span><span class="inv-stat-l">productos</span></div>
+      <div class="inv-stat"><span class="inv-stat-n">${money(totVal)}</span><span class="inv-stat-l">valor en bodega</span></div>
+      <button class="inv-stat ${low?'alert':''} ${invLowOnly?'on':''}" onclick="invLowOnly=!invLowOnly;render()" title="Ver solo los bajo mínimo"><span class="inv-stat-n">${low}</span><span class="inv-stat-l">bajo mínimo</span></button>
+      <div class="inv-stat"><span class="inv-stat-n">${famList.length}</span><span class="inv-stat-l">familias</span></div>
     </div>
     ${editor&&invSelMode?`<div class="inv-bulk">
       <span class="inv-bulk-n">${invPicks.size} seleccionado(s)</span>
@@ -3153,8 +3174,9 @@ function invTile(p){
   const lw=lowStock(p); const col=p.color||famColor(p.category);
   const picked=invPicks.has(p.id);
   const editAll=canInvEdit();
-  const dragOn = editAll && invMode==='edit' && !invSelMode && !invSearch;
+  const dragOn = editAll && invMode==='edit' && invSort==='manual' && !invSelMode && !invSearch;
   const click = invSelMode?`invTogglePick('${p.id}')`:`invSelect('${p.id}')`;
+  const pct = p.minStock>0 ? Math.max(5,Math.min(100,Math.round((+p.stock||0)/(p.minStock*2)*100))) : 100;
   return `<button class="inv-tile ${lw?'low':''} ${invSel===p.id?'sel':''} ${p.img?'has-img':''} ${invSelMode?'selmode':''} ${picked?'picked':''} ${dragOn?'drag':''}" style="--fc:${col}" onclick="${click}"${dragOn?` draggable="true" ondragstart="invDragStart(event,'${p.id}')" ondragover="invDragOver(event)" ondrop="invDropOnTile(event,'${p.id}')" ondragend="invDragEnd(event)"`:''}>
     ${invSelMode?`<span class="inv-tile-check">${picked?svgIcon('check','icon icon-sm'):''}</span>`:''}
     <span class="inv-tile-top">${dragOn?`<span class="inv-tile-grip" title="Arrastrá para mover u ordenar">${svgIcon('list','icon icon-sm')}</span>`:svgIcon('edit','icon icon-sm inv-tile-eye')}${lw?`<span class="inv-tile-warn" title="Bajo el mínimo">${svgIcon('info','icon icon-sm')}</span>`:''}</span>
@@ -3162,6 +3184,7 @@ function invTile(p){
     <span class="inv-tile-name">${esc(p.name)}</span>
     <span class="inv-tile-qty ${lw?'low':''}">${p.stock}<i>${esc(p.unit)}</i></span>
     <span class="inv-tile-min">${p.minStock>0?`mín ${p.minStock}`:'&nbsp;'}${p.bodega?` · ${esc(bodegaName(p.bodega))}`:''}</span>
+    ${p.minStock>0?`<span class="inv-tile-bar"><i class="${lw?'low':''}" style="width:${pct}%"></i></span>`:''}
   </button>`;
 }
 function invPanel(p){
@@ -3177,6 +3200,7 @@ function invPanel(p){
       <button class="modal-close" onclick="invClosePanel()">${svgIcon('x','icon')}</button>
     </div>
     <div class="inv-edit-body">
+      ${!isNew?lowStockBanner(p):''}
       <div class="ip-sec">${svgIcon('box','icon icon-sm')} Información básica</div>
       <div class="field"><label>Nombre *</label><input class="input" id="ipName" value="${p?esc(p.name):''}" placeholder="Ej: Tomate" autocomplete="off"></div>
       <div class="field"><label>Descripción</label><textarea class="input" id="ipDesc" rows="2" placeholder="Breve nota visible al personal (opcional)">${p?esc(p.desc||''):''}</textarea></div>
@@ -3330,6 +3354,11 @@ function invDropOnFam(e,i){ e.preventDefault(); const id=invDragId||(e.dataTrans
   audit('inventario',`movió "${p.name}" a ${fam||'Sin familia'}`,p.sucursalId); toast(`Movido a ${fam||'Sin familia'}`,'ok'); render();
 }
 window.invDragStart=invDragStart; window.invDragOver=invDragOver; window.invDragEnd=invDragEnd; window.invDropOnTile=invDropOnTile; window.invDropOnFam=invDropOnFam;
+function lowStockBanner(p){
+  if(!p||!lowStock(p)) return '';
+  const sug=suggestReorder(p);
+  return `<div class="inv-low-banner">${svgIcon('info','icon icon-sm')}<div class="ilb-tx"><b>Bajo el mínimo</b>${sug?` · sugerido pedir <b>${sug} ${esc(p.unit)}</b>`:''}</div><button class="btn btn-ghost" style="flex:0 0 auto;padding:6px 11px" onclick="pedirProducto('${p.id}',${sug||0})">${svgIcon('box','icon icon-sm')} Pedir</button></div>`;
+}
 /* ---- Conteo diario (colaboradores): entrada, salida y ajuste por conteo físico ---- */
 function invCountPanel(p){
   const lw=lowStock(p); const canMore=canInvEditArea(p.area||'cocina');
@@ -3344,6 +3373,7 @@ function invCountPanel(p){
         <div class="cnt-now-l">en sistema${lw?` · ¡bajo el mínimo (${p.minStock})!`:` · mínimo ${p.minStock}`}</div>
         <div class="cnt-now-tags">${esc(INV_AREA_LABEL[p.area||'cocina'])}${p.category?' · '+esc(p.category):''}${p.bodega?' · '+esc(bodegaName(p.bodega)):''}</div>
       </div>
+      ${lowStockBanner(p)}
       <div class="ip-sec">${svgIcon('up','icon icon-sm')} Registrar movimiento</div>
       <div class="field"><label>Cantidad (${esc(p.unit)})</label><input class="input" id="cntQty" type="number" min="0" step="any" value="1"></div>
       <div class="cnt-btns">
