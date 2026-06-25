@@ -1600,8 +1600,8 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   .bottom-nav .bn-item{font-size:9.5px}
 }
 /* ===== Mejoras de pop-ups, campos, horas y fechas ===== */
-/* campos más grandes y cómodos */
-.input,.select,.textarea{font-size:15px;padding:12px 13px;border-radius:var(--r-md)}
+/* campos más grandes y cómodos (16px = evita el auto-zoom de iOS en TODA la app) */
+.input,.select,.textarea{font-size:16px;padding:12px 13px;border-radius:var(--r-md)}
 .field label{font-size:11.5px;margin-bottom:8px}
 .field{margin-bottom:16px}
 /* selects con flecha propia (más claros) */
@@ -1614,13 +1614,6 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
 .modal-body{padding:18px 20px}
 .modal-foot{padding:14px 20px;gap:10px}
 .modal-foot .btn{padding:13px;font-size:15px}
-/* En celular, los pop-ups suben desde abajo (estilo "hoja") = más cómodo para el pulgar */
-@media(max-width:780px){
-  .modal-bg{align-items:flex-end;padding:0}
-  .modal,.modal.wide{max-width:100%;width:100%;max-height:92vh;border-radius:20px 20px 0 0;animation:sheetUp .24s var(--ease-out) both}
-  .modal-foot{padding-bottom:calc(14px + env(safe-area-inset-bottom))}
-}
-@keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
 /* selector de hora grande y claro */
 .tp{gap:4px;padding:6px 8px;border-radius:var(--r-md)}
 .tp select{font-size:20px;padding:8px 4px;-webkit-appearance:none;appearance:none;background:none;cursor:pointer}
@@ -1635,18 +1628,38 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
 .ap{padding:8px 12px}
 @media(max-width:780px){
   /* en celular: pop-ups como hoja desde abajo (mucho más cómodo) */
-  .modal-bg{align-items:flex-end;padding:0}
-  .modal{max-width:100%;width:100%;max-height:92vh;border-radius:20px 20px 0 0;animation:sheetUp .26s var(--ease-out) both}
-  .modal-head{position:sticky;top:0}
-  .modal-foot{position:sticky;bottom:0;padding-bottom:calc(14px + env(safe-area-inset-bottom))}
+  .modal-bg{align-items:flex-end;padding:0;padding-top:env(safe-area-inset-top)}
+  .modal,.modal.wide{max-width:100%;width:100%;max-height:88dvh;border-radius:20px 20px 0 0;animation:sheetUp .26s var(--ease-out) both}
+  .modal-head{position:sticky;top:0;z-index:3}
+  .modal-foot{position:sticky;bottom:0;z-index:3;padding-bottom:calc(14px + env(safe-area-inset-bottom))}
   .modal::before{content:"";display:block;width:42px;height:4px;border-radius:3px;background:var(--border);margin:8px auto 0}
-  .input,.select,.textarea{font-size:16px}
   .tp select{font-size:18px}
   .tp-num{font-size:22px}
   .row2{grid-template-columns:1fr}
   .tp-ap{padding:11px 14px}
 }
 @keyframes sheetUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+/* ===================================================================
+   BASE RESPONSIVE GLOBAL (Parte 1)
+   Breakpoints estándar: 480 (celular) · 600 (celular grande) ·
+   768 (tablet vertical) · 900 (tablet horizontal) · 1024 (tablet grande)
+   Utilidades reutilizables que usan las demás partes.
+   =================================================================== */
+.popup-safe{max-width:calc(100vw - 20px)}
+@media(max-width:480px){
+  /* tipografía/área táctil cómoda en formularios */
+  .field .input,.field .select,.field .textarea,
+  input[type=date],input[type=time]{min-height:46px}
+  .icon-btn{width:44px;height:44px}
+  /* grids de formulario a una sola columna */
+  .row2,.row3{grid-template-columns:1fr}
+  /* compactar el alto del modal para dejar aire al teclado */
+  .modal-body{padding:16px 18px}
+  .field{margin-bottom:13px}
+  .modal-foot{flex-wrap:wrap;gap:8px}
+  /* red de seguridad: ningún menú flotante se sale de la pantalla */
+  .suc-menu,.notif-panel,.user-menu,.dd-menu{max-width:calc(100vw - 16px)}
+}
 @media(min-width:781px){ .mobile-only{display:none!important} }
 </style>
 </head>
