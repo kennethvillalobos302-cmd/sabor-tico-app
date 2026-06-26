@@ -1457,6 +1457,28 @@ button.inv-stat:hover{border-color:var(--accent-line)}
 .tbl tr.clickrow{cursor:pointer}
 .tbl tr.clickrow:hover{background:var(--bg-soft)}
 @media(max-width:780px){ .rep-person{margin-left:0;width:100%} .rep-person .select{flex:1} .donut-row{justify-content:center} }
+/* Reportes y tablas responsive (Parte 6) */
+@media(min-width:781px) and (max-width:1024px){ .kpi-row{grid-template-columns:repeat(3,1fr)} }
+@media(max-width:780px){ .chart-grid{grid-template-columns:1fr} }
+@media(max-width:640px){
+  .tbl{font-size:12px}
+  .tbl th,.tbl td{padding:8px 7px}
+  .tbl th{font-size:9.5px;letter-spacing:.4px}
+}
+@media(max-width:560px){
+  .rep-controls{gap:8px}
+  .rep-modeseg{width:100%}
+  .rep-modeseg .seg-b{flex:1;justify-content:center}
+  .rep-nav{width:100%;justify-content:center}
+  .rep-range{flex-direction:column;align-items:stretch;width:100%}
+  .rep-range .input{width:100%}
+}
+@media(max-width:480px){
+  .donut-wrap{width:120px!important;height:120px!important}
+  .donut{width:100%!important;height:100%!important}
+  .donut-c-n{font-size:18px}
+  .donut-legend{min-width:0;font-size:11.5px}
+}
 .chart-title{display:flex;align-items:center;gap:7px;font-size:11.5px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--text-soft);margin-bottom:16px}
 .chart-title .icon{color:var(--accent)}
 .chart-bars{display:flex;align-items:flex-end;gap:8px;height:140px}
