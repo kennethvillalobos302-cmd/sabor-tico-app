@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v80 · Móvil: arreglo del zoom al escribir, tablas y filtros deslizables, SW actualizado';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v81 · Móvil: encabezados alineados y barra de pizarra deslizable';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */

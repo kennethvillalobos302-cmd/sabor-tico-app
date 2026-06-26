@@ -1755,6 +1755,15 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   .btn{padding:11px 15px;font-size:14px}
   .toolbar{gap:7px}
   .chipscroll{gap:7px;margin-bottom:13px}
+  /* encabezados: título en su fila y botones de acción alineados/parejos */
+  .page-head{flex-wrap:wrap;gap:10px;align-items:flex-start}
+  .page-head>div:first-child{flex:1 1 100%}
+  .page-head .ph-spacer{display:none}
+  .page-head .btn{flex:1 1 auto;justify-content:center}
+  /* barra de la pizarra (Proyectos): una sola fila deslizable, botones compactos */
+  .board-tools{flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px;scrollbar-width:none}
+  .board-tools::-webkit-scrollbar{display:none}
+  .bt-tool,.bt-add button{padding:8px 11px;font-size:12.5px}
 }
 </style>
 </head>
