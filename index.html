@@ -313,6 +313,8 @@ select option,select optgroup{background:var(--bg-elev);color:var(--text)}
 .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap}
 .input,.select,.textarea{width:100%;padding:11px 13px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);
   color:var(--text);outline:none;transition:border-color var(--t-fast),box-shadow var(--t-fast)}
+/* TODO input/textarea a 16px mínimo: evita el auto-zoom de iOS al enfocar (incluye campos sin clase: chat, PIN, búsquedas) */
+input,textarea,select{font-size:16px}
 .input::placeholder,.textarea::placeholder{color:var(--text-dim)}
 .input:focus,.select:focus,.textarea:focus{border-color:var(--accent);box-shadow:var(--ring)}
 .textarea{resize:vertical;min-height:84px;line-height:1.55}
@@ -576,7 +578,7 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .msg-del:hover{opacity:1}
 .msg-del .icon{width:12px;height:12px}
 .chat-input{display:flex;gap:9px;padding:13px;border-top:1px solid var(--border-soft);flex-shrink:0;background:var(--bg-elev)}
-.chat-input input{flex:1;padding:12px 15px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-pill);color:var(--text);outline:none;transition:border-color var(--t-fast),box-shadow var(--t-fast)}
+.chat-input input{flex:1;min-width:0;padding:12px 15px;font-size:16px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-pill);color:var(--text);outline:none;transition:border-color var(--t-fast),box-shadow var(--t-fast)}
 .chat-input input:focus{border-color:var(--accent);box-shadow:var(--ring)}
 .chat-send{width:45px;height:45px;border-radius:50%;background:var(--grad-accent);color:#fff;font-size:18px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:transform var(--t-fast),filter var(--t-fast)}
 .chat-send:hover{filter:brightness(1.07)}
@@ -841,7 +843,7 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .inv-search-wrap{flex:1 1 140px;min-width:120px;display:flex;align-items:center;gap:8px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-md);padding:0 12px;max-width:420px;margin-left:auto;height:36px;transition:border-color var(--t-fast),box-shadow var(--t-fast)}
 .inv-search-wrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-line)}
 .inv-search-wrap .icon{color:var(--text-soft);flex:0 0 auto}
-.inv-search-wrap .input{border:none;background:none;padding:0;flex:1;height:100%;font-size:13.5px}
+.inv-search-wrap .input{border:none;background:none;padding:0;flex:1;height:100%;font-size:16px}
 .inv-search-wrap .input:focus{box-shadow:none}
 .inv-search-x{flex:0 0 auto;display:flex;align-items:center;justify-content:center;width:24px;height:24px;border:none;border-radius:50%;background:var(--bg-soft);color:var(--text-soft);cursor:pointer}
 .inv-search-x:hover{background:var(--border);color:var(--text)}
@@ -1734,6 +1736,26 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   input[type=file]::file-selector-button{padding:11px 13px}
 }
 @media(min-width:781px){ .mobile-only{display:none!important} }
+/* ===================================================================
+   PULIDO MÓVIL — tablas deslizables, chips en una sola fila y tamaños
+   =================================================================== */
+@media(max-width:780px){
+  /* tablas: las celdas no se parten (no se encima el contenido); la tabla
+     se desliza horizontal dentro de .tbl-wrap (que ya tiene overflow-x) */
+  .tbl{white-space:nowrap}
+  .role-badge{white-space:nowrap;display:inline-block}
+  .tbl td>div{min-width:0}
+}
+/* fila de filtros deslizable (en vez de amontonarse en varias líneas) */
+.chipscroll{display:flex;gap:8px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:16px;padding-bottom:3px;scrollbar-width:none}
+.chipscroll::-webkit-scrollbar{display:none}
+.chipscroll>*{flex:0 0 auto}
+@media(max-width:600px){
+  .chip{padding:7px 12px;font-size:12.5px}
+  .btn{padding:11px 15px;font-size:14px}
+  .toolbar{gap:7px}
+  .chipscroll{gap:7px;margin-bottom:13px}
+}
 </style>
 </head>
 <body class="app-loading">

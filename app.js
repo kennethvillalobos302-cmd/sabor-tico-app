@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v79 · Responsive Parte 7: Chat, Proyectos y Calendario (app responsive completa)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v80 · Móvil: arreglo del zoom al escribir, tablas y filtros deslizables, SW actualizado';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1168,7 +1168,7 @@ function viewTareas(){
     <div class="kpi ${lateN?'alert':''}" onclick="setTaskFilter('atrasada')" style="cursor:pointer"><div class="label">Atrasadas</div><div class="value">${lateN}</div><div class="sub">requieren atención</div></div>
     <div class="kpi ok" onclick="setTaskFilter('hecha')" style="cursor:pointer"><div class="label">Hechas</div><div class="value">${doneN}</div><div class="sub">completadas</div></div>
   </div>`;
-  html += `<div class="toolbar"><input class="input search" placeholder="Buscar tarea…" value="${esc(taskSearch)}" oninput="taskSearch=this.value;clearTimeout(window._ts);window._ts=setTimeout(render,250)">${chips}</div>`;
+  html += `<div class="toolbar"><input class="input search" placeholder="Buscar tarea…" value="${esc(taskSearch)}" oninput="taskSearch=this.value;clearTimeout(window._ts);window._ts=setTimeout(render,250)"></div><div class="chipscroll">${chips}</div>`;
   html += list.length ? list.map(taskRow).join('')
     : emptyState('📝','No hay tareas acá', taskSearch?'No hay tareas que coincidan con la búsqueda.':'Cuando alguien asigne una tarea, aparece en esta lista. Probá creando una.','+ Nueva tarea','newTaskModal()');
   return html;
@@ -1535,7 +1535,7 @@ function viewPedidos(){
     <div class="kpi" onclick="setPedFilter('mios')" style="cursor:pointer"><div class="label">Yo pedí</div><div class="value">${mios}</div><div class="sub">en total</div></div>
     <div class="kpi ok" onclick="setPedFilter('entregado')" style="cursor:pointer"><div class="label">Entregados</div><div class="value">${entregados}</div><div class="sub">completados</div></div>
   </div>`;
-  html+=`<div class="toolbar"><input class="input search" placeholder="Buscar pedido…" value="${esc(pedSearch)}" oninput="pedSearch=this.value;clearTimeout(window._ps);window._ps=setTimeout(render,250)">${chips}</div>`;
+  html+=`<div class="toolbar"><input class="input search" placeholder="Buscar pedido…" value="${esc(pedSearch)}" oninput="pedSearch=this.value;clearTimeout(window._ps);window._ps=setTimeout(render,250)"></div><div class="chipscroll">${chips}</div>`;
   html+= list.length? list.map(pedidoRow).join('')
     : emptyState('📦','No hay pedidos', pedSearch?'No hay pedidos que coincidan con la búsqueda.':'Cuando pidás algo a un área aparece acá con su estado.','+ Pedir algo','newPedidoModal()');
   return html;
@@ -3937,8 +3937,8 @@ function viewRecetas(){
     <div class="kpi ${lowN?'alert':''}"><div class="label">Bajo rinde</div><div class="value">${lowN}</div><div class="sub">revisar inventario</div></div>
     ${editor?`<div class="kpi ok"><div class="label">Ganancia prom.</div><div class="value" style="font-size:22px">${money(avgGan)}</div><div class="sub">por plato</div></div>`:`<div class="kpi"><div class="label">Precio prom.</div><div class="value" style="font-size:22px">${money(all.length?Math.round(all.reduce((s,r)=>s+(+r.price||0),0)/all.length):0)}</div><div class="sub">por plato</div></div>`}
   </div>`;
-  html+=`<div class="toolbar"><input class="input search" placeholder="Buscar plato…" value="${esc(recSearch)}" oninput="recSearch=this.value;clearTimeout(window._rcs);window._rcs=setTimeout(render,250)">
-    ${['todas',...cats].map(k=>`<button class="chip ${recCat===k?'on':''}" data-c="${esc(k)}" onclick="recCat=this.dataset.c;render()">${k==='todas'?'Todas':esc(k)}</button>`).join('')}</div>`;
+  html+=`<div class="toolbar"><input class="input search" placeholder="Buscar plato…" value="${esc(recSearch)}" oninput="recSearch=this.value;clearTimeout(window._rcs);window._rcs=setTimeout(render,250)"></div>
+    <div class="chipscroll">${['todas',...cats].map(k=>`<button class="chip ${recCat===k?'on':''}" data-c="${esc(k)}" onclick="recCat=this.dataset.c;render()">${k==='todas'?'Todas':esc(k)}</button>`).join('')}</div>`;
   html+= list.length? `<div class="rec-grid">`+list.map(recipeCard).join('')+`</div>`
     : emptyState('🍳','Sin recetas', recSearch||recCat!=='todas'?'No hay platos que coincidan.':'Agregá los platos de tu menú y sus ingredientes.', editor?'+ Nueva receta':'', editor?'recipeNewModal()':'');
   return html;
@@ -5330,7 +5330,7 @@ function viewReservas(){
     <div class="ph-spacer"></div>${editor?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="newReservModal()">${svgIcon('plus','icon icon-sm')} Nueva reservación</button>`:''}</div>`;
   html+=guide;
   const sucQuick = reservMultiSuc() ? `<span class="hm-sep"></span>`+[{id:'all',name:'Todas'},...DB.sucursales].map(s=>`<button class="chip ${resvSuc===s.id?'on':''}" onclick="resvSuc='${s.id}';render()">${s.id!=='all'?svgIcon('pin','icon icon-sm')+' ':''}${esc(s.name)}</button>`).join('') : '';
-  html+=`<div class="hor-modes"><button class="chip ${resvTab==='lista'?'on':''}" onclick="resvTab='lista';render()">Reservaciones</button><button class="chip ${resvTab==='cal'?'on':''}" onclick="resvTab='cal';render()">${svgIcon('calendar','icon icon-sm')} Calendario</button><button class="chip ${resvTab==='clientes'?'on':''}" onclick="resvTab='clientes';render()">Clientes y agencias</button>${sucQuick}</div>`;
+  html+=`<div class="hor-modes chipscroll"><button class="chip ${resvTab==='lista'?'on':''}" onclick="resvTab='lista';render()">Reservaciones</button><button class="chip ${resvTab==='cal'?'on':''}" onclick="resvTab='cal';render()">${svgIcon('calendar','icon icon-sm')} Calendario</button><button class="chip ${resvTab==='clientes'?'on':''}" onclick="resvTab='clientes';render()">Clientes y agencias</button>${sucQuick}</div>`;
   html+= resvTab==='clientes' ? reservClientes(editor) : resvTab==='cal' ? reservCalendar(editor) : reservLista(editor);
   return html;
 }
@@ -5354,8 +5354,9 @@ function reservLista(editor){
   </div>`;
   html+=`<div class="toolbar">
     <input class="input search" placeholder="Buscar cliente o teléfono…" value="${esc(resvSearch)}" oninput="resvSearch=this.value;clearTimeout(window._rs);window._rs=setTimeout(render,250)">
+  </div><div class="chipscroll">
     ${[['hoy','Hoy'],['proximas','Próximas'],['pasadas','Pasadas'],['todas','Todas']].map(([k,l])=>`<button class="chip ${resvFilter===k?'on':''}" onclick="resvFilter='${k}';render()">${l}</button>`).join('')}
-    <select class="select" style="max-width:170px" onchange="resvEstado=this.value;render()"><option value="todos" ${resvEstado==='todos'?'selected':''}>Todos los estados</option>${Object.entries(RESERV_EST).map(([k,v])=>`<option value="${k}" ${resvEstado===k?'selected':''}>${v.l}</option>`).join('')}</select>
+    <select class="select" style="max-width:180px;min-width:150px" onchange="resvEstado=this.value;render()"><option value="todos" ${resvEstado==='todos'?'selected':''}>Todos los estados</option>${Object.entries(RESERV_EST).map(([k,v])=>`<option value="${k}" ${resvEstado===k?'selected':''}>${v.l}</option>`).join('')}</select>
   </div>`;
   if(!list.length) return html+emptyState('','Sin reservaciones','Cuando registres una reserva aparece acá, ordenada por fecha y hora.', editor?'Nueva reservación':'', editor?'newReservModal()':'');
   html+=`<div class="card" style="padding:0"><div class="tbl-wrap"><table class="tbl rv-table"><thead><tr>
