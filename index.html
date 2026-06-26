@@ -1537,7 +1537,7 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
 .notif-item .ni-ico{font-size:18px}
 .notif-item .ni-t{font-weight:600;line-height:1.4}
 .notif-item .ni-time{font-size:11px;color:var(--text-soft);margin-top:3px}
-.user-menu{position:absolute;top:58px;right:18px;width:226px;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--e3);z-index:40;display:none;overflow:hidden}
+.user-menu{position:absolute;top:58px;right:18px;width:226px;max-width:calc(100vw - 20px);max-height:min(70vh,440px);overflow-y:auto;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--e3);z-index:40;display:none}
 .user-menu.on{display:block;animation:pop .18s var(--ease-out) both}
 .um-item{display:flex;align-items:center;gap:11px;padding:12px 15px;font-size:13.5px;font-weight:550;width:100%;text-align:left;transition:background var(--t-fast)}
 .um-item:hover{background:var(--bg-soft)}
@@ -1668,6 +1668,12 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   .modal-foot{flex-wrap:wrap;gap:8px}
   /* red de seguridad: ningún menú flotante se sale de la pantalla */
   .suc-menu,.notif-panel,.user-menu,.dd-menu{max-width:calc(100vw - 16px)}
+  .notif-panel{max-height:60vh}
+  /* píldora de llamada minimizada: que no quede cortada */
+  .call-dock.min{max-width:86vw}
+  /* toasts dentro de pantalla */
+  .toast{max-width:calc(100vw - 20px)}
+  .toast-notif{max-width:calc(100vw - 20px);width:auto}
 }
 @media(min-width:781px){ .mobile-only{display:none!important} }
 </style>
