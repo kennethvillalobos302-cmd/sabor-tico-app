@@ -1339,7 +1339,15 @@ button.inv-stat:hover{border-color:var(--accent-line)}
   .cal-title{font-size:16px;width:100%;order:5;margin:4px 0 0}
   .cal-views{order:6}
   .cal-year{grid-template-columns:repeat(2,1fr)}
-  .cal-tg-scroll{max-height:calc(100vh - 330px)}
+  .cal-tg-scroll{max-height:calc(100dvh - 330px)}
+}
+@media(max-width:480px){
+  /* mes más compacto para que entren los 7 días sin desbordar */
+  .cal-grid{grid-auto-rows:minmax(58px,1fr)}
+  .cal-cell{padding:3px 3px 4px}
+  .cal-cnum{font-size:11px}
+  .cal-chip{font-size:9.5px;padding:1px 5px;gap:3px;border-left-width:2px}
+  .cal-year{grid-template-columns:1fr}
 }
 /* pantalla completa */
 .proj-work:fullscreen{background:var(--bg);padding:14px;gap:14px}
@@ -1372,10 +1380,10 @@ button.inv-stat:hover{border-color:var(--accent-line)}
   .proj-work.faux-full .canvas-wrap{display:block;height:calc(100vh - 20px)}
   .proj-work.faux-full .proj-side{display:none}
 }
-@media(max-width:880px) and (min-width:781px){
+@media(max-width:1024px) and (min-width:781px){
   .proj-work{flex-direction:column}
-  .proj-work .canvas-wrap{height:60vh;min-height:0}
-  .proj-side{width:100%;height:340px;min-height:0}
+  .proj-work .canvas-wrap{height:48vh;min-height:300px}
+  .proj-side{width:100%;height:42vh;min-height:300px}
 }
 /* media en chat */
 .msg img,.msg video{max-width:240px;max-height:280px;border-radius:10px;margin-top:5px;display:block;cursor:pointer}
