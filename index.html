@@ -449,8 +449,8 @@ select option,select optgroup{background:var(--bg-elev);color:var(--text)}
 .pp-group:first-child{padding-top:2px}
 /* encabezado de departamento en tablas (Personal / Equipo) */
 .tbl .grp-row td{background:var(--bg-elev);font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);padding:9px 11px;border-bottom:1px solid var(--border)}
-@media(max-width:560px){ .ppick-grid{grid-template-columns:1fr 1fr} }
-@media(max-width:420px){ .ppick-grid{grid-template-columns:1fr} }
+@media(max-width:600px){ .ppick-grid{grid-template-columns:1fr 1fr} }
+@media(max-width:380px){ .ppick-grid{grid-template-columns:1fr} }
 /* reportes: selector de mes */
 .rep-month{display:inline-flex;align-items:center;gap:4px;background:var(--bg-soft);border:1px solid var(--border);border-radius:var(--r-md);padding:4px 6px;flex:0 0 auto}
 .rep-month b{font-size:13.5px;font-weight:700;min-width:150px;text-align:center;text-transform:capitalize}
@@ -1674,6 +1674,11 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   /* toasts dentro de pantalla */
   .toast{max-width:calc(100vw - 20px)}
   .toast-notif{max-width:calc(100vw - 20px);width:auto}
+  /* formularios: grids de factura a una columna y subir-archivo táctil */
+  .fac-new{grid-template-columns:1fr}
+  .fac-line-nums{grid-template-columns:1fr 1fr}
+  input[type=file]{font-size:14px}
+  input[type=file]::file-selector-button{padding:11px 13px}
 }
 @media(min-width:781px){ .mobile-only{display:none!important} }
 </style>
