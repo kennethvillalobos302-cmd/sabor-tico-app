@@ -38,6 +38,12 @@ deja de entrar. Por eso, seguí este orden exacto:
            ".read": "auth != null",
            ".write": "auth != null"
          }
+       },
+       "push": {
+         "$uid": {
+           ".read": "auth != null",
+           ".write": "auth != null"
+         }
        }
      }
    }

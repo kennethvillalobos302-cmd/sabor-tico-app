@@ -35,10 +35,19 @@ Tiempo aprox: 10 minutos, una sola vez.
         ".read": "auth != null",
         ".write": "auth != null"
       }
+    },
+    "push": {
+      "$uid": {
+        ".read": "auth != null",
+        ".write": "auth != null"
+      }
     }
   }
 }
 ```
+> La rama **push** guarda las **suscripciones de notificaciones** de cada persona (un registro por
+> dispositivo) para poder enviarles avisos al celular cuando les llega una tarea o un mensaje. Ver
+> **CONECTAR-NOTIFICACIONES.md**. Sin esta rama, las notificaciones push no funcionan.
 > La rama **signals** guarda la **presencia de las reuniones** de proyecto (quién está en la reunión,
 > para mostrar "Unirse · N"). Las reuniones usan Jitsi (meet.jit.si) para el video; sin esta rama la
 > reunión igual funciona, solo no se ve el conteo de participantes desde afuera.

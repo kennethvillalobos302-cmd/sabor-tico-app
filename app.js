@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v81 · Móvil: encabezados alineados y barra de pizarra deslizable';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v82 · Notificaciones push al celular (tareas y mensajes, aunque esté cerrada)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -663,6 +663,7 @@ function notify(userIds, text, ico, link){
     if(uId===SES.userId) return; // no me notifico a mí mismo
     DB.notifs.unshift({id:uid(),userId:uId,text,ico:ico||'🔔',link:link||null,at:now(),read:false});
   });
+  try{ sendPush(arr, text, link); }catch(_){}   // aviso push al celular (aunque la app esté cerrada)
 }
 const myNotifs = () => (DB.notifs||[]).filter(n=>n&&n.userId===SES.userId);
 const unreadCount = () => myNotifs().filter(n=>!n.read).length;
@@ -1020,6 +1021,7 @@ function render(){
   try{ checkNotifPops(); }catch(_){}   // avisar (popup+sonido) lo nuevo, p.ej. recordatorios de turno/calendario
   const ct=$('#cloudTag'); if(ct) ct.classList.toggle('hidden',!cloudOn);
   try{ const ap=$('#app'); if(ap) ap.classList.toggle('nav-collapsed', localStorage.getItem('stNavCollapsed')==='1'); }catch(_){}
+  try{ pushRefreshOnce(); }catch(_){}   // re-asociar push al usuario actual + deep-link de notificación
   // topbar
   const tbAv=$('#tbAv'); if(tbAv){ tbAv.style.background=roleInfo(me().role).color; tbAv.textContent=initials(me().name); }
   if($('#tbName')) $('#tbName').textContent = me().name;
@@ -6039,6 +6041,7 @@ $('#notifBtn').addEventListener('click',e=>{
   const p=$('#notifPanel');
   const list=myNotifs().slice(0,30);
   p.innerHTML=de(`<div class="notif-head">Notificaciones <div class="ph-spacer" style="flex:1"></div>${list.length?`<button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="markAllRead()">Marcar leídas</button>`:''}</div>`+
+    ((pushSupported()&&!pushIsOn())?`<button class="notif-cta" onclick="pushToggle()">${svgIcon('bell','icon icon-sm')} Activar avisos en este celular</button>`:'')+
     (list.length? list.map(n=>{const iv=({tareas:'check',pedidos:'box',inventario:'chart',horarios:'calendar',chat:'message',proyectos:'clipboard',reportes:'trend'})[(n.link&&n.link.view)]||'bell';
       return `<div class="notif-item ${n.read?'':'unread'}" onclick="openNotif('${n.id}')"><span class="ni-ico">${svgIcon(iv)}</span><div><div class="ni-t">${esc(n.text)}</div><div class="ni-time">${timeAgo(n.at)}</div></div></div>`;}).join('')
       : `<div class="empty" style="padding:30px"><div class="em-ico">${svgIcon('bell','icon icon-lg')}</div><div class="em-d">Sin notificaciones</div></div>`));
@@ -6062,6 +6065,7 @@ $('#userBtn').addEventListener('click',e=>{
   const m=$('#userMenu');
   m.innerHTML=`
     <div class="um-item" style="border-bottom:1px solid var(--border)">${avatarHTML(me())}<div><div style="font-weight:700">${esc(me().name)}</div><div style="font-size:11px;color:var(--text-soft)">${roleInfo(me().role).label}</div></div></div>
+    ${pushSupported()?`<button class="um-item" onclick="pushToggle()">${svgIcon('bell')} ${pushIsOn()?'Notificaciones del celular ✓':'Activar notificaciones'}</button>`:''}
     <button class="um-item" onclick="toggleTheme()">${svgIcon('theme')} Cambiar tema</button>
     <button class="um-item" onclick="exportData()">${svgIcon('save')} Respaldar datos</button>
     <button class="um-item" onclick="document.getElementById('importFile').click()">${svgIcon('down')} Restaurar respaldo</button>
@@ -6415,6 +6419,67 @@ impInput.addEventListener('change',async e=>{
   if(ses && userById(ses)){ SES.userId=ses; notifBaseline(); $('#loginScreen').style.display='none'; $('#app').classList.add('on'); render(); maybeForcePinChange(); }
   requestAnimationFrame(()=>requestAnimationFrame(()=>document.body.classList.remove('app-loading')));
 })();
+
+/* =====================================================================
+   NOTIFICACIONES PUSH (Web Push / VAPID) — avisos al celular aunque la app
+   esté cerrada (tareas, mensajes). La llave privada vive en Vercel (api/push.js).
+   iOS: requiere "Agregar a pantalla de inicio" (iOS 16.4+) y dar permiso.
+   ===================================================================== */
+const PUSH_DEV_KEY='st_push_dev', PUSH_ON_KEY='st_push_on';
+let _pushKey=null, _pushRefreshed=false, _pushGoView='';
+function pushSupported(){ return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window) && location.protocol.indexOf('http')===0; }
+function pushIsOn(){ try{ return pushSupported() && Notification.permission==='granted' && localStorage.getItem(PUSH_ON_KEY)==='1'; }catch(_){ return false; } }
+function pushDeviceId(){ let id=''; try{ id=localStorage.getItem(PUSH_DEV_KEY)||''; }catch(_){}; if(!id){ id=uid(); try{ localStorage.setItem(PUSH_DEV_KEY,id); }catch(_){} } return id; }
+function urlB64ToUint8(b64){ const pad='='.repeat((4-b64.length%4)%4); const s=(b64+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(s); const out=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) out[i]=raw.charCodeAt(i); return out; }
+async function pushGetKey(){ if(_pushKey) return _pushKey; try{ const r=await fetch('/api/push?action=key'); const j=await r.json(); if(j&&j.key){ _pushKey=j.key; return j.key; } }catch(_){} return ''; }
+async function pushStore(sub){
+  if(!cloudOn||!fbdb||!me()) return;
+  try{ await fbdb.ref('push/'+me().id+'/'+pushDeviceId()).set({ sub: sub.toJSON(), at: now(), name:(me().name||''), ua:(navigator.userAgent||'').slice(0,120) }); }catch(_){}
+}
+async function pushEnable(){
+  if(!pushSupported()){ toast('Este navegador no permite notificaciones. En iPhone: agregá la app a la pantalla de inicio.','err'); return false; }
+  let perm=Notification.permission;
+  if(perm!=='granted'){ try{ perm=await Notification.requestPermission(); }catch(_){} }
+  if(perm!=='granted'){ toast('Permiso de notificaciones denegado','err'); return false; }
+  const key=await pushGetKey();
+  if(!key){ toast('Las notificaciones aún no están configuradas en el servidor','err'); return false; }
+  try{
+    const reg=await navigator.serviceWorker.ready;
+    let sub=await reg.pushManager.getSubscription();
+    if(!sub) sub=await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:urlB64ToUint8(key) });
+    await pushStore(sub);
+    try{ localStorage.setItem(PUSH_ON_KEY,'1'); }catch(_){}
+    toast('Notificaciones activadas en este equipo ✓','ok');
+    return true;
+  }catch(e){ console.warn('push subscribe', e); toast('No se pudo activar. En iPhone agregá la app a la pantalla de inicio y volvé a intentar.','err'); return false; }
+}
+async function pushDisable(){
+  try{ const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); if(sub) await sub.unsubscribe(); }catch(_){}
+  try{ if(cloudOn&&fbdb&&me()) await fbdb.ref('push/'+me().id+'/'+pushDeviceId()).remove(); }catch(_){}
+  try{ localStorage.setItem(PUSH_ON_KEY,'0'); }catch(_){}
+  toast('Notificaciones desactivadas en este equipo','ok');
+}
+async function pushToggle(){ const m=$('#userMenu'); if(m) m.classList.remove('on'); if(pushIsOn()) await pushDisable(); else await pushEnable(); }
+window.pushEnable=pushEnable; window.pushDisable=pushDisable; window.pushToggle=pushToggle;
+// Tras login: aplicar deep-link de una notificación y re-guardar la suscripción bajo el usuario actual
+async function pushRefreshOnce(){
+  if(_pushRefreshed || !me()) return; _pushRefreshed=true;
+  try{ if(_pushGoView){ const v=_pushGoView; _pushGoView=''; if((ROLE_NAV[me().role]||[]).includes(v)){ SES.view=v; setTimeout(render,0); } } }catch(_){}
+  if(!pushSupported() || Notification.permission!=='granted' || localStorage.getItem(PUSH_ON_KEY)!=='1') return;
+  try{ const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); if(sub) await pushStore(sub); }catch(_){}
+}
+// Envía el aviso real a los destinatarios (lo dispara notify desde el equipo del remitente)
+async function sendPush(userIds, text, link){
+  try{
+    if(!cloudOn || !window.firebase || !firebase.auth || !firebase.auth().currentUser) return;
+    const to=(Array.isArray(userIds)?userIds:[userIds]).filter(u=>u&&u!==SES.userId);
+    if(!to.length) return;
+    const token=await firebase.auth().currentUser.getIdToken();
+    await fetch('/api/push',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ token, to, title:'Sabor Tico', body:String(text||'').slice(0,180), url:'./?go='+encodeURIComponent((link&&link.view)||''), tag:(link&&link.view)||'' }) });
+  }catch(_){}
+}
+try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoView){ history.replaceState(null,'',location.pathname); } }catch(_){}
 
 /* Service worker: la app abre y muestra lo último cargado aunque no haya internet.
    Solo en http(s) (en Vercel); en modo local (file://) no aplica. */
