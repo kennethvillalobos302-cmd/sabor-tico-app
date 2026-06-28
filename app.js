@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v88 · Chat estilo WhatsApp + botón Probar notificación siempre visible';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v89 · Chat pegado al teclado (viewport visual) y diagnóstico de push';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -6433,8 +6433,9 @@ function pushDeviceId(){ let id=''; try{ id=localStorage.getItem(PUSH_DEV_KEY)||
 function urlB64ToUint8(b64){ const pad='='.repeat((4-b64.length%4)%4); const s=(b64+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(s); const out=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) out[i]=raw.charCodeAt(i); return out; }
 async function pushGetKey(){ if(_pushKey) return _pushKey; try{ const r=await fetch('/api/push?action=key'); const j=await r.json(); if(j&&j.key){ _pushKey=j.key; return j.key; } }catch(_){} return VAPID_PUBLIC; }
 async function pushStore(sub){
-  if(!cloudOn||!fbdb||!me()) return;
-  try{ await fbdb.ref('push/'+me().id+'/'+pushDeviceId()).set({ sub: sub.toJSON(), at: now(), name:(me().name||''), ua:(navigator.userAgent||'').slice(0,120) }); }catch(_){}
+  if(!cloudOn||!fbdb||!me()) return false;
+  try{ await fbdb.ref('push/'+me().id+'/'+pushDeviceId()).set({ sub: sub.toJSON(), at: now(), name:(me().name||''), ua:(navigator.userAgent||'').slice(0,120) }); return true; }
+  catch(e){ console.warn('pushStore', e&&e.code); return false; }
 }
 async function pushEnable(){
   if(!pushSupported()){ toast('Este navegador no permite notificaciones. En iPhone: agregá la app a la pantalla de inicio.','err'); return false; }
@@ -6447,7 +6448,8 @@ async function pushEnable(){
     const reg=await navigator.serviceWorker.ready;
     let sub=await reg.pushManager.getSubscription();
     if(!sub) sub=await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:urlB64ToUint8(key) });
-    await pushStore(sub);
+    const stored = await pushStore(sub);
+    if(!stored){ toast('Permiso dado, pero no se pudo guardar la suscripción. Falta publicar la rama "push" en las reglas de Firebase.','err'); return false; }
     try{ localStorage.setItem(PUSH_ON_KEY,'1'); }catch(_){}
     toast('Notificaciones activadas en este equipo ✓','ok');
     return true;
@@ -6471,7 +6473,7 @@ async function pushTest(){
       body:JSON.stringify({ token, to:[me().id], title:'Sabor Tico ✓', body:'¡Las notificaciones funcionan! 🎉', url:'./', tag:'prueba' }) });
     const j=await r.json().catch(()=>({}));
     if(j&&j.ok&&j.sent>0) toast('Aviso enviado ✓ — debería llegarte en unos segundos','ok');
-    else if(j&&j.ok) toast('No hay suscripción activa en este equipo. Reactivá las notificaciones.','err');
+    else if(j&&j.ok) toast('Sin suscripción guardada. Falta publicar la rama "push" en las reglas de Firebase (después reactivá).','err');
     else toast('No se pudo enviar'+(j&&j.error?': '+j.error:' (revisá VAPID_PRIVATE_KEY en Vercel)'),'err');
   }catch(_){ toast('Error al enviar la prueba','err'); }
 }
@@ -6495,6 +6497,22 @@ async function sendPush(userIds, text, link){
   }catch(_){}
 }
 try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoView){ history.replaceState(null,'',location.pathname); } }catch(_){}
+
+/* Ajuste al teclado del celular: el área realmente visible (visualViewport) define el alto de
+   la app. Así el chat llena la pantalla y el cuadro de escribir queda PEGADO al teclado, sin
+   huecos. Cuando el teclado se cierra, vuelve a pantalla completa. */
+(function(){
+  const vv = window.visualViewport; if(!vv) return;
+  let raf=0;
+  function apply(){ raf=0; const a=document.getElementById('app'); if(!a) return;
+    a.style.height = Math.round(vv.height) + 'px';
+    a.style.transform = vv.offsetTop ? 'translateY(' + Math.round(vv.offsetTop) + 'px)' : ''; }
+  function onChange(){ if(!raf) raf=requestAnimationFrame(apply); }
+  vv.addEventListener('resize', onChange);
+  vv.addEventListener('scroll', onChange);
+  window.addEventListener('orientationchange', ()=>setTimeout(apply,250));
+  apply();
+})();
 
 /* Service worker: la app abre y muestra lo último cargado aunque no haya internet.
    Solo en http(s) (en Vercel); en modo local (file://) no aplica. */
