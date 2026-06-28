@@ -2,7 +2,8 @@
   "framework": null,
   "functions": {
     "api/leer-factura.js": { "maxDuration": 30 },
-    "api/meet-token.js": { "maxDuration": 10 }
+    "api/meet-token.js": { "maxDuration": 10 },
+    "api/push.js": { "maxDuration": 15 }
   },
   "headers": [
     {

@@ -1,6 +1,7 @@
 {
   "name": "sabor-tico-app",
   "private": true,
+  "type": "module",
   "description": "Sabor Tico App — funciones serverless (Vercel)",
   "dependencies": {
     "web-push": "^3.6.7"
