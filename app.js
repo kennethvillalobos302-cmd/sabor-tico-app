@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v82 · Notificaciones push al celular (tareas y mensajes, aunque esté cerrada)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v83 · Push: botón "Probar notificación" en el menú de cuenta';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -6065,7 +6065,7 @@ $('#userBtn').addEventListener('click',e=>{
   const m=$('#userMenu');
   m.innerHTML=`
     <div class="um-item" style="border-bottom:1px solid var(--border)">${avatarHTML(me())}<div><div style="font-weight:700">${esc(me().name)}</div><div style="font-size:11px;color:var(--text-soft)">${roleInfo(me().role).label}</div></div></div>
-    ${pushSupported()?`<button class="um-item" onclick="pushToggle()">${svgIcon('bell')} ${pushIsOn()?'Notificaciones del celular ✓':'Activar notificaciones'}</button>`:''}
+    ${pushSupported()?`<button class="um-item" onclick="pushToggle()">${svgIcon('bell')} ${pushIsOn()?'Notificaciones del celular ✓':'Activar notificaciones'}</button>${pushIsOn()?`<button class="um-item" onclick="pushTest()">${svgIcon('send')} Probar notificación</button>`:''}`:''}
     <button class="um-item" onclick="toggleTheme()">${svgIcon('theme')} Cambiar tema</button>
     <button class="um-item" onclick="exportData()">${svgIcon('save')} Respaldar datos</button>
     <button class="um-item" onclick="document.getElementById('importFile').click()">${svgIcon('down')} Restaurar respaldo</button>
@@ -6461,7 +6461,22 @@ async function pushDisable(){
   toast('Notificaciones desactivadas en este equipo','ok');
 }
 async function pushToggle(){ const m=$('#userMenu'); if(m) m.classList.remove('on'); if(pushIsOn()) await pushDisable(); else await pushEnable(); }
-window.pushEnable=pushEnable; window.pushDisable=pushDisable; window.pushToggle=pushToggle;
+async function pushTest(){
+  const m=$('#userMenu'); if(m) m.classList.remove('on');
+  if(!pushIsOn()){ const ok=await pushEnable(); if(!ok) return; }
+  if(!cloudOn || !window.firebase || !firebase.auth || !firebase.auth().currentUser){ toast('Necesitás conexión a la nube para probar','err'); return; }
+  toast('Enviando aviso de prueba…','ok');
+  try{
+    const token=await firebase.auth().currentUser.getIdToken();
+    const r=await fetch('/api/push',{ method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({ token, to:[me().id], title:'Sabor Tico ✓', body:'¡Las notificaciones funcionan! 🎉', url:'./', tag:'prueba' }) });
+    const j=await r.json().catch(()=>({}));
+    if(j&&j.ok&&j.sent>0) toast('Aviso enviado ✓ — debería llegarte en unos segundos','ok');
+    else if(j&&j.ok) toast('No hay suscripción activa en este equipo. Reactivá las notificaciones.','err');
+    else toast('No se pudo enviar'+(j&&j.error?': '+j.error:' (revisá VAPID_PRIVATE_KEY en Vercel)'),'err');
+  }catch(_){ toast('Error al enviar la prueba','err'); }
+}
+window.pushEnable=pushEnable; window.pushDisable=pushDisable; window.pushToggle=pushToggle; window.pushTest=pushTest;
 // Tras login: aplicar deep-link de una notificación y re-guardar la suscripción bajo el usuario actual
 async function pushRefreshOnce(){
   if(_pushRefreshed || !me()) return; _pushRefreshed=true;
