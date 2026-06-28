@@ -1611,9 +1611,12 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   .row2{grid-template-columns:1fr}
   .detail-meta{grid-template-columns:1fr}
   .tb-user .nm,.tb-user .rl{display:none}
-  .topbar{padding:calc(10px + env(safe-area-inset-top)) 14px 10px;gap:9px}
-  .suc-switch{padding:7px 9px;min-width:0;flex-shrink:1}
-  #sucBtnLabel{max-width:40vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block}
+  .topbar{padding:calc(10px + env(safe-area-inset-top)) 13px 10px;gap:8px}
+  .tb-logo{font-size:16px}
+  .suc-switch{padding:7px 10px;min-width:0;flex:0 1 auto}
+  .suc-btn{min-width:0;gap:6px}
+  #sucBtnLabel{max-width:clamp(52px,24vw,150px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block}
+  .topbar .icon-btn{width:40px;height:40px;font-size:17px}
   .suc-menu{position:fixed;left:8px;right:8px;top:calc(54px + env(safe-area-inset-top));min-width:0;max-width:none;width:auto}
   .page-title{font-size:20px}
   .bottom-nav{display:flex;flex-shrink:0;

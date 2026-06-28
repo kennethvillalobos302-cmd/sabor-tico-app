@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v85 · Deploy nuevo tras hacer el repo público (desbloquea Vercel)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v86 · Menú de cuenta más limpio y barra superior que encaja en celular';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -6070,9 +6070,6 @@ $('#userBtn').addEventListener('click',e=>{
     <button class="um-item" onclick="exportData()">${svgIcon('save')} Respaldar datos</button>
     <button class="um-item" onclick="document.getElementById('importFile').click()">${svgIcon('down')} Restaurar respaldo</button>
     ${isAdmin()?`<button class="um-item" onclick="autoBackupsModal()">${svgIcon('clipboard')} Respaldos automáticos</button>`:''}
-    ${isAdmin()?`<button class="um-item" onclick="errorsModal()">${svgIcon('info')} Errores recientes</button>`:''}
-    ${isAdmin()?`<button class="um-item" onclick="reloadFromCloud()">${svgIcon('down')} Recargar desde la nube</button>`:''}
-    ${isAdmin()?`<button class="um-item" onclick="pushOverwrite()">${svgIcon('up')} Subir este equipo a la nube</button>`:''}
     <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>
     <div style="padding:8px 15px;font-size:10.5px;color:var(--text-dim);text-align:center;border-top:1px solid var(--border-soft)">${esc(APP_VERSION)}</div>`;
   m.classList.toggle('on');
