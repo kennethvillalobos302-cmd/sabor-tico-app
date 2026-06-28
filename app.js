@@ -6426,12 +6426,13 @@ impInput.addEventListener('change',async e=>{
    iOS: requiere "Agregar a pantalla de inicio" (iOS 16.4+) y dar permiso.
    ===================================================================== */
 const PUSH_DEV_KEY='st_push_dev', PUSH_ON_KEY='st_push_on';
+const VAPID_PUBLIC='BAKaPV-0DcQFy9AqV75Zsbr4YMirfgZczA1rosU-LDqPvOfwMNgiEDOVPcRyGiXj0XtQngxvmzfoAi2sHmGlx_Y';  // pública (no secreta) — respaldo si falla el fetch
 let _pushKey=null, _pushRefreshed=false, _pushGoView='';
 function pushSupported(){ return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window) && location.protocol.indexOf('http')===0; }
 function pushIsOn(){ try{ return pushSupported() && Notification.permission==='granted' && localStorage.getItem(PUSH_ON_KEY)==='1'; }catch(_){ return false; } }
 function pushDeviceId(){ let id=''; try{ id=localStorage.getItem(PUSH_DEV_KEY)||''; }catch(_){}; if(!id){ id=uid(); try{ localStorage.setItem(PUSH_DEV_KEY,id); }catch(_){} } return id; }
 function urlB64ToUint8(b64){ const pad='='.repeat((4-b64.length%4)%4); const s=(b64+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(s); const out=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) out[i]=raw.charCodeAt(i); return out; }
-async function pushGetKey(){ if(_pushKey) return _pushKey; try{ const r=await fetch('/api/push?action=key'); const j=await r.json(); if(j&&j.key){ _pushKey=j.key; return j.key; } }catch(_){} return ''; }
+async function pushGetKey(){ if(_pushKey) return _pushKey; try{ const r=await fetch('/api/push?action=key'); const j=await r.json(); if(j&&j.key){ _pushKey=j.key; return j.key; } }catch(_){} return VAPID_PUBLIC; }
 async function pushStore(sub){
   if(!cloudOn||!fbdb||!me()) return;
   try{ await fbdb.ref('push/'+me().id+'/'+pushDeviceId()).set({ sub: sub.toJSON(), at: now(), name:(me().name||''), ua:(navigator.userAgent||'').slice(0,120) }); }catch(_){}

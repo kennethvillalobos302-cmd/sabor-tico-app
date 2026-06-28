@@ -4,30 +4,26 @@ Avisos que llegan al teléfono **aunque la app esté cerrada** cuando a alguien 
 **tarea** o le mandan un **mensaje**. Usa Web Push (estándar del navegador) + una función
 serverless en Vercel. La llave privada vive **solo en Vercel**, nunca en el navegador.
 
-Se configura **una sola vez**. Pasos:
+Se configura **una sola vez**. La llave **pública** ya viene incrustada en el código (no es
+secreta), así que **solo te queda pegar la llave privada** y agregar una rama de reglas.
 
-## 1) Generar las llaves VAPID (una vez)
-En tu compu, en la carpeta del proyecto, corré:
+## 1) Las llaves ya están generadas ✓
+Están en el archivo local **`.vapid.local.txt`** (en la carpeta del proyecto, NO se sube a git).
+Ábrelo y copiá el valor de la línea `VAPID_PRIVATE_KEY=...` (es la que necesitás en el paso 2).
+> Si querés generar unas nuevas: `npx web-push generate-vapid-keys` (y reemplazá también la
+> pública incrustada en `api/push.js` y `app.js`). Normalmente NO hace falta.
 
-```
-npx web-push generate-vapid-keys
-```
-
-Te da dos valores: **Public Key** y **Private Key**. Guardalos.
-(Si preferís sin instalar nada: hay generadores VAPID en línea, pero lo de arriba es lo más seguro.)
-
-## 2) Agregar variables de entorno en Vercel
-Vercel → tu proyecto → **Settings → Environment Variables** → agregá estas tres (Production y Preview):
+## 2) Agregar UNA variable en Vercel (la privada)
+Vercel → tu proyecto → **Settings → Environment Variables** → agregá **solo esta** (Production y Preview):
 
 | Nombre | Valor |
 |---|---|
-| `VAPID_PUBLIC_KEY` | la **Public Key** del paso 1 |
-| `VAPID_PRIVATE_KEY` | la **Private Key** del paso 1 (¡secreta! no la compartas) |
-| `VAPID_SUBJECT` | `mailto:tu-correo@ejemplo.com` (un correo de contacto) |
+| `VAPID_PRIVATE_KEY` | el valor de `VAPID_PRIVATE_KEY=` del archivo `.vapid.local.txt` (¡secreta!) |
 
-> Opcional: `FIREBASE_DB_URL` solo si tu base no es `https://sabor-tico-app-default-rtdb.firebaseio.com`.
+> La pública (`VAPID_PUBLIC_KEY`) y el correo (`VAPID_SUBJECT`) ya vienen por defecto en el código,
+> no hace falta ponerlas. Si algún día querés cambiarlas, podés agregarlas como variables y mandan ellas.
 
-Después tocá **Redeploy** (o subí un cambio) para que tome las variables.
+Después tocá **Redeploy** (o esperá el deploy del último push) para que tome la variable.
 
 ## 3) Agregar la rama `push` a las reglas de Firebase
 Firebase Console → **Realtime Database → Reglas** → agregá la rama `"push"` (ver

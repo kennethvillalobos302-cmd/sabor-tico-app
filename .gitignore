@@ -1,5 +1,6 @@
 # Archivos locales / temporales que no deben publicarse
 _probe.txt
+.vapid.local.txt
 *.log
 .DS_Store
 Thumbs.db

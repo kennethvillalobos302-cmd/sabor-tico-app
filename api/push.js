@@ -19,6 +19,10 @@
 import webpush from 'web-push';
 
 const DB_URL = (process.env.FIREBASE_DB_URL || 'https://sabor-tico-app-default-rtdb.firebaseio.com').replace(/\/$/, '');
+// La llave PÚBLICA no es secreta (el navegador la recibe igual): viene por defecto incrustada,
+// así NO hay que configurarla en Vercel. Solo la PRIVADA (VAPID_PRIVATE_KEY) va en variables de entorno.
+const VAPID_PUBLIC = process.env.VAPID_PUBLIC_KEY || 'BAKaPV-0DcQFy9AqV75Zsbr4YMirfgZczA1rosU-LDqPvOfwMNgiEDOVPcRyGiXj0XtQngxvmzfoAi2sHmGlx_Y';
+const VAPID_SUBJECT = process.env.VAPID_SUBJECT || 'mailto:kennethvillalobos302@gmail.com';
 
 // Throttle best-effort por IP
 const HITS = new Map();
@@ -39,21 +43,17 @@ function sameOriginOrAbsent(req) {
   try { return new URL(src).host === host; } catch (_) { return false; }
 }
 function vapidReady() {
-  return !!(process.env.VAPID_PUBLIC_KEY && process.env.VAPID_PRIVATE_KEY);
+  return !!(VAPID_PUBLIC && process.env.VAPID_PRIVATE_KEY);   // solo falta la privada por configurar
 }
 function setVapid() {
-  webpush.setVapidDetails(
-    process.env.VAPID_SUBJECT || 'mailto:soporte@sabortico.app',
-    process.env.VAPID_PUBLIC_KEY,
-    process.env.VAPID_PRIVATE_KEY
-  );
+  webpush.setVapidDetails(VAPID_SUBJECT, VAPID_PUBLIC, process.env.VAPID_PRIVATE_KEY);
 }
 
 export default async function handler(req, res) {
   // Pedir la llave pública (sin auth): el navegador la necesita para suscribirse
   if (req.method === 'GET') {
     if ((req.query.action || '') === 'key') {
-      res.status(200).json({ key: process.env.VAPID_PUBLIC_KEY || '', configured: vapidReady() });
+      res.status(200).json({ key: VAPID_PUBLIC, configured: vapidReady() });
       return;
     }
     res.status(400).json({ error: 'Falta action=key' });
