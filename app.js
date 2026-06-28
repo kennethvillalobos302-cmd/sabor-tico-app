@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v84 · Deploy: package.json type module + push en vercel.json';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v85 · Deploy nuevo tras hacer el repo público (desbloquea Vercel)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
