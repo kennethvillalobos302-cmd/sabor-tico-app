@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v86 · Menú de cuenta más limpio y barra superior que encaja en celular';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v87 · Menú de cuenta minimal (notificaciones, tema, cerrar sesión)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -6067,9 +6067,6 @@ $('#userBtn').addEventListener('click',e=>{
     <div class="um-item" style="border-bottom:1px solid var(--border)">${avatarHTML(me())}<div><div style="font-weight:700">${esc(me().name)}</div><div style="font-size:11px;color:var(--text-soft)">${roleInfo(me().role).label}</div></div></div>
     ${pushSupported()?`<button class="um-item" onclick="pushToggle()">${svgIcon('bell')} ${pushIsOn()?'Notificaciones del celular ✓':'Activar notificaciones'}</button>${pushIsOn()?`<button class="um-item" onclick="pushTest()">${svgIcon('send')} Probar notificación</button>`:''}`:''}
     <button class="um-item" onclick="toggleTheme()">${svgIcon('theme')} Cambiar tema</button>
-    <button class="um-item" onclick="exportData()">${svgIcon('save')} Respaldar datos</button>
-    <button class="um-item" onclick="document.getElementById('importFile').click()">${svgIcon('down')} Restaurar respaldo</button>
-    ${isAdmin()?`<button class="um-item" onclick="autoBackupsModal()">${svgIcon('clipboard')} Respaldos automáticos</button>`:''}
     <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>
     <div style="padding:8px 15px;font-size:10.5px;color:var(--text-dim);text-align:center;border-top:1px solid var(--border-soft)">${esc(APP_VERSION)}</div>`;
   m.classList.toggle('on');
