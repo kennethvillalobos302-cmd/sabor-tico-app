@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v87 · Menú de cuenta minimal (notificaciones, tema, cerrar sesión)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v88 · Chat estilo WhatsApp + botón Probar notificación siempre visible';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2000,9 +2000,11 @@ function projSide(proj){
       <button class="chat-send" title="Listo" onclick="vaRecStop()">${svgIcon('check')}</button>
     </div>`:`<div class="chat-input">
       <input type="file" id="projFile" accept="image/*,video/*,.pdf,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" style="display:none" onchange="projAttachPick('${proj.id}')">
-      <button class="chat-attach" title="Adjuntar foto o video" onclick="document.getElementById('projFile').click()">${svgIcon('clip')}</button>
-      <input id="projMsg" placeholder="Mensaje al grupo…" onkeydown="if(event.key==='Enter')sendProjMsg('${proj.id}')">
-      <button class="chat-mic" title="Grabar nota de voz" onclick="vaRecStart('${proj.id}',true)">${svgIcon('mic')}</button>
+      <button class="chat-attach" title="Adjuntar archivo" onclick="document.getElementById('projFile').click()">${svgIcon('plus')}</button>
+      <div class="chat-field">
+        <input id="projMsg" placeholder="Mensaje al grupo" onkeydown="if(event.key==='Enter')sendProjMsg('${proj.id}')">
+        <button class="chat-field-mic" title="Grabar nota de voz" onclick="vaRecStart('${proj.id}',true)">${svgIcon('mic')}</button>
+      </div>
       <button class="chat-send" onclick="sendProjMsg('${proj.id}')">${svgIcon('send')}</button>
     </div>`}
   </div>`;
@@ -2522,9 +2524,11 @@ function viewChat(){
           <button class="chat-send" title="Listo" onclick="vaRecStop()">${svgIcon('check')}</button>
         </div>`:`<div class="chat-input">
           <input type="file" id="chatFile" accept="image/*,video/*" style="display:none" onchange="chatAttachPick('${cur.id}')">
-          <button class="chat-attach" title="Adjuntar foto o video" onclick="document.getElementById('chatFile').click()">${svgIcon('clip')}</button>
-          <input id="chatField" placeholder="Escribí un mensaje…" onkeydown="if(event.key==='Enter')sendMsg('${cur.id}')">
-          <button class="chat-mic" title="Grabar nota de voz" onclick="vaRecStart('${cur.id}')">${svgIcon('mic')}</button>
+          <button class="chat-attach" title="Adjuntar foto o video" onclick="document.getElementById('chatFile').click()">${svgIcon('plus')}</button>
+          <div class="chat-field">
+            <input id="chatField" placeholder="Mensaje" onkeydown="if(event.key==='Enter')sendMsg('${cur.id}')">
+            <button class="chat-field-mic" title="Grabar nota de voz" onclick="vaRecStart('${cur.id}')">${svgIcon('mic')}</button>
+          </div>
           <button class="chat-send" onclick="sendMsg('${cur.id}')">${svgIcon('send')}</button>
         </div>`}`
         :`<div class="chat-input" style="justify-content:center;color:var(--text-soft);font-size:12px">Solo lectura — no sos miembro de este chat</div>`}
@@ -6065,7 +6069,8 @@ $('#userBtn').addEventListener('click',e=>{
   const m=$('#userMenu');
   m.innerHTML=`
     <div class="um-item" style="border-bottom:1px solid var(--border)">${avatarHTML(me())}<div><div style="font-weight:700">${esc(me().name)}</div><div style="font-size:11px;color:var(--text-soft)">${roleInfo(me().role).label}</div></div></div>
-    ${pushSupported()?`<button class="um-item" onclick="pushToggle()">${svgIcon('bell')} ${pushIsOn()?'Notificaciones del celular ✓':'Activar notificaciones'}</button>${pushIsOn()?`<button class="um-item" onclick="pushTest()">${svgIcon('send')} Probar notificación</button>`:''}`:''}
+    ${pushSupported()?`<button class="um-item" onclick="pushToggle()">${svgIcon('bell')} ${pushIsOn()?'Notificaciones del celular ✓':'Activar notificaciones'}</button>
+    <button class="um-item" onclick="pushTest()">${svgIcon('send')} Probar notificación</button>`:''}
     <button class="um-item" onclick="toggleTheme()">${svgIcon('theme')} Cambiar tema</button>
     <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>
     <div style="padding:8px 15px;font-size:10.5px;color:var(--text-dim);text-align:center;border-top:1px solid var(--border-soft)">${esc(APP_VERSION)}</div>`;
