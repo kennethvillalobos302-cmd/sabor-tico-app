@@ -194,7 +194,7 @@ input,textarea,select{font-family:inherit;font-size:14.5px}
 .app{display:none;flex-direction:column}
 /* La app cubre EXACTAMENTE toda la pantalla (incluye notch y home indicator con viewport-fit=cover),
    así la barra inferior llega al borde de abajo y nada queda "subido". */
-.app.on{display:flex;position:fixed;inset:0}
+.app.on{display:flex;position:fixed;left:0;right:0;top:var(--app-top,0px);height:var(--app-h,100dvh)}
 .topbar{display:flex;align-items:center;gap:12px;padding:calc(11px + env(safe-area-inset-top)) 18px 11px;border-bottom:1px solid var(--border-soft);
   background:color-mix(in srgb,var(--bg-elev) 88%, transparent);backdrop-filter:blur(10px);flex-shrink:0;z-index:20}
 .tb-logo{font-size:18px;font-weight:800;letter-spacing:-.4px;white-space:nowrap}

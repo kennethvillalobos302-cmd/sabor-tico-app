@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v89 · Chat pegado al teclado (viewport visual) y diagnóstico de push';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v90 · Teclado: alto por variables CSS; push: aviso claro en iPhone';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -6437,7 +6437,10 @@ async function pushStore(sub){
   try{ await fbdb.ref('push/'+me().id+'/'+pushDeviceId()).set({ sub: sub.toJSON(), at: now(), name:(me().name||''), ua:(navigator.userAgent||'').slice(0,120) }); return true; }
   catch(e){ console.warn('pushStore', e&&e.code); return false; }
 }
+function pushIsIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1); }
+function pushIsStandalone(){ try{ return window.navigator.standalone===true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches); }catch(_){ return false; } }
 async function pushEnable(){
+  if(pushIsIOS() && !pushIsStandalone()){ toast('En iPhone: tocá Compartir → "Agregar a inicio", abrí la app desde ese ícono y ahí activá las notificaciones.','err'); return false; }
   if(!pushSupported()){ toast('Este navegador no permite notificaciones. En iPhone: agregá la app a la pantalla de inicio.','err'); return false; }
   let perm=Notification.permission;
   if(perm!=='granted'){ try{ perm=await Notification.requestPermission(); }catch(_){} }
@@ -6503,14 +6506,18 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
    huecos. Cuando el teclado se cierra, vuelve a pantalla completa. */
 (function(){
   const vv = window.visualViewport; if(!vv) return;
+  const root = document.documentElement;
   let raf=0;
-  function apply(){ raf=0; const a=document.getElementById('app'); if(!a) return;
-    a.style.height = Math.round(vv.height) + 'px';
-    a.style.transform = vv.offsetTop ? 'translateY(' + Math.round(vv.offsetTop) + 'px)' : ''; }
+  function apply(){ raf=0;
+    root.style.setProperty('--app-h', Math.round(vv.height) + 'px');
+    root.style.setProperty('--app-top', Math.round(vv.offsetTop) + 'px');
+  }
   function onChange(){ if(!raf) raf=requestAnimationFrame(apply); }
   vv.addEventListener('resize', onChange);
   vv.addEventListener('scroll', onChange);
-  window.addEventListener('orientationchange', ()=>setTimeout(apply,250));
+  window.addEventListener('orientationchange', ()=>setTimeout(apply,300));
+  document.addEventListener('focusin', ()=>setTimeout(apply,80));
+  document.addEventListener('focusout', ()=>setTimeout(apply,80));
   apply();
 })();
 
