@@ -731,6 +731,40 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 /* vista general de horarios (timeline) */
 .hor-modes{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
 .hm-sep{width:1px;align-self:stretch;min-height:24px;background:var(--border);margin:0 3px;flex:0 0 auto}
+/* ---- Horarios · Editor semanal (grilla por persona y día) ---- */
+.hw-nav{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.hw-nav-lbl{font-size:15px;font-weight:800;letter-spacing:-.2px}
+.hw-summary{display:inline-flex;align-items:center;gap:7px;font-size:13px;padding:8px 13px;border-radius:var(--r-md);background:var(--bg-soft);border:1px solid var(--border-soft);margin-bottom:12px}
+.hw-summary .icon{color:var(--text-soft)}
+.hw-summary.warn{background:rgba(214,158,74,.12);border-color:rgba(214,158,74,.4);color:#b5832f}
+.hw-summary.warn .icon{color:#b5832f}
+.hw-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--border-soft);border-radius:var(--r-lg);background:var(--bg-card)}
+.hw-grid{border-collapse:collapse;width:100%;min-width:660px}
+.hw-grid th,.hw-grid td{border-bottom:1px solid var(--border-soft);border-right:1px solid var(--border-soft);text-align:center;padding:0}
+.hw-grid tr td:last-child,.hw-grid tr th:last-child{border-right:none}
+.hw-grid th{padding:8px 4px;font-size:11px;font-weight:700;color:var(--text-soft);background:var(--bg-card);position:sticky;top:0;z-index:2}
+.hw-grid th span{display:block;font-size:14px;color:var(--text);font-weight:800;margin-top:1px}
+.hw-grid th.hw-today{color:var(--accent)}
+.hw-grid th.hw-today span{color:var(--accent)}
+.hw-c0{position:sticky;left:0;z-index:1;background:var(--bg-card);text-align:left;min-width:118px;max-width:140px;padding:6px 9px!important;box-shadow:1px 0 0 var(--border-soft)}
+thead .hw-c0{z-index:3}
+.hw-c0.hw-none{box-shadow:1px 0 0 var(--border-soft),inset 3px 0 0 #d69e4a}
+.hw-person{display:flex;align-items:center;gap:8px}
+.hw-person .av{width:30px;height:30px;font-size:11.5px;flex:0 0 auto}
+.hw-pn{min-width:0}
+.hw-pn-n{font-size:13px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hw-pn-r{font-size:10px;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hw-dept td{background:var(--bg-soft);text-align:left;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.6px;color:var(--accent);padding:6px 12px!important}
+.hw-cell{height:46px;min-width:78px;font-size:12px;cursor:pointer;transition:background var(--t-fast)}
+.hw-cell.hw-today{background:var(--accent-soft)}
+.hw-cell:hover{background:var(--bg-soft)}
+.hw-t{display:block;font-weight:700;color:var(--text);line-height:1.3}
+.hw-off{color:var(--accent);font-weight:600;font-size:11.5px}
+.hw-offc{background:repeating-linear-gradient(45deg,transparent,transparent 5px,rgba(150,40,27,.05) 5px,rgba(150,40,27,.05) 10px)}
+.hw-add{color:var(--text-dim);font-size:18px;font-weight:600}
+.hw-empty{background:rgba(214,158,74,.06)}
+.hw-empty:hover{background:rgba(214,158,74,.14)}
+.hw-dash{color:var(--text-dim)}
 /* ---- Horarios · Mi semana ---- */
 .mw-sum{display:flex;align-items:center;gap:20px;background:var(--grad-accent);color:#fff;border-radius:var(--r-lg);padding:16px 22px;margin-bottom:14px;box-shadow:var(--e2)}
 .mw-sum-cell{display:flex;flex-direction:column}

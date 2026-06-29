@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v90 · Teclado: alto por variables CSS; push: aviso claro en iPhone';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v91 · Horarios: editor semanal por persona y día (Salón/Cocina/Gerencia)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4201,27 +4201,92 @@ const HOR_DEPTS=[
   {label:'Gerencia',roles:['admin','gerencia_exp','gerencia_data']},
   {label:'Administración',roles:['proveeduria','contarh']},
 ];
-let horMode='mia', horDay='', attDay='';
+let horMode='', horDay='', attDay='', horWeekStart='', horArea='todas';
+function horMondayOf(d){ const x=new Date(d); x.setHours(0,0,0,0); const dow=(x.getDay()+6)%7; x.setDate(x.getDate()-dow); return x; }
+function horWeekDays(){ if(!horWeekStart) horWeekStart=isoLocal(horMondayOf(new Date())); const m=new Date(horWeekStart+'T00:00:00'); return [...Array(7)].map((_,i)=>{ const x=new Date(m); x.setDate(m.getDate()+i); return x; }); }
+function horWeekNav(d){ if(!horWeekStart) horWeekStart=isoLocal(horMondayOf(new Date())); const m=new Date(horWeekStart+'T00:00:00'); m.setDate(m.getDate()+d*7); horWeekStart=isoLocal(m); render(); }
+function horWeekThis(){ horWeekStart=isoLocal(horMondayOf(new Date())); render(); }
+function horSetArea(a){ horArea=a; render(); }
+function fmtCompact(t){ if(!t) return ''; const p=String(t).split(':'); const H=+p[0], M=+p[1]||0; const ap=H>=12?'p':'a'; let h=H%12; if(h===0)h=12; return M? h+':'+String(M).padStart(2,'0')+ap : h+ap; }
+window.horWeekNav=horWeekNav; window.horWeekThis=horWeekThis; window.horSetArea=horSetArea;
 function viewHorarios(){
   const manage=canShiftManage();
   const todayISO=new Date().toISOString().slice(0,10);
   if(!horDay) horDay=todayISO;
+  if(!horMode) horMode = manage?'semana':'mia';
   if(!manage && !['mia','general'].includes(horMode)) horMode='mia';
   const today=new Date(); today.setHours(0,0,0,0);
   const days=[...Array(7)].map((_,d)=>{const x=new Date(today);x.setDate(today.getDate()+d);return x;});
   const guide=sectionGuide('horarios','¿Cómo funcionan los Horarios?',`
     Acá ves los <b>turnos de la semana</b>. ${manage?'Asignás un turno eligiendo a la persona, la hora y, si hace falta, los quiebres (descansos).':'Ves tu turno de cada día con sus quiebres.'}
-    <ul style="margin:8px 0 0 18px"><li><b>Mi semana</b> te muestra tus 7 días de un vistazo: cuándo entrás, cuándo salís y tus descansos.</li><li>La <b>Vista general</b> muestra en una línea de tiempo de qué hora a qué hora trabaja cada quien por área.</li><li>Cada persona recibe un aviso <b>el día anterior</b> y en <b>Inicio</b> ve si hoy trabaja o está libre.</li></ul>`);
+    <ul style="margin:8px 0 0 18px">${manage?'<li>El <b>Editor semanal</b> es una grilla por persona y día, dividida por área (Salón, Cocina, Gerencia, Administración): tocá una casilla para ponerle el turno a esa persona ese día. Arriba ves a <b>quién le falta</b> horario.</li>':''}<li><b>Mi semana</b> te muestra tus 7 días de un vistazo: cuándo entrás, cuándo salís y tus descansos.</li><li>La <b>Vista general</b> muestra en una línea de tiempo de qué hora a qué hora trabaja cada quien por área.</li><li>Cada persona recibe un aviso <b>el día anterior</b> y en <b>Inicio</b> ve si hoy trabaja o está libre.</li></ul>`);
   let html=`<div class="page-head"><div><div class="page-title">Horarios</div><div class="page-sub">Próximos 7 días</div></div>
     <div class="ph-spacer"></div>${manage?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="shiftNewModal()">${svgIcon('plus','icon icon-sm')} Asignar turno</button>`:''}</div>`;
   html+=guide;
   const modes=manage
-    ? [['mia','Mi semana'],['general','Vista general'],['asistencia','Asistencia'],['lista','Lista por día']]
+    ? [['semana','Editor semanal'],['general','Vista general'],['asistencia','Asistencia'],['lista','Lista por día'],['mia','Mi semana']]
     : [['mia','Mi semana'],['general','Ver equipo']];
-  html+=`<div class="hor-modes">${modes.map(([k,l])=>`<button class="chip ${horMode===k?'on':''}" onclick="horMode='${k}';render()">${l}</button>`).join('')}</div>`;
-  html+= horMode==='mia' ? horMine(days) : horMode==='general' ? horTimeline(days) : horMode==='asistencia' ? horAsistencia() : horList(days,manage);
+  html+=`<div class="hor-modes chipscroll">${modes.map(([k,l])=>`<button class="chip ${horMode===k?'on':''}" onclick="horMode='${k}';render()">${l}</button>`).join('')}</div>`;
+  html+= horMode==='semana' ? horWeek(manage) : horMode==='mia' ? horMine(days) : horMode==='general' ? horTimeline(days) : horMode==='asistencia' ? horAsistencia() : horList(days,manage);
   return html;
 }
+function horWeek(manage){
+  const days=horWeekDays();
+  const tISO=todayISO();
+  const people=scopedPeople(false);
+  const depts=HOR_DEPTS.filter(dp=>people.some(u=>dp.roles.includes(u.role)));
+  const shownDepts = horArea==='todas'?depts:depts.filter(dp=>dp.label===horArea);
+  const idx={};
+  DB.shifts.filter(s=>inScope(s.sucursalId)).forEach(s=>{ const k=s.userId+'|'+s.date; (idx[k]=idx[k]||[]).push(s); });
+  const entries=u=>days.reduce((n,d)=>n+((idx[u.id+'|'+isoLocal(d)]||[]).length?1:0),0);
+  const shownPeople = shownDepts.flatMap(dp=>people.filter(u=>dp.roles.includes(u.role)));
+  const sinHorario = shownPeople.filter(u=>entries(u)===0).length;
+  const wkLabel = days[0].toLocaleDateString('es-CR',{day:'numeric',month:'short'})+' al '+days[6].toLocaleDateString('es-CR',{day:'numeric',month:'short'});
+  const DOW=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
+
+  let html=`<div class="hw-nav">
+    <button class="icon-btn" style="width:34px;height:34px" onclick="horWeekNav(-1)" title="Semana anterior">${svgIcon('back','icon icon-sm')}</button>
+    <b class="hw-nav-lbl">${esc(wkLabel)}</b>
+    <button class="icon-btn" style="width:34px;height:34px" onclick="horWeekNav(1)" title="Semana siguiente"><svg class="icon icon-sm" viewBox="0 0 24 24" style="transform:scaleX(-1)"><use href="#i-back"/></svg></button>
+    <button class="chip" onclick="horWeekThis()">Esta semana</button>
+  </div>
+  <div class="chipscroll" style="margin-bottom:10px">
+    <button class="chip ${horArea==='todas'?'on':''}" onclick="horSetArea('todas')">Todas</button>
+    ${depts.map(dp=>`<button class="chip ${horArea===dp.label?'on':''}" onclick="horSetArea('${dp.label}')">${esc(dp.label)}</button>`).join('')}
+  </div>
+  <div class="hw-summary ${sinHorario?'warn':''}">${sinHorario?`${svgIcon('info','icon icon-sm')} <b>${sinHorario}</b> ${sinHorario===1?'persona sin horario':'personas sin horario'} esta semana`:`${svgIcon('check','icon icon-sm')} Todos con horario esta semana`}</div>`;
+
+  let grid=`<table class="hw-grid"><thead><tr><th class="hw-c0">Persona</th>${days.map(d=>{const iso=isoLocal(d);return `<th class="${iso===tISO?'hw-today':''}">${DOW[(d.getDay()+6)%7]}<span>${d.getDate()}</span></th>`;}).join('')}</tr></thead><tbody>`;
+  shownDepts.forEach(dp=>{
+    const dpPeople=people.filter(u=>dp.roles.includes(u.role)).sort((a,b)=>a.name.localeCompare(b.name));
+    if(!dpPeople.length) return;
+    grid+=`<tr class="hw-dept"><td colspan="8">${esc(dp.label)} · ${dpPeople.length}</td></tr>`;
+    dpPeople.forEach(u=>{
+      const none=entries(u)===0;
+      grid+=`<tr><td class="hw-c0 ${none?'hw-none':''}"><div class="hw-person">${avatarHTML(u)}<div class="hw-pn"><div class="hw-pn-n">${esc((u.name||'').split(' ')[0])}</div><div class="hw-pn-r">${esc(roleInfo(u.role).short)}</div></div></div></td>`;
+      days.forEach(d=>{
+        const iso=isoLocal(d); const sh=(idx[u.id+'|'+iso]||[]); const today=iso===tISO;
+        const off = sh.length && sh.every(s=>s.off); const work = sh.filter(s=>!s.off);
+        let inner, cls;
+        if(work.length){ inner=work.slice().sort((a,b)=>(a.start||'').localeCompare(b.start||'')).map(s=>`<span class="hw-t">${fmtCompact(s.start)}–${fmtCompact(s.end)}</span>`).join(''); cls='hw-work'; }
+        else if(off){ inner=`<span class="hw-off">Libre</span>`; cls='hw-offc'; }
+        else { inner = manage?`<span class="hw-add">+</span>`:`<span class="hw-dash">—</span>`; cls='hw-empty'; }
+        grid+=`<td class="hw-cell ${cls} ${today?'hw-today':''}" ${manage?`onclick="horCellEdit('${u.id}','${iso}')"`:''}>${inner}</td>`;
+      });
+      grid+=`</tr>`;
+    });
+  });
+  grid+=`</tbody></table>`;
+  html+=`<div class="hw-scroll">${grid}</div>`;
+  if(manage) html+=`<div class="page-sub" style="margin-top:10px">${svgIcon('info','icon icon-sm')} Tocá una casilla para poner o cambiar el turno de esa persona ese día. Las casillas con <b>+</b> son las que faltan; la franja naranja marca quién no tiene nada esta semana.</div>`;
+  return html;
+}
+function horCellEdit(userId, date){
+  const existing=DB.shifts.find(s=>s.userId===userId && s.date===date && inScope(s.sucursalId));
+  shBreaks = existing?(existing.breaks||[]).map(b=>({...b})):[]; shPresetEdit=false;
+  openModal(shiftForm(existing?'Editar turno':'Asignar turno', existing, {userId,date}), true);
+}
+window.horCellEdit=horCellEdit;
 /* Reporte de marcas reales de entrada/salida (encargados). Muestra los últimos 7 días;
    por persona lista todas las sesiones del día y el total trabajado, agrupado por área. */
 function horAsistencia(){
@@ -4403,14 +4468,14 @@ function applyShiftPreset(i){
 window.applyShiftPreset=applyShiftPreset; window.savePresets=savePresets; window.renderPresetArea=renderPresetArea;
 function shiftNewModal(){ shBreaks=[]; shPresetEdit=false; openModal(shiftForm('Asignar turno',null), true); }
 function shiftEditModal(id){ const s=DB.shifts.find(x=>x.id===id); shBreaks=s?(s.breaks||[]).map(b=>({...b})):[]; shPresetEdit=false; openModal(shiftForm('Editar turno',s), true); }
-function shiftForm(title,s){
+function shiftForm(title,s,pre){
   const people=scopedPeople(false);
   const d=new Date(); d.setMinutes(d.getMinutes()-d.getTimezoneOffset());
-  const date=s?s.date:d.toISOString().slice(0,10);
+  const date = s ? s.date : (pre&&pre.date) ? pre.date : d.toISOString().slice(0,10);
   const st=s&&s.start?s.start:'10:00', en=s&&s.end?s.end:'18:00';
   return `<div class="modal-head"><h3>${title}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
   <div class="modal-body">
-    <div class="field"><label>¿A quién?</label><select class="select" id="shUser">${people.map(u=>`<option value="${u.id}" ${s&&s.userId===u.id?'selected':''}>${esc(u.name)} — ${roleInfo(u.role).short}</option>`).join('')}</select></div>
+    <div class="field"><label>¿A quién?</label><select class="select" id="shUser">${people.map(u=>`<option value="${u.id}" ${((s&&s.userId===u.id)||(!s&&pre&&pre.userId===u.id))?'selected':''}>${esc(u.name)} — ${roleInfo(u.role).short}</option>`).join('')}</select></div>
     <div class="field"><label>Fecha</label>${dateField(date)}</div>
     <div class="field"><label>Horario</label>
       <div id="shPresetArea" class="sh-presetbox"></div>
@@ -4426,7 +4491,7 @@ function shiftForm(title,s){
     <div class="field"><label>Nota (opcional)</label><input class="input" id="shNote" value="${s?esc(s.note||''):''}" placeholder="Ej: turno de almuerzo"></div>
     <button class="btn-off" onclick="saveShiftOff('${s?s.id:''}')">${svgIcon('calendar','icon icon-sm')} Marcar este día como LIBRE</button>
   </div>
-  <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveShift('${s?s.id:''}')">Guardar turno</button></div>`;
+  <div class="modal-foot">${s?`<button class="iconbtn-sq danger" style="flex:0 0 auto" title="Quitar turno" onclick="closeModal();delShift('${s.id}')">${svgIcon('trash','icon icon-sm')}</button>`:''}<button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveShift('${s?s.id:''}')">Guardar turno</button></div>`;
 }
 function renderBreakRows(){
   const c=$('#shBreaks'); if(!c) return;
