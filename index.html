@@ -199,7 +199,8 @@ input,textarea,select{font-family:inherit;font-size:14.5px}
   background:color-mix(in srgb,var(--bg-elev) 88%, transparent);backdrop-filter:blur(10px);flex-shrink:0;z-index:20}
 .tb-logo{font-size:18px;font-weight:800;letter-spacing:-.4px;white-space:nowrap}
 .tb-logo .dot{color:var(--accent)}
-.cloud-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--success);background:var(--success-bg);padding:4px 9px;border-radius:var(--r-pill)}
+.cloud-tag{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:700;color:var(--success);background:var(--success-bg);padding:4px 9px;border-radius:var(--r-pill);cursor:pointer}
+.cloud-tag.off{color:var(--text-soft);background:var(--bg-soft)}
 .cloud-tag::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--success)}
 .cloud-tag.off{color:var(--text-soft);background:var(--bg-soft)}
 .cloud-tag.off::before{background:var(--text-soft)}
@@ -1876,7 +1877,7 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   <div class="topbar">
     <button class="icon-btn nav-toggle" id="navToggle" aria-label="Mostrar/ocultar menú" title="Mostrar/ocultar menú" onclick="toggleNav()"><svg class="icon" viewBox="0 0 24 24"><use href="#i-list"/></svg></button>
     <div class="tb-logo">Sabor Tico<span class="dot">.</span></div>
-    <span id="cloudTag" class="cloud-tag hidden">Sincronizado</span>
+    <span id="cloudTag" class="cloud-tag hidden" role="button" tabindex="0" title="Estado de la nube — tocá para reconectar" onclick="cloudReconnect()">Sincronizado</span>
     <div class="suc-switch" id="sucSwitch">
       <svg class="icon icon-sm" viewBox="0 0 24 24"><use href="#i-pin"/></svg>
       <button type="button" class="suc-btn" id="sucBtn" aria-label="Cambiar de sucursal" onclick="toggleSucMenu(event)">

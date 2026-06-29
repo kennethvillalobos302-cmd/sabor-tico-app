@@ -12,7 +12,7 @@ const DATA_VERSION = 2;
 let _migrateReset = false;
 const FB = (window.SABOR_CLOUD && window.SABOR_CLOUD.databaseURL) ? window.SABOR_CLOUD : null;
 const CLIENT_ID = Math.random().toString(36).slice(2);
-let fbdb=null, cloudOn=false, _applyingRemote=false, _saveTimer=null, _cloudFailed=false;
+let fbdb=null, cloudOn=false, _applyingRemote=false, _saveTimer=null, _cloudFailed=false, _cloudConnected=false, _connDelay=null;
 
 /* ---------------- Roles ---------------- */
 const ROLES = {
@@ -319,14 +319,29 @@ async function cloudInit(){
       } finally { _applyingRemote=false; }
       if(needRepush) save();   // el remoto no tenía algunos de nuestros mensajes: reenviarlos para que lleguen a todos
     });
-    // Indicador de conexión real: "Sincronizado" (verde) / "Sin conexión" (gris)
+    // Indicador de conexión real: "Sincronizado" / "Conectando…" / "Sin conexión".
+    // Mientras reintenta mostramos "Conectando…"; solo pasa a "Sin conexión" si sigue caído tras 8s.
     fbdb.ref('.info/connected').on('value', s=>{
-      const on=!!(s&&s.val()); const t=$('#cloudTag');
-      if(t){ t.textContent = on?'Sincronizado':'Sin conexión'; t.classList.toggle('off', !on); }
+      const on=!!(s&&s.val()); _cloudConnected=on; const t=$('#cloudTag'); if(!t) return;
+      if(_connDelay){ clearTimeout(_connDelay); _connDelay=null; }
+      if(on){ t.textContent='Sincronizado'; t.classList.remove('off'); }
+      else {
+        t.textContent='Conectando…'; t.classList.add('off');
+        _connDelay=setTimeout(()=>{ if(!_cloudConnected){ const tt=$('#cloudTag'); if(tt) tt.textContent='Sin conexión'; } }, 8000);
+      }
     });
   }catch(e){ console.warn('cloud realtime', e); }
   return true;
 }
+// Forzar reconexión a la nube (tocar la etiqueta de estado). Útil si el canal en vivo se quedó caído.
+function cloudReconnect(){
+  if(!fbdb){ toast('La nube no está inicializada','err'); return; }
+  const t=$('#cloudTag'); if(t){ t.textContent='Conectando…'; t.classList.add('off'); }
+  try{ fbdb.goOffline(); }catch(_){}
+  setTimeout(()=>{ try{ fbdb.goOnline(); }catch(_){} }, 600);
+  toast('Reconectando a la nube…','ok');
+}
+window.cloudReconnect=cloudReconnect;
 
 function seed(){
   const s1=uid(), s2=uid();
