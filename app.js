@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v101 · Tareas con fecha de inicio + vista Cronograma (línea de tiempo)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v102 · Caja: control cruzado del efectivo (anti-fraude)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -214,7 +214,7 @@ function mergeAppendOnly(localDB, remoteDB){
    el otro aún no tenía), respetando los borrados con "tombstones". Para un objeto que existe en ambos
    lados, gana la EDICIÓN MÁS RECIENTE (por updatedAt), no "el último que sube"; así un cambio (p.ej.
    renombrar una sucursal) se propaga a todos y no lo revierte un dispositivo con datos viejos. */
-const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory','sucursales','calEvents','bodegas'];
+const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory','sucursales','calEvents','bodegas','cajas'];
 const _stamp=o=>(o&&(o.updatedAt||o.at||o.createdAt))||0;   // marca de tiempo para "edición más reciente gana"
 // REGLA: cualquier BORRADO DURO de una colección de RECON_COLLS DEBE marcar tomb(id) antes de filtrar,
 // o el borrado "revivirá" desde otro dispositivo. Usá delEntity(coll,id) para no olvidarlo nunca.
@@ -511,7 +511,7 @@ function seedSouvenirs(suc){
 
 /* Garantiza que todas las colecciones existan como arreglos (defensa universal:
    se llama en cada render por si entran datos incompletos desde la nube). */
-const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','invoices','recipes','shifts','reservations','clients','souvenirs','souvSales','bodegas','taskLabels'];
+const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','invoices','recipes','shifts','reservations','clients','souvenirs','souvSales','bodegas','taskLabels','cajas'];
 function defaultTaskLabels(){ return [
   {id:uid(),name:'Urgente',color:'#e0533d'},
   {id:uid(),name:'Compras',color:'#5b8def'},
@@ -936,18 +936,19 @@ const NAV_DEF = {
   reportes: { label:'Reportes',    ico:'trend' },
   reservas: { label:'Reservas',    ico:'reserva' },
   souvenir: { label:'Souvenirs',   ico:'gift' },
+  caja:     { label:'Caja',        ico:'cash' },
   equipo:   { label:'Equipo',      ico:'users' },
   auditoria:{ label:'Movimientos', ico:'shield' },
 };
 // Menú personalizado por puesto
 const ROLE_NAV = {
-  admin:       ['inicio','tareas','pedidos','reservas','souvenir','inventario','recetas','horarios','proyectos','chat','reportes','equipo','auditoria'],
+  admin:       ['inicio','tareas','pedidos','reservas','souvenir','caja','inventario','recetas','horarios','proyectos','chat','reportes','equipo','auditoria'],
   chef:        ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
   cocinero:    ['inicio','tareas','pedidos','inventario','recetas','horarios','proyectos','chat'],
-  jefe_salon:  ['inicio','tareas','pedidos','reservas','souvenir','inventario','horarios','proyectos','chat'],
-  salonero:    ['inicio','tareas','pedidos','reservas','souvenir','horarios','proyectos','chat'],
+  jefe_salon:  ['inicio','tareas','pedidos','reservas','souvenir','caja','inventario','horarios','proyectos','chat'],
+  salonero:    ['inicio','tareas','pedidos','reservas','souvenir','caja','horarios','proyectos','chat'],
   proveeduria: ['inicio','tareas','pedidos','inventario','horarios','proyectos','chat'],
-  contarh:     ['inicio','tareas','pedidos','inventario','equipo','horarios','reportes','proyectos','chat'],
+  contarh:     ['inicio','tareas','pedidos','caja','inventario','equipo','horarios','reportes','proyectos','chat'],
   gerencia_exp:['inicio','tareas','pedidos','reservas','souvenir','horarios','equipo','proyectos','chat','reportes'],
   gerencia_data:['inicio','tareas','pedidos','reservas','souvenir','inventario','proyectos','chat','reportes'],
   bartender:   ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
@@ -956,7 +957,7 @@ const ROLE_NAV = {
 Object.keys(ROLE_NAV).forEach(r=>{ if(!ROLE_NAV[r].includes('calendario')){ const i=ROLE_NAV[r].indexOf('horarios'); if(i>=0) ROLE_NAV[r].splice(i+1,0,'calendario'); else ROLE_NAV[r].splice(1,0,'calendario'); } });
 const ADMIN_GROUP = ['reportes','equipo','auditoria'];
 // Orden por importancia/uso diario (arriba lo más necesario; abajo lo ocasional)
-const NAV_PRIORITY = ['inicio','tareas','pedidos','inventario','reservas','horarios','chat','recetas','souvenir','calendario','proyectos','reportes','equipo','auditoria'];
+const NAV_PRIORITY = ['inicio','tareas','pedidos','caja','inventario','reservas','horarios','chat','recetas','souvenir','calendario','proyectos','reportes','equipo','auditoria'];
 function navItems(){
   const ids = ROLE_NAV[me().role] || ['inicio','tareas','pedidos','proyectos','chat'];
   const rank = id => { const i=NAV_PRIORITY.indexOf(id); return i<0?999:i; };
@@ -1076,7 +1077,7 @@ function render(){
   const v=$('#view');
   const map={ inicio:viewInicio, tareas:viewTareas, pedidos:viewPedidos, inventario:viewInventario,
     recetas:viewRecetas, horarios:viewHorarios, calendario:viewCalendario, personal:viewEquipo, proyectos:viewProyectos,
-    chat:viewChat, reportes:viewReportes, reservas:viewReservas, souvenir:viewSouvenir, equipo:viewEquipo, auditoria:viewAuditoria };
+    chat:viewChat, reportes:viewReportes, reservas:viewReservas, souvenir:viewSouvenir, caja:viewCaja, equipo:viewEquipo, auditoria:viewAuditoria };
   // si el puesto no tiene acceso a la vista actual, volver a inicio
   if(!(ROLE_NAV[me().role]||[]).includes(SES.view)) SES.view='inicio';
   v.classList.toggle('view-wide', SES.view==='inventario');   // inventario usa todo el ancho de pantalla
@@ -3169,6 +3170,378 @@ async function delUser(id){
   undoDelete('users', u, u.name);
 }
 window.newSucModal=newSucModal; window.sucEditModal=sucEditModal; window.saveSuc=saveSuc; window.delSuc=delSuc; window.delUser=delUser;
+
+/* =====================================================================
+   CAJA — control cruzado del efectivo (una por día por sucursal, anti-fraude)
+   Cruce "sistema vs conteo": el cajero declara ventas + cuenta el efectivo
+   por denominación; el sistema calcula el efectivo esperado y marca el
+   descuadre (faltante/sobrante). Gerencia/Contabilidad aprueban u observan.
+   ===================================================================== */
+const CAJA_DENOMS=[50000,20000,10000,5000,2000,1000,500,100,50,25,10,5];   // billetes y monedas de colones
+const CAJA_MOV_TYPES={ gasto:{label:'Gasto / pago',sign:-1}, retiro:{label:'Retiro al fuerte',sign:-1}, ingreso:{label:'Ingreso extra',sign:1} };
+let _cajaSuc='';
+function cajaIsCashier(){ return ['admin','jefe_salon','salonero'].includes(me().role); }
+function cajaIsVerifier(){ return ['admin','contarh'].includes(me().role); }
+function cajaNeedsPicker(){ const my=me().sucursalId; return isAdmin() || cajaIsVerifier() || !my || my==='all'; }
+function cajaSucId(){
+  const list=(DB.sucursales||[]).filter(Boolean);
+  const my=me().sucursalId;
+  if(!cajaNeedsPicker() && my && my!=='all') return my;
+  if(_cajaSuc && list.some(s=>s.id===_cajaSuc)) return _cajaSuc;
+  if(SES.sucFilter && SES.sucFilter!=='all' && list.some(s=>s.id===SES.sucFilter)) return SES.sucFilter;
+  return list.length?list[0].id:'all';
+}
+function setCajaSuc(id){ _cajaSuc=id; render(); }
+function userFirst(id){ const u=userById(id); return u?(u.name||'').split(' ')[0]:'—'; }
+function cajaDateLbl(iso){ if(!iso) return '—'; const d=new Date(iso+'T12:00:00'); return d.toLocaleDateString('es-CR',{weekday:'short',day:'numeric',month:'short'}); }
+function cajaFind(id){ return (DB.cajas||[]).find(c=>c&&c.id===id); }
+function cajaToday(sucId){ const d=todayISO(); return (DB.cajas||[]).find(c=>c&&c.sucursalId===sucId&&c.date===d); }
+function cajaCashOut(c){ return (c.movs||[]).filter(m=>m.type==='gasto'||m.type==='retiro').reduce((s,m)=>s+(+m.amount||0),0); }
+function cajaCashIn(c){ return (c.movs||[]).filter(m=>m.type==='ingreso').reduce((s,m)=>s+(+m.amount||0),0); }
+function cajaDenomTotal(denom){ if(!denom) return 0; return CAJA_DENOMS.reduce((s,d)=>s+d*(+denom[d]||0),0); }
+function cajaExpected(c){ const salesCash=c.sales?(+c.sales.efectivo||0):0; return (+c.openFloat||0)+salesCash+cajaCashIn(c)-cajaCashOut(c); }
+function cajaSalesTotal(s){ s=s||{}; return (+s.efectivo||0)+(+s.tarjeta||0)+(+s.sinpe||0)+(+s.transfer||0); }
+function cajaDiffLabel(diff){ diff=+diff||0; if(diff===0) return {txt:'Cuadra exacto',cls:'ok'}; return diff<0?{txt:'Faltante '+money(-diff),cls:'bad'}:{txt:'Sobrante '+money(diff),cls:'warn'}; }
+
+function viewCaja(){
+  const canCashier=cajaIsCashier(), canVerify=cajaIsVerifier();
+  const sucId=cajaSucId();
+  const suc=(DB.sucursales||[]).find(s=>s.id===sucId);
+  const todayC=cajaToday(sucId);
+  const scoped=(DB.cajas||[]).filter(c=>c&&inScope(c.sucursalId)).sort((a,b)=>(b.date||'').localeCompare(a.date||'')||(b.openAt||0)-(a.openAt||0));
+  const ym=todayISO().slice(0,7);
+  const monthCajas=scoped.filter(c=>c.date&&c.date.slice(0,7)===ym&&c.status!=='abierta');
+  const monthDiff=monthCajas.reduce((s,c)=>s+(+c.diff||0),0);
+  const faltantes=monthCajas.filter(c=>(+c.diff||0)<0);
+  const porRevisar=scoped.filter(c=>c.status==='cerrada');
+
+  let html=`<div class="page-head"><div><div class="page-title">Caja</div><div class="page-sub">Control cruzado del efectivo · una caja por día por sucursal</div></div><div class="ph-spacer"></div></div>`;
+  html+=sectionGuide('caja','¿Cómo funciona el control de Caja?',`
+    El <b>cajero</b> abre la caja con su fondo, registra gastos y retiros durante el día, y al cerrar
+    <b>declara las ventas</b> (efectivo, tarjeta, SINPE, transferencia) y <b>cuenta el efectivo por denominación</b>.
+    <ul style="margin:8px 0 0 18px">
+      <li>El sistema calcula el <b>efectivo esperado</b> y lo cruza con lo contado → marca <b>faltante o sobrante</b>.</li>
+      <li>Los <b>gastos</b> exigen foto del comprobante.</li>
+      <li><b>Gerencia y Contabilidad</b> revisan cada cierre: lo <b>aprueban</b> u <b>observan</b>.</li>
+      <li>Todo queda en una <b>bitácora que no se puede borrar</b> (anti-fraude).</li>
+    </ul>`);
+  if(cajaNeedsPicker() && (DB.sucursales||[]).length>1){
+    html+=`<div class="toolbar"><div class="field" style="margin:0;min-width:200px"><label>Sucursal</label><select class="select" onchange="setCajaSuc(this.value)">${(DB.sucursales||[]).map(s=>`<option value="${s.id}" ${s.id===sucId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div></div>`;
+  }
+  html+=`<div class="kpi-row">
+    <div class="kpi ${todayC?(todayC.status==='abierta'?'':'ok'):'alert'}"><div class="label">Caja de hoy</div><div class="value" style="font-size:17px">${todayC?(todayC.status==='abierta'?'Abierta':todayC.status==='cerrada'?'Por revisar':cap(todayC.status)):'Sin abrir'}</div><div class="sub">${esc(suc?suc.name:'—')}</div></div>
+    <div class="kpi ${monthDiff<0?'alert':''}"><div class="label">Descuadre del mes</div><div class="value" style="font-size:17px;color:${monthDiff<0?'var(--danger)':monthDiff>0?'var(--warn)':'inherit'}">${monthDiff===0?money(0):(monthDiff<0?'−'+money(-monthDiff):'+'+money(monthDiff))}</div><div class="sub">${monthCajas.length} cierres</div></div>
+    <div class="kpi ${faltantes.length?'alert':''}"><div class="label">Faltantes</div><div class="value">${faltantes.length}</div><div class="sub">este mes</div></div>
+    <div class="kpi ${porRevisar.length?'alert':''}" ${canVerify?'':'style="opacity:.7"'}><div class="label">Por revisar</div><div class="value">${porRevisar.length}</div><div class="sub">esperan aprobación</div></div>
+  </div>`;
+  html+=cajaAlerts(scoped);
+  html+=`<div class="td-sec">Caja de hoy · ${esc(suc?suc.name:'')} · ${cajaDateLbl(todayISO())}</div>`;
+  html+=cajaTodayCard(todayC, sucId, canCashier, canVerify);
+  if(canVerify && porRevisar.length){
+    html+=`<div class="td-sec">Cierres por revisar (${porRevisar.length})</div>`;
+    html+=porRevisar.map(c=>cajaRow(c)).join('');
+  }
+  html+=`<div class="td-sec">Historial de cajas</div>`;
+  const hist=scoped.filter(c=>!(todayC&&c.id===todayC.id)).slice(0,40);
+  html+= hist.length? hist.map(c=>cajaRow(c)).join('') : `<div class="td-empty">Sin cierres todavía.</div>`;
+  html+=`<div style="margin-top:14px"><button class="btn btn-ghost" onclick="cajaReportModal()">${svgIcon('trend','icon icon-sm')} Reporte y exportar CSV</button></div>`;
+  return html;
+}
+function cajaAlerts(scoped){
+  const closed=scoped.filter(c=>c.status==='cerrada'||c.status==='aprobada'||c.status==='observada');
+  const alerts=[];
+  const bySuc={};
+  closed.forEach(c=>{ (bySuc[c.sucursalId]=bySuc[c.sucursalId]||[]).push(c); });
+  Object.keys(bySuc).forEach(sid=>{
+    const arr=bySuc[sid].slice().sort((a,b)=>(b.date||'').localeCompare(a.date||'')).slice(0,7);
+    const f=arr.filter(c=>(+c.diff||0)<0).length;
+    if(f>=3) alerts.push({cls:'bad',txt:`${sucName(sid)}: ${f} faltantes en los últimos ${arr.length} cierres. Conviene revisar quién hace caja.`});
+  });
+  closed.filter(c=>c.status==='cerrada'&&Math.abs(+c.diff||0)>=5000).forEach(c=>alerts.push({cls:'warn',txt:`${cajaDateLbl(c.date)} · ${sucName(c.sucursalId)}: descuadre de ${money(Math.abs(c.diff))} sin revisar.`}));
+  if(!alerts.length) return '';
+  return `<div class="caja-alerts">${alerts.slice(0,5).map(a=>`<div class="caja-alert ${a.cls}">${svgIcon('shield','icon icon-sm')} ${esc(a.txt)}</div>`).join('')}</div>`;
+}
+function cajaTodayCard(c, sucId, canCashier, canVerify){
+  if(!c){
+    return `<div class="caja-card">
+      <div class="caja-empty">${svgIcon('cash','icon')}<div><b>La caja de hoy no está abierta.</b><div class="td-empty" style="padding:2px 0">${canCashier?'Abrila con el fondo inicial para empezar a registrar movimientos.':'Un cajero (salón o gerencia) debe abrirla.'}</div></div></div>
+      ${canCashier?`<div class="caja-actions"><button class="btn btn-primary" onclick="cajaOpenModal('${sucId}')">${svgIcon('plus','icon icon-sm')} Abrir caja</button></div>`:''}
+    </div>`;
+  }
+  if(c.status==='abierta'){
+    const canManage=canCashier;
+    const cashNow=(+c.openFloat||0)+cajaCashIn(c)-cajaCashOut(c);
+    return `<div class="caja-card">
+      <div class="caja-head"><span class="pill proceso">Abierta</span><span class="caja-sub">Abrió ${esc(userFirst(c.openedBy))} · ${timeAgo(c.openAt)}</span></div>
+      <div class="caja-grid">
+        <div class="caja-stat"><span>Fondo de apertura</span><b>${money(c.openFloat)}</b></div>
+        <div class="caja-stat"><span>Ingresos extra</span><b>+${money(cajaCashIn(c))}</b></div>
+        <div class="caja-stat"><span>Gastos y retiros</span><b>−${money(cajaCashOut(c))}</b></div>
+        <div class="caja-stat"><span>Efectivo en caja (sin ventas)</span><b>${money(cashNow)}</b></div>
+      </div>
+      ${cajaMovsList(c, canManage)}
+      <div class="caja-actions">
+        ${canManage?`<button class="btn btn-ghost" onclick="cajaMovModal('${c.id}','gasto')">${svgIcon('box','icon icon-sm')} Gasto</button>
+        <button class="btn btn-ghost" onclick="cajaMovModal('${c.id}','retiro')">${svgIcon('shield','icon icon-sm')} Retiro</button>
+        <button class="btn btn-ghost" onclick="cajaMovModal('${c.id}','ingreso')">${svgIcon('plus','icon icon-sm')} Ingreso</button>
+        <button class="btn btn-primary" onclick="cajaCloseModal('${c.id}')">${svgIcon('check','icon icon-sm')} Cerrar caja</button>`:'<div class="td-empty">Solo un cajero puede cerrarla.</div>'}
+      </div>
+    </div>`;
+  }
+  return cajaClosedCard(c, canVerify);
+}
+function cajaMovsList(c, canManage){
+  const movs=c.movs||[];
+  if(!movs.length) return `<div class="td-empty" style="padding:6px 0">Sin movimientos todavía.</div>`;
+  return `<div class="caja-movs">${movs.map(m=>{
+    const mt=CAJA_MOV_TYPES[m.type]||{label:m.type,sign:-1};
+    return `<div class="caja-mov"><span class="caja-mov-t">${esc(mt.label)}</span><span class="caja-mov-c">${esc(m.concept||'')}</span>${m.mid?mediaTag(m.mid,'image','style="width:30px;height:30px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex:0 0 auto" onclick="openImgFromEl(this)"'):''}<span class="caja-mov-a ${mt.sign<0?'out':'in'}">${mt.sign<0?'−':'+'}${money(m.amount)}</span>${canManage?`<button class="caja-mov-x" title="Quitar" onclick="cajaDelMov('${c.id}','${m.id}')">${svgIcon('x','icon icon-sm')}</button>`:''}</div>`;
+  }).join('')}</div>`;
+}
+function cajaClosedCard(c, canVerify){
+  const dl=cajaDiffLabel(c.diff); const s=c.sales||{};
+  const badge=c.status==='aprobada'?'<span class="pill hecha">Aprobada</span>':c.status==='observada'?'<span class="pill rechazada">Observada</span>':'<span class="pill pendiente">Cerrada · por revisar</span>';
+  const canReview=canVerify&&c.status==='cerrada';
+  return `<div class="caja-card">
+    <div class="caja-head">${badge}<span class="caja-sub">Cerró ${esc(userFirst(c.closedBy))} · ${timeAgo(c.closedAt)}</span></div>
+    <div class="caja-cross">
+      <div class="caja-cross-col"><span>Esperado (sistema)</span><b>${money(c.expectedCash)}</b></div>
+      <div class="caja-cross-col"><span>Contado (físico)</span><b>${money(c.countedCash)}</b></div>
+      <div class="caja-cross-col diff ${dl.cls}"><span>Descuadre</span><b>${dl.txt}</b></div>
+    </div>
+    <div class="caja-grid">
+      <div class="caja-stat"><span>Ventas efectivo</span><b>${money(s.efectivo)}</b></div>
+      <div class="caja-stat"><span>Tarjeta</span><b>${money(s.tarjeta)}</b></div>
+      <div class="caja-stat"><span>SINPE</span><b>${money(s.sinpe)}</b></div>
+      <div class="caja-stat"><span>Transferencia</span><b>${money(s.transfer)}</b></div>
+      <div class="caja-stat"><span>Ventas totales</span><b>${money(cajaSalesTotal(s))}</b></div>
+      <div class="caja-stat"><span>Fondo apertura</span><b>${money(c.openFloat)}</b></div>
+    </div>
+    ${c.closeNote?`<div class="caja-note">${svgIcon('message','icon icon-sm')} ${esc(c.closeNote)}</div>`:''}
+    ${c.reviewNote?`<div class="caja-note"><b>Revisión:</b> ${esc(c.reviewNote)} — ${esc(userFirst(c.reviewedBy))}</div>`:''}
+    <div class="caja-actions">
+      <button class="btn btn-ghost" onclick="cajaDetail('${c.id}')">${svgIcon('list','icon icon-sm')} Ver detalle</button>
+      ${canReview?`<button class="btn btn-primary" onclick="cajaReview('${c.id}','aprobada')">${svgIcon('check','icon icon-sm')} Aprobar</button>
+      <button class="btn btn-danger" onclick="cajaReview('${c.id}','observada')">${svgIcon('x','icon icon-sm')} Observar</button>`:''}
+    </div>
+  </div>`;
+}
+function cajaRow(c){
+  const dl=cajaDiffLabel(c.diff);
+  const st=c.status==='abierta'?'<span class="pill proceso">Abierta</span>':c.status==='aprobada'?'<span class="pill hecha">Aprobada</span>':c.status==='observada'?'<span class="pill rechazada">Observada</span>':'<span class="pill pendiente">Por revisar</span>';
+  return `<div class="caja-row" onclick="cajaDetail('${c.id}')">
+    <div class="caja-row-main">
+      <div class="caja-row-top"><b>${cajaDateLbl(c.date)}</b> ${st}</div>
+      <div class="caja-row-sub">${esc(sucName(c.sucursalId))} · ${c.status==='abierta'?('Fondo '+money(c.openFloat)):('Ventas '+money(cajaSalesTotal(c.sales)))}</div>
+    </div>
+    ${c.status!=='abierta'?`<div class="caja-row-diff ${dl.cls}">${dl.txt}</div>`:''}
+  </div>`;
+}
+function cajaOpenModal(sucId){
+  if(!cajaIsCashier()){ toast('No tenés permiso para abrir caja','err'); return; }
+  if(cajaToday(sucId)){ toast('La caja de hoy ya está abierta','err'); return; }
+  openModal(`
+    <div class="modal-head"><h3>${svgIcon('cash','icon')} Abrir caja</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="td-empty" style="margin-bottom:8px">Sucursal: <b>${esc(sucName(sucId))}</b> · ${cajaDateLbl(todayISO())}</div>
+      <div class="field"><label>Fondo de apertura <span class="lbl-soft">(efectivo con el que empieza la caja)</span></label><input class="input" id="cjFloat" type="number" min="0" step="any" inputmode="numeric" placeholder="Ej: 50000" value="0"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="cajaOpen('${sucId}')">Abrir caja</button></div>`, false);
+}
+function cajaOpen(sucId){
+  if(!cajaIsCashier()) return;
+  if(cajaToday(sucId)){ toast('Ya está abierta','err'); return; }
+  const openFloat=+($('#cjFloat').value)||0;
+  const c={ id:uid(), sucursalId:sucId, date:todayISO(), status:'abierta',
+    openFloat, openedBy:SES.userId, openAt:now(), movs:[],
+    sales:null, denom:null, countedCash:0, expectedCash:0, diff:0,
+    closedBy:null, closedAt:null, closeNote:'', reviewStatus:null, reviewedBy:null, reviewedAt:null, reviewNote:'',
+    log:[{at:now(),byId:SES.userId,text:'abrió la caja con fondo '+money(openFloat)}], updatedAt:now() };
+  DB.cajas=DB.cajas||[]; DB.cajas.unshift(c);
+  audit('caja',`abrió caja (${sucName(sucId)}) con fondo ${money(openFloat)}`,sucId);
+  closeModal(); toast('Caja abierta','ok'); save(); render();
+}
+let _cajaMovImg=null;
+function cajaMovModal(id,type){
+  const c=cajaFind(id); if(!c||c.status!=='abierta') return;
+  if(!cajaIsCashier()){ toast('Sin permiso','err'); return; }
+  _cajaMovImg=null;
+  const mt=CAJA_MOV_TYPES[type]||{label:type};
+  const needPhoto=(type==='gasto');
+  openModal(`
+    <div class="modal-head"><h3>${esc(mt.label)}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Monto (₡)</label><input class="input" id="cmAmt" type="number" min="0" step="any" inputmode="numeric" placeholder="0"></div>
+      <div class="field"><label>Concepto / detalle</label><input class="input" id="cmConcept" placeholder="${type==='gasto'?'Ej: compra de hielo':type==='retiro'?'Ej: retiro al fuerte':'Ej: fondo adicional'}" autocomplete="off"></div>
+      <div class="field"><label>Comprobante ${needPhoto?'<span style="color:var(--danger)">(obligatorio)</span>':'<span class="lbl-soft">(opcional)</span>'}</label>
+        <input type="file" id="cmFile" accept="image/*" onchange="cajaMovPick(this)">
+        <div class="img-prev" id="cmPrev"></div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="cajaAddMov('${id}','${type}')">Registrar</button></div>`, false);
+}
+async function cajaMovPick(input){ const arr=await readImages(input.files); _cajaMovImg=(arr&&arr[0])||null; const p=$('#cmPrev'); if(p) p.innerHTML=_cajaMovImg?`<img src="${safeImg(_cajaMovImg)}">`:''; }
+async function cajaAddMov(id,type){
+  const c=cajaFind(id); if(!c||c.status!=='abierta') return;
+  if(!cajaIsCashier()) return;
+  const amount=+($('#cmAmt').value)||0;
+  if(amount<=0){ toast('Poné un monto válido','err'); return; }
+  const concept=$('#cmConcept').value.trim();
+  if(type==='gasto' && !_cajaMovImg){ toast('El gasto necesita foto del comprobante','err'); return; }
+  let mid=null; if(_cajaMovImg){ try{ mid=await putMedia(_cajaMovImg); }catch(_){} }
+  c.movs=c.movs||[]; c.movs.push({id:uid(),type,amount,concept,mid,byId:SES.userId,at:now()});
+  c.log.push({at:now(),byId:SES.userId,text:`${CAJA_MOV_TYPES[type].label}: ${money(amount)}${concept?' ('+concept+')':''}`});
+  c.updatedAt=now();
+  audit('caja',`${CAJA_MOV_TYPES[type].label} ${money(amount)} en caja (${sucName(c.sucursalId)})`,c.sucursalId);
+  _cajaMovImg=null; closeModal(); toast('Movimiento registrado','ok'); save(); render();
+}
+function cajaDelMov(id,mid){
+  const c=cajaFind(id); if(!c||c.status!=='abierta') return;
+  if(!cajaIsCashier()) return;
+  c.movs=(c.movs||[]).filter(m=>m.id!==mid); c.updatedAt=now();
+  c.log.push({at:now(),byId:SES.userId,text:'quitó un movimiento'});
+  save(); render();
+}
+function cajaCloseModal(id){
+  const c=cajaFind(id); if(!c||c.status!=='abierta') return;
+  if(!cajaIsCashier()){ toast('Sin permiso','err'); return; }
+  const s=c.sales||{};
+  const denomRows=CAJA_DENOMS.map(d=>`<div class="denom-row"><span class="denom-face">${money(d)}</span><span class="denom-x">×</span><input class="input denom-in" type="number" min="0" step="1" inputmode="numeric" data-d="${d}" value="" oninput="cajaCalc('${id}')"><span class="denom-sub" id="dsub-${d}">${money(0)}</span></div>`).join('');
+  openModal(`
+    <div class="modal-head"><h3>${svgIcon('check','icon')} Cerrar caja</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="ip-sec">Ventas declaradas del día</div>
+      <div class="row2"><div class="field"><label>Efectivo (₡)</label><input class="input" id="csEf" type="number" min="0" step="any" inputmode="numeric" value="${+s.efectivo||''}" oninput="cajaCalc('${id}')"></div>
+        <div class="field"><label>Tarjeta (₡)</label><input class="input" id="csTa" type="number" min="0" step="any" inputmode="numeric" value="${+s.tarjeta||''}" oninput="cajaCalc('${id}')"></div></div>
+      <div class="row2"><div class="field"><label>SINPE Móvil (₡)</label><input class="input" id="csSi" type="number" min="0" step="any" inputmode="numeric" value="${+s.sinpe||''}" oninput="cajaCalc('${id}')"></div>
+        <div class="field"><label>Transferencia (₡)</label><input class="input" id="csTr" type="number" min="0" step="any" inputmode="numeric" value="${+s.transfer||''}" oninput="cajaCalc('${id}')"></div></div>
+      <div class="ip-sec">Conteo del efectivo (billetes y monedas)</div>
+      <div class="denom-grid">${denomRows}</div>
+      <div class="caja-live">
+        <div class="caja-live-row"><span>Efectivo contado</span><b id="cjCounted">${money(0)}</b></div>
+        <div class="caja-live-row"><span>Efectivo esperado (sistema)</span><b id="cjExpected">${money(cajaExpected(c))}</b></div>
+        <div class="caja-live-row big"><span>Descuadre</span><b id="cjDiff" class="cjdiff-ok">—</b></div>
+      </div>
+      <div class="field"><label>Nota <span class="lbl-soft">(opcional — explicación del descuadre)</span></label><textarea class="textarea" id="cjNote" placeholder="Observaciones…"></textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="cajaClose('${id}')">${svgIcon('check','icon icon-sm')} Cerrar y registrar</button></div>`, true);
+  cajaCalc(id);
+}
+function _cajaReadSales(){ return { efectivo:+($('#csEf')?$('#csEf').value:0)||0, tarjeta:+($('#csTa')?$('#csTa').value:0)||0, sinpe:+($('#csSi')?$('#csSi').value:0)||0, transfer:+($('#csTr')?$('#csTr').value:0)||0 }; }
+function _cajaReadDenom(){ const denom={}; document.querySelectorAll('.denom-in').forEach(el=>{ denom[el.getAttribute('data-d')]=+el.value||0; }); return denom; }
+function cajaCalc(id){
+  const c=cajaFind(id); if(!c) return;
+  const sales=_cajaReadSales(); const denom=_cajaReadDenom();
+  CAJA_DENOMS.forEach(d=>{ const el=$('#dsub-'+d); if(el) el.textContent=money(d*(+denom[d]||0)); });
+  const counted=cajaDenomTotal(denom);
+  const expected=(+c.openFloat||0)+(+sales.efectivo||0)+cajaCashIn(c)-cajaCashOut(c);
+  const diff=counted-expected; const dl=cajaDiffLabel(diff);
+  const ce=$('#cjCounted'); if(ce) ce.textContent=money(counted);
+  const ex=$('#cjExpected'); if(ex) ex.textContent=money(expected);
+  const dd=$('#cjDiff'); if(dd){ dd.textContent=dl.txt; dd.className='cjdiff-'+dl.cls; }
+}
+function cajaClose(id){
+  const c=cajaFind(id); if(!c||c.status!=='abierta') return;
+  if(!cajaIsCashier()){ toast('Sin permiso','err'); return; }
+  const sales=_cajaReadSales(); const denom=_cajaReadDenom();
+  const counted=cajaDenomTotal(denom);
+  c.sales=sales; c.denom=denom; c.countedCash=counted;
+  c.expectedCash=cajaExpected(c);
+  c.diff=counted-c.expectedCash;
+  c.status='cerrada'; c.closedBy=SES.userId; c.closedAt=now(); c.closeNote=($('#cjNote')?$('#cjNote').value.trim():''); c.updatedAt=now();
+  const dl=cajaDiffLabel(c.diff);
+  c.log.push({at:now(),byId:SES.userId,text:`cerró la caja · ${dl.txt} (contado ${money(counted)} vs esperado ${money(c.expectedCash)})`});
+  audit('caja',`cerró caja (${sucName(c.sucursalId)}) · ${dl.txt}`,c.sucursalId);
+  if(c.diff!==0){
+    const verifiers=DB.users.filter(u=>u&&u.active&&['admin','contarh'].includes(u.role)&&(u.sucursalId===c.sucursalId||u.sucursalId==='all'||!u.sucursalId)).map(u=>u.id);
+    notify(verifiers, `Descuadre en caja ${sucName(c.sucursalId)}: ${dl.txt}`, '⚠️', {view:'caja'});
+  }
+  closeModal(); toast(c.diff===0?'Caja cerrada, cuadra exacto ✅':'Caja cerrada · '+dl.txt, c.diff===0?'ok':'err'); save(); render();
+}
+function cajaReview(id,status){
+  const c=cajaFind(id); if(!c||c.status!=='cerrada') return;
+  if(!cajaIsVerifier()){ toast('Solo Gerencia o Contabilidad puede revisar','err'); return; }
+  let note='';
+  if(status==='observada'){ note=prompt('¿Qué observás en este cierre? (queda registrado)'); if(note===null) return; }
+  c.status=status; c.reviewStatus=status; c.reviewedBy=SES.userId; c.reviewedAt=now(); c.reviewNote=(note||'').trim(); c.updatedAt=now();
+  const lbl=status==='aprobada'?'aprobó':'observó';
+  c.log.push({at:now(),byId:SES.userId,text:`${lbl} el cierre`+(note?`: ${note}`:'')});
+  audit('caja',`${lbl} caja (${sucName(c.sucursalId)}) del ${cajaDateLbl(c.date)}`,c.sucursalId);
+  notify([c.closedBy], `Tu cierre de caja (${sucName(c.sucursalId)}) fue ${status}`, status==='aprobada'?'✅':'⚠️', {view:'caja'});
+  closeModal(); toast('Cierre '+status,'ok'); save(); render();
+}
+function cajaDetail(id){
+  const c=cajaFind(id); if(!c) return;
+  const canVerify=cajaIsVerifier();
+  const dl=cajaDiffLabel(c.diff); const s=c.sales||{};
+  const denomHtml=c.denom? (CAJA_DENOMS.filter(d=>(+c.denom[d]||0)>0).map(d=>`<div class="denom-row"><span class="denom-face">${money(d)}</span><span class="denom-x">× ${(+c.denom[d]||0)}</span><span class="denom-sub">${money(d*(+c.denom[d]||0))}</span></div>`).join('')||'<div class="td-empty">Sin desglose.</div>') : '<div class="td-empty">Caja no cerrada.</div>';
+  const movs=c.movs||[];
+  const movHtml=movs.length?movs.map(m=>{const mt=CAJA_MOV_TYPES[m.type]||{label:m.type,sign:-1};return `<div class="caja-mov"><span class="caja-mov-t">${esc(mt.label)}</span><span class="caja-mov-c">${esc(m.concept||'')}</span>${m.mid?mediaTag(m.mid,'image','style="width:30px;height:30px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex:0 0 auto" onclick="openImgFromEl(this)"'):''}<span class="caja-mov-a ${mt.sign<0?'out':'in'}">${mt.sign<0?'−':'+'}${money(m.amount)}</span></div>`;}).join(''):'<div class="td-empty">Sin movimientos.</div>';
+  const logHtml=[...(c.log||[])].reverse().map(l=>`<div class="log-item"><b>${esc(userFirst(l.byId))}</b> ${esc(l.text)} · ${timeAgo(l.at)}</div>`).join('');
+  const canReview=canVerify&&c.status==='cerrada';
+  openModal(`
+    <div class="modal-head"><h3>Caja · ${esc(sucName(c.sucursalId))}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="td-top"><span class="pill ${c.status==='abierta'?'proceso':c.status==='aprobada'?'hecha':c.status==='observada'?'rechazada':'pendiente'}">${cap(c.status)}</span><span class="td-badge">${cajaDateLbl(c.date)}</span></div>
+      ${c.status!=='abierta'?`<div class="caja-cross">
+        <div class="caja-cross-col"><span>Esperado</span><b>${money(c.expectedCash)}</b></div>
+        <div class="caja-cross-col"><span>Contado</span><b>${money(c.countedCash)}</b></div>
+        <div class="caja-cross-col diff ${dl.cls}"><span>Descuadre</span><b>${dl.txt}</b></div></div>`:''}
+      <div class="td-meta">
+        <div class="td-mrow"><span class="td-ml">Fondo apertura</span><span class="td-mv">${money(c.openFloat)}</span></div>
+        <div class="td-mrow"><span class="td-ml">Abrió</span><span class="td-mv">${esc(userFirst(c.openedBy))} · ${fmtDateTime(c.openAt)}</span></div>
+        ${c.closedBy?`<div class="td-mrow"><span class="td-ml">Cerró</span><span class="td-mv">${esc(userFirst(c.closedBy))} · ${fmtDateTime(c.closedAt)}</span></div>`:''}
+        ${c.reviewedBy?`<div class="td-mrow"><span class="td-ml">Revisó</span><span class="td-mv">${esc(userFirst(c.reviewedBy))} · ${fmtDateTime(c.reviewedAt)}</span></div>`:''}
+      </div>
+      ${c.status!=='abierta'?`<div class="ip-sec">Ventas declaradas</div>
+      <div class="caja-grid">
+        <div class="caja-stat"><span>Efectivo</span><b>${money(s.efectivo)}</b></div>
+        <div class="caja-stat"><span>Tarjeta</span><b>${money(s.tarjeta)}</b></div>
+        <div class="caja-stat"><span>SINPE</span><b>${money(s.sinpe)}</b></div>
+        <div class="caja-stat"><span>Transferencia</span><b>${money(s.transfer)}</b></div>
+        <div class="caja-stat"><span>Total ventas</span><b>${money(cajaSalesTotal(s))}</b></div>
+      </div>`:''}
+      <div class="ip-sec">Movimientos</div>${movHtml}
+      ${c.status!=='abierta'?`<div class="ip-sec">Desglose de efectivo contado</div><div class="denom-grid">${denomHtml}</div>`:''}
+      ${c.closeNote?`<div class="caja-note">${esc(c.closeNote)}</div>`:''}
+      ${c.reviewNote?`<div class="caja-note"><b>Observación:</b> ${esc(c.reviewNote)}</div>`:''}
+      <div class="ip-sec">Bitácora</div><div class="log">${logHtml||'<div class="td-empty">—</div>'}</div>
+      ${canReview?`<div class="td-actions"><button class="btn btn-primary" onclick="cajaReview('${c.id}','aprobada')">${svgIcon('check','icon icon-sm')} Aprobar</button><button class="btn btn-danger" onclick="cajaReview('${c.id}','observada')">${svgIcon('x','icon icon-sm')} Observar</button></div>`:''}
+    </div>`, true);
+}
+function cajaReportModal(){
+  const scoped=(DB.cajas||[]).filter(c=>c&&inScope(c.sucursalId)&&c.status!=='abierta');
+  const ym=todayISO().slice(0,7);
+  const month=scoped.filter(c=>c.date&&c.date.slice(0,7)===ym);
+  const sumDiff=arr=>arr.reduce((s,c)=>s+(+c.diff||0),0);
+  const sumSales=arr=>arr.reduce((s,c)=>s+cajaSalesTotal(c.sales),0);
+  const faltMonth=month.filter(c=>(+c.diff||0)<0);
+  openModal(`
+    <div class="modal-head"><h3>${svgIcon('trend','icon')} Reporte de caja</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="ip-sec">Mes actual (${ym})</div>
+      <div class="caja-grid">
+        <div class="caja-stat"><span>Cierres</span><b>${month.length}</b></div>
+        <div class="caja-stat"><span>Ventas totales</span><b>${money(sumSales(month))}</b></div>
+        <div class="caja-stat"><span>Descuadre neto</span><b>${money(sumDiff(month))}</b></div>
+        <div class="caja-stat"><span>Faltantes</span><b>${faltMonth.length}</b></div>
+      </div>
+      <div class="td-empty" style="margin-top:8px">El CSV incluye todo el historial visible (para Contabilidad).</div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button><button class="btn btn-primary" onclick="cajaExportCSV()">${svgIcon('box','icon icon-sm')} Descargar CSV</button></div>`, false);
+}
+function cajaExportCSV(){
+  const scoped=(DB.cajas||[]).filter(c=>c&&inScope(c.sucursalId)&&c.status!=='abierta').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
+  const head=['Fecha','Sucursal','Estado','Fondo','Vta efectivo','Tarjeta','SINPE','Transferencia','Vta total','Gastos+retiros','Esperado','Contado','Descuadre','Cerró','Revisó'];
+  const lines=[head.map(csvCell).join(',')];
+  scoped.forEach(c=>{ const s=c.sales||{}; lines.push([c.date,sucName(c.sucursalId),c.status,c.openFloat,+s.efectivo||0,+s.tarjeta||0,+s.sinpe||0,+s.transfer||0,cajaSalesTotal(s),cajaCashOut(c),c.expectedCash,c.countedCash,c.diff,userFirst(c.closedBy),c.reviewedBy?userFirst(c.reviewedBy):''].map(csvCell).join(',')); });
+  downloadText('caja_'+todayISO()+'.csv', '﻿'+lines.join('\n'), 'text/csv');
+  toast('Reporte CSV descargado','ok');
+}
+window.setCajaSuc=setCajaSuc; window.cajaOpenModal=cajaOpenModal; window.cajaOpen=cajaOpen;
+window.cajaMovModal=cajaMovModal; window.cajaMovPick=cajaMovPick; window.cajaAddMov=cajaAddMov; window.cajaDelMov=cajaDelMov;
+window.cajaCloseModal=cajaCloseModal; window.cajaCalc=cajaCalc; window.cajaClose=cajaClose;
+window.cajaReview=cajaReview; window.cajaDetail=cajaDetail; window.cajaReportModal=cajaReportModal; window.cajaExportCSV=cajaExportCSV;
 
 /* =====================================================================
    VISTA: AUDITORÍA (admin) — movimientos, anti-fraude

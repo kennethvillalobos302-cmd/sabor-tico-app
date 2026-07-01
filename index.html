@@ -438,6 +438,58 @@ input,textarea,select{font-size:16px}
 .gantt-bar.done{opacity:.72;text-decoration:line-through}
 .gantt-bar.contl{border-top-left-radius:0;border-bottom-left-radius:0;border-left-style:dashed}
 .gantt-bar.contr{border-top-right-radius:0;border-bottom-right-radius:0}
+/* ---- Caja (control de efectivo) ---- */
+.caja-card{background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--r-lg);padding:14px;box-shadow:var(--e1);margin-bottom:6px}
+.caja-empty{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.caja-empty .icon{width:30px;height:30px;color:var(--accent);flex:0 0 auto}
+.caja-head{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+.caja-sub{color:var(--text-soft);font-size:12.5px}
+.caja-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:10px}
+.caja-stat{background:var(--bg-soft);border-radius:var(--r-md);padding:8px 10px;display:flex;flex-direction:column;gap:2px}
+.caja-stat span{font-size:11px;color:var(--text-soft)}
+.caja-stat b{font-size:15px;font-weight:800}
+.caja-cross{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}
+.caja-cross-col{background:var(--bg-soft);border-radius:var(--r-md);padding:10px;text-align:center}
+.caja-cross-col span{display:block;font-size:11px;color:var(--text-soft);margin-bottom:3px}
+.caja-cross-col b{font-size:16px;font-weight:800}
+.caja-cross-col.diff.ok{background:color-mix(in srgb,var(--success) 15%,var(--bg-card));outline:1px solid var(--success)}
+.caja-cross-col.diff.bad{background:color-mix(in srgb,var(--danger) 15%,var(--bg-card));outline:1px solid var(--danger)}
+.caja-cross-col.diff.bad b{color:var(--danger)}
+.caja-cross-col.diff.warn{background:color-mix(in srgb,var(--warn) 18%,var(--bg-card));outline:1px solid var(--warn)}
+.caja-cross-col.diff.warn b{color:var(--warn)}
+.caja-cross-col.diff.ok b{color:var(--success)}
+.caja-movs{display:flex;flex-direction:column;gap:5px;margin-bottom:10px}
+.caja-mov{display:flex;align-items:center;gap:8px;background:var(--bg-soft);border-radius:8px;padding:7px 10px}
+.caja-mov-t{font-size:12px;font-weight:700;flex:0 0 auto}
+.caja-mov-c{font-size:12.5px;color:var(--text-soft);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.caja-mov-img{width:30px;height:30px;object-fit:cover;border-radius:6px;flex:0 0 auto}
+.caja-mov-a{font-weight:800;font-size:13px;flex:0 0 auto}
+.caja-mov-a.out{color:var(--danger)}.caja-mov-a.in{color:var(--success)}
+.caja-mov-x{border:none;background:transparent;color:var(--text-dim);cursor:pointer;padding:2px;flex:0 0 auto}
+.caja-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.caja-note{background:var(--bg-soft);border-left:3px solid var(--accent);border-radius:8px;padding:8px 10px;font-size:12.5px;margin-bottom:10px}
+.caja-row{display:flex;align-items:center;gap:10px;background:var(--bg-card);border:1px solid var(--border-soft);border-radius:var(--r-md);padding:10px 12px;margin-bottom:6px;cursor:pointer}
+.caja-row:hover{background:var(--bg-soft)}
+.caja-row-main{flex:1;min-width:0}
+.caja-row-top{display:flex;align-items:center;gap:8px;font-size:13.5px;text-transform:capitalize}
+.caja-row-sub{font-size:12px;color:var(--text-soft);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.caja-row-diff{font-size:12.5px;font-weight:800;flex:0 0 auto}
+.caja-row-diff.ok{color:var(--success)}.caja-row-diff.bad{color:var(--danger)}.caja-row-diff.warn{color:var(--warn)}
+.caja-alerts{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.caja-alert{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;padding:9px 12px;border-radius:var(--r-md)}
+.caja-alert .icon{flex:0 0 auto}
+.caja-alert.bad{background:color-mix(in srgb,var(--danger) 12%,var(--bg-card));color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 35%,transparent)}
+.caja-alert.warn{background:color-mix(in srgb,var(--warn) 14%,var(--bg-card));color:var(--warn);border:1px solid color-mix(in srgb,var(--warn) 35%,transparent)}
+.denom-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px 14px;margin-bottom:12px}
+.denom-row{display:flex;align-items:center;gap:8px}
+.denom-face{font-weight:800;font-size:13px;width:64px;flex:0 0 auto;text-align:right}
+.denom-x{color:var(--text-soft);flex:0 0 auto}
+.denom-in{width:60px;flex:0 0 auto;text-align:center;padding:6px}
+.denom-sub{font-size:12px;color:var(--text-soft);flex:1;text-align:right;min-width:60px}
+.caja-live{background:var(--bg-soft);border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px}
+.caja-live-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13.5px}
+.caja-live-row.big{border-top:1px solid var(--border);margin-top:4px;padding-top:8px;font-size:15px;font-weight:800}
+.cjdiff-ok{color:var(--success)}.cjdiff-bad{color:var(--danger)}.cjdiff-warn{color:var(--warn)}
 .kb-card{position:relative;background:var(--bg-card);border:1px solid var(--border-soft);border-left:3px solid var(--pc,var(--accent));border-radius:var(--r-md);padding:11px 12px;cursor:pointer;box-shadow:var(--e1);transition:transform var(--t-fast),box-shadow var(--t-fast)}
 .kb-card[draggable="true"]{cursor:grab}
 .kb-card[draggable="true"]:active{cursor:grabbing}
@@ -1932,6 +1984,7 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
 <g id="i-check"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></g>
 <g id="i-box"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4"/><path d="M12 11v10"/></g>
 <g id="i-chart"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M3 20h18"/></g>
+<g id="i-cash"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M5.5 9.5h.01M18.5 14.5h.01"/></g>
 <g id="i-utensils"><path d="M6 3v7a2 2 0 004 0V3"/><path d="M8 10v11"/><path d="M16 3c-1.5 0-3 1.8-3 4.5S14.5 12 16 12v9"/></g>
 <g id="i-calendar"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></g>
 <g id="i-user"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></g>
