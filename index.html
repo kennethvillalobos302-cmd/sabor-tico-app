@@ -410,6 +410,34 @@ input,textarea,select{font-size:16px}
 .tc-prev:empty{display:none}
 .tc-prev img{max-height:76px;border-radius:9px;margin-bottom:8px;display:block;border:1px solid var(--border-soft)}
 .tc-prev-x{position:absolute;top:3px;right:3px;width:22px;height:22px;border:none;border-radius:50%;background:rgba(0,0,0,.6);color:#fff;display:flex;align-items:center;justify-content:center;cursor:pointer}
+.lbl-soft{font-weight:400;color:var(--text-soft);font-size:11px}
+/* ---- Cronograma / línea de tiempo (Gantt) ---- */
+.gantt-nav{display:flex;align-items:center;gap:10px;margin:2px 0 12px}
+.gantt-navb{width:34px;height:34px}
+.gantt-lbl{font-size:15px;font-weight:800;min-width:170px;text-align:center}
+.gantt-wrap{overflow:auto;border:1px solid var(--border-soft);border-radius:var(--r-lg);background:var(--bg-card);max-height:72vh;-webkit-overflow-scrolling:touch}
+.gantt{display:inline-block;min-width:100%}
+.gantt-head{display:flex;position:sticky;top:0;z-index:3;background:var(--bg-card);border-bottom:1px solid var(--border)}
+.gantt-hname{width:var(--namew);flex:0 0 auto;position:sticky;left:0;z-index:4;background:var(--bg-card);padding:9px 12px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--text-soft);box-shadow:1px 0 0 var(--border-soft);display:flex;align-items:center}
+.gantt-days{display:flex;flex:0 0 auto}
+.gantt-dh{width:42px;flex:0 0 auto;text-align:center;padding:5px 0;font-size:10px;font-weight:700;color:var(--text-soft);border-left:1px solid var(--border-soft)}
+.gantt-dh.we{background:var(--bg-soft)}
+.gantt-dh span{display:block;font-size:12px;color:var(--text);font-weight:800;margin-top:1px}
+.gantt-dh.today{color:var(--accent)}.gantt-dh.today span{color:#fff;background:var(--accent);border-radius:50%;width:20px;height:20px;line-height:20px;margin:1px auto 0}
+.gantt-row{display:flex;border-bottom:1px solid var(--border-soft);min-height:42px}
+.gantt-row:last-child{border-bottom:none}
+.gantt-name{width:var(--namew);flex:0 0 auto;position:sticky;left:0;z-index:2;background:var(--bg-card);display:flex;align-items:center;gap:8px;padding:6px 10px;cursor:pointer;box-shadow:1px 0 0 var(--border-soft)}
+.gantt-name:hover{background:var(--bg-soft)}
+.gantt-name .av{width:24px;height:24px;font-size:10px;flex:0 0 auto}
+.gantt-nt{font-size:12.5px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gantt-nt.done{text-decoration:line-through;color:var(--text-soft)}
+.gantt-track{position:relative;flex:0 0 auto}
+.gantt-today{position:absolute;top:0;bottom:0;width:2px;background:var(--accent);opacity:.45;z-index:1}
+.gantt-bar{position:absolute;top:8px;height:26px;border-radius:7px;background:color-mix(in srgb,var(--c) 24%, var(--bg-card));border-left:3px solid var(--c);color:var(--text);font-size:11.5px;font-weight:600;line-height:26px;padding:0 8px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;cursor:pointer;box-shadow:var(--e1);z-index:2}
+.gantt-bar:hover{filter:brightness(1.06);box-shadow:var(--e2)}
+.gantt-bar.done{opacity:.72;text-decoration:line-through}
+.gantt-bar.contl{border-top-left-radius:0;border-bottom-left-radius:0;border-left-style:dashed}
+.gantt-bar.contr{border-top-right-radius:0;border-bottom-right-radius:0}
 .kb-card{position:relative;background:var(--bg-card);border:1px solid var(--border-soft);border-left:3px solid var(--pc,var(--accent));border-radius:var(--r-md);padding:11px 12px;cursor:pointer;box-shadow:var(--e1);transition:transform var(--t-fast),box-shadow var(--t-fast)}
 .kb-card[draggable="true"]{cursor:grab}
 .kb-card[draggable="true"]:active{cursor:grabbing}

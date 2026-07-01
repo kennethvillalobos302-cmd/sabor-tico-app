@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v100 · Subtareas visibles al responsable + imagen en comentarios';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v101 · Tareas con fecha de inicio + vista Cronograma (línea de tiempo)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1268,11 +1268,11 @@ function viewTareas(){
     <div class="kpi ok" onclick="setTaskFilter('hecha')" style="cursor:pointer"><div class="label">Hechas</div><div class="value">${doneN}</div><div class="sub">completadas</div></div>
   </div>`;
   html += `<div class="toolbar">
-    <div class="seg tk-viewseg"><button type="button" class="seg-b ${taskView==='lista'?'on':''}" onclick="setTaskView('lista')">${svgIcon('list','icon icon-sm')} Lista</button><button type="button" class="seg-b ${taskView==='tablero'?'on':''}" onclick="setTaskView('tablero')">${svgIcon('clipboard','icon icon-sm')} Tablero</button></div>
+    <div class="seg tk-viewseg"><button type="button" class="seg-b ${taskView==='lista'?'on':''}" onclick="setTaskView('lista')">${svgIcon('list','icon icon-sm')} Lista</button><button type="button" class="seg-b ${taskView==='tablero'?'on':''}" onclick="setTaskView('tablero')">${svgIcon('clipboard','icon icon-sm')} Tablero</button><button type="button" class="seg-b ${taskView==='cronograma'?'on':''}" onclick="setTaskView('cronograma')">${svgIcon('calendar','icon icon-sm')} Cronograma</button></div>
     <input class="input search" placeholder="Buscar tarea…" value="${esc(taskSearch)}" oninput="taskSearch=this.value;clearTimeout(window._ts);window._ts=setTimeout(render,250)"></div>`;
   if(allTaskLabels().length) html += `<div class="chipscroll tlbl-filter">${allTaskLabels().map(l=>`<button class="tlbl-fchip ${taskLabelFilter===l.id?'on':''}" style="--lc:${l.color}" onclick="setTaskLabelFilter('${l.id}')">${esc(l.name)}</button>`).join('')}</div>`;
-  if(taskView==='tablero'){
-    const boardTasks=all.filter(t=>{
+  if(taskView==='tablero' || taskView==='cronograma'){
+    const scopeTasks=all.filter(t=>{
       if(taskFilter==='mias' && !((t.toIds||[]).includes(SES.userId)||iHaveSubtask(t))) return false;
       if(taskFilter==='asignadas' && t.fromId!==SES.userId) return false;
       if(taskLabelFilter && !(t.labels||[]).includes(taskLabelFilter)) return false;
@@ -1281,7 +1281,7 @@ function viewTareas(){
     });
     const bchips=[['todas','Todas'],['mias','Para mí'],['asignadas','Yo asigné']].map(([k,l])=>`<button class="chip ${taskFilter===k?'on':''}" onclick="setTaskFilter('${k}')">${l}</button>`).join('');
     html += `<div class="chipscroll">${bchips}</div>`;
-    html += taskBoard(boardTasks);
+    html += taskView==='cronograma' ? taskTimeline(scopeTasks) : taskBoard(scopeTasks);
   } else {
     html += `<div class="chipscroll">${chips}</div>`;
     html += list.length ? list.map(taskRow).join('')
@@ -1381,6 +1381,7 @@ function taskDetail(id){
       <div class="td-meta">
         <div class="td-mrow"><span class="td-ml">Asignada por</span><span class="td-mv">${from?esc(from.name):'—'}</span></div>
         <div class="td-mrow"><span class="td-ml">Responsables</span><span class="td-mv">${assignees.map(a=>esc(a.name.split(' ')[0])).join(', ')||'—'}</span></div>
+        ${t.startDate&&t.due&&t.startDate<=t.due?`<div class="td-mrow"><span class="td-ml">Cronograma</span><span class="td-mv">${fmtDate(t.startDate)} → ${fmtDate(t.due)}</span></div>`:''}
         <div class="td-mrow"><span class="td-ml">Sucursal</span><span class="td-mv">${esc(sucName(t.sucursalId))}</span></div>
         <div class="td-mrow"><span class="td-ml">Creada</span><span class="td-mv">${fmtDate(t.createdAt)}</span></div>
       </div>
@@ -1438,6 +1439,58 @@ function taskBoard(tasks){
       <button class="kb-add" onclick="newTaskModal('${c.target}')">${svgIcon('plus','icon icon-sm')} Agregar tarea</button>
     </div>`;
   }).join('')}</div>`;
+}
+/* ----- Cronograma (línea de tiempo estilo Asana) ----- */
+let tlCursor='';
+function tlNav(d){ if(!tlCursor) tlCursor=isoLocal(horMondayOf(new Date())); const m=new Date(tlCursor+'T00:00:00'); m.setDate(m.getDate()+d*7); tlCursor=isoLocal(m); render(); }
+function tlToday(){ tlCursor=isoLocal(horMondayOf(new Date())); render(); }
+window.tlNav=tlNav; window.tlToday=tlToday;
+function taskTimeline(tasks){
+  const DAYW=42, DAYS=21;                       // ventana de 3 semanas
+  if(!tlCursor) tlCursor=isoLocal(horMondayOf(new Date()));
+  const start=new Date(tlCursor+'T00:00:00'); start.setHours(0,0,0,0);
+  const winStart=start.getTime();
+  const days=[...Array(DAYS)].map((_,i)=>{ const d=new Date(start); d.setDate(start.getDate()+i); return d; });
+  const winEnd=(()=>{ const e=new Date(start); e.setDate(start.getDate()+DAYS); return e.getTime(); })();
+  const dayIdx=ts=>{ const d=new Date(ts); d.setHours(0,0,0,0); return Math.round((d.getTime()-winStart)/864e5); };
+  const todayIdx=(()=>{ const t=new Date(); t.setHours(0,0,0,0); return Math.round((t.getTime()-winStart)/864e5); })();
+  const lastLbl=new Date(winEnd-864e5).toLocaleDateString('es-CR',{day:'numeric',month:'short'});
+  const rangeLbl=start.toLocaleDateString('es-CR',{day:'numeric',month:'short'})+' – '+lastLbl;
+  let html=`<div class="gantt-nav">
+    <button class="icon-btn gantt-navb" onclick="tlNav(-1)">${svgIcon('back','icon icon-sm')}</button>
+    <b class="gantt-lbl">${esc(rangeLbl)}</b>
+    <button class="icon-btn gantt-navb" onclick="tlNav(1)"><svg class="icon icon-sm" viewBox="0 0 24 24" style="transform:scaleX(-1)"><use href="#i-back"/></svg></button>
+    <button class="chip" onclick="tlToday()">Hoy</button></div>`;
+  const rows=tasks.filter(t=>t.due).map(t=>{
+      const s=(t.startDate && t.startDate<=t.due)?t.startDate:t.due;
+      return {t, s, e:t.due, pt:!(t.startDate && t.startDate<=t.due)};
+    }).filter(r=> dayIdx(r.e)>=0 && dayIdx(r.s)<DAYS )
+    .sort((a,b)=> a.s-b.s || a.e-b.e);
+  if(!rows.length){
+    html+=emptyState('🗓️','Nada en este rango','Ponele <b>Inicio</b> y <b>entrega</b> a las tareas para verlas como barras en el cronograma. Movete con las flechas para ver otras semanas.','','');
+    return html;
+  }
+  const dayHead=days.map((d,i)=>{ const wd=['L','M','X','J','V','S','D'][(d.getDay()+6)%7]; const we=(d.getDay()===0||d.getDay()===6); return `<div class="gantt-dh ${i===todayIdx?'today':''} ${we?'we':''}">${wd}<span>${d.getDate()}</span></div>`; }).join('');
+  const body=rows.map(r=>{
+    const t=r.t; const done=t.status==='hecha'; const late=t.status==='atrasada';
+    const si=Math.max(0,dayIdx(r.s)), ei=Math.min(DAYS-1,dayIdx(r.e));
+    const contL=dayIdx(r.s)<0, contR=dayIdx(r.e)>DAYS-1;
+    const left=si*DAYW+3, width=Math.max(24,(ei-si+1)*DAYW-6);
+    const col=done?'#8a8f98':late?'var(--danger)':prioMeta(t.prio).color;
+    const u=(t.toIds||[]).map(i=>userById(i)).filter(Boolean)[0];
+    const barTxt=r.pt?fmtDate(t.due):esc(t.title);
+    return `<div class="gantt-row">
+      <div class="gantt-name" onclick="taskDetail('${t.id}')">${u?avatarHTML(u):''}<span class="gantt-nt ${done?'done':''}">${esc(t.title)}</span></div>
+      <div class="gantt-track" style="width:${DAYS*DAYW}px">
+        ${todayIdx>=0&&todayIdx<DAYS?`<div class="gantt-today" style="left:${todayIdx*DAYW}px"></div>`:''}
+        <div class="gantt-bar ${done?'done':''} ${late?'late':''} ${contL?'contl':''} ${contR?'contr':''}" style="left:${left}px;width:${width}px;--c:${col}" onclick="taskDetail('${t.id}')" title="${esc(t.title)}">${barTxt}</div>
+      </div></div>`;
+  }).join('');
+  html+=`<div class="gantt-wrap"><div class="gantt" style="--namew:150px">
+    <div class="gantt-head"><div class="gantt-hname">Tarea</div><div class="gantt-days" style="width:${DAYS*DAYW}px">${dayHead}</div></div>
+    <div class="gantt-body">${body}</div>
+  </div></div>`;
+  return html;
 }
 function taskCard(t){
   const pr=prioMeta(t.prio); const overdue=t.status==='atrasada'; const done=t.status==='hecha';
@@ -1545,7 +1598,8 @@ function taskFormBody(t){
     ${peoplePicker('ntPeople', people, sel)}
     <div class="ip-sec">${svgIcon('clock','icon icon-sm')} Prioridad y fecha</div>
     <div class="field"><label>Prioridad</label>${taskPrioSeg(t?t.prio:'media')}</div>
-    <div class="field"><label>¿Para cuándo?</label>
+    <div class="field"><label>Inicio <span class="lbl-soft">(opcional · para el cronograma)</span></label><input class="input" type="date" id="ntStart" value="${t&&t.startDate?isoLocal(new Date(t.startDate)):''}"></div>
+    <div class="field"><label>¿Para cuándo? <span class="lbl-soft">(entrega)</span></label>
       <div class="due-presets"><button type="button" class="chip" onclick="ntDuePreset('today')">Hoy</button><button type="button" class="chip" onclick="ntDuePreset('tomorrow')">Mañana</button><button type="button" class="chip" onclick="ntDuePreset('3d')">En 3 días</button><button type="button" class="chip" onclick="ntDuePreset('week')">En 1 semana</button></div>
     </div>
     <div class="row2 rv-when">
@@ -1594,8 +1648,11 @@ function readTaskForm(){
   const dStr=$('#ntDate')?$('#ntDate').value:'';
   const tStr=$('#ntTH')?readTP('ntT'):'12:00';
   const due = dStr? new Date(dStr+'T'+(tStr||'12:00')).getTime() : null;
+  const sStr=$('#ntStart')?$('#ntStart').value:'';
+  let startDate = sStr? new Date(sStr+'T08:00').getTime() : null;
+  if(startDate && due && startDate>due) startDate=null;   // inicio inválido (después de la entrega) → se ignora
   return { title, desc:$('#ntDesc').value.trim(), toIds, sucursalId:$('#ntSuc').value,
-    prio:($('#ntPrio')?$('#ntPrio').value:'media'), due, labels:[..._taskFormLabels] };
+    prio:($('#ntPrio')?$('#ntPrio').value:'media'), due, startDate, labels:[..._taskFormLabels] };
 }
 async function createTask(){
   const d=readTaskForm(); if(!d) return;
