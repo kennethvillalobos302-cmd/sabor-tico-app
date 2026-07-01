@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v98 · Tareas: etiquetas, subtareas y reordenar tarjetas (estilo Asana)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v99 · Subtareas con responsable y fecha (estilo Asana)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1180,7 +1180,29 @@ function subProgress(t){ const ss=t&&t.subtasks||[]; if(!ss.length) return null;
 function subAdd(taskId){ const t=DB.tasks.find(x=>x.id===taskId); if(!t||!taskCanManage(t)) return; const el=$('#subNew'); const v=el?el.value.trim():''; if(!v) return; t.subtasks=t.subtasks||[]; t.subtasks.push({id:uid(),title:clip(v,140),done:false}); t.updatedAt=now(); save(); taskDetail(taskId); render(); }
 function subToggle(taskId,sid){ const t=DB.tasks.find(x=>x.id===taskId); if(!t||!taskCanManage(t)) return; const s=(t.subtasks||[]).find(x=>x.id===sid); if(!s) return; s.done=!s.done; t.updatedAt=now(); save(); taskDetail(taskId); render(); }
 function subDel(taskId,sid){ const t=DB.tasks.find(x=>x.id===taskId); if(!t||!taskCanManage(t)) return; t.subtasks=(t.subtasks||[]).filter(x=>x.id!==sid); t.updatedAt=now(); save(); taskDetail(taskId); render(); }
-window.subAdd=subAdd; window.subToggle=subToggle; window.subDel=subDel;
+function subEditModal(taskId,sid){
+  const t=DB.tasks.find(x=>x.id===taskId); if(!t||!taskCanManage(t)) return;
+  const s=(t.subtasks||[]).find(x=>x.id===sid); if(!s) return;
+  const people=scopedPeople(false); const dueIso=s.due?isoLocal(new Date(s.due)):'';
+  openModal(`<div class="modal-head"><h3>${svgIcon('check','icon')} Subtarea</h3><button class="modal-close" onclick="taskDetail('${taskId}')">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Subtarea</label><input class="input" id="seTitle" value="${esc(s.title)}" autocomplete="off"></div>
+      <div class="field"><label>Responsable</label><select class="select" id="seWho"><option value="">Sin asignar</option>${people.map(u=>`<option value="${u.id}" ${s.assigneeId===u.id?'selected':''}>${esc(u.name)} — ${roleInfo(u.role).short}</option>`).join('')}</select></div>
+      <div class="field"><label>Fecha (opcional)</label><input class="input input-date" type="date" id="seDue" value="${dueIso}"></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost danger" style="flex:0 0 auto" onclick="subDel('${taskId}','${sid}')">${svgIcon('trash','icon icon-sm')} Quitar</button><div style="flex:1"></div><button class="btn btn-ghost" onclick="taskDetail('${taskId}')">Cancelar</button><button class="btn btn-primary" onclick="subSave('${taskId}','${sid}')">Guardar</button></div>`);
+}
+function subSave(taskId,sid){
+  const t=DB.tasks.find(x=>x.id===taskId); if(!t||!taskCanManage(t)) return;
+  const s=(t.subtasks||[]).find(x=>x.id===sid); if(!s) return;
+  const title=clip($('#seTitle')?$('#seTitle').value:'',140); if(!title){ toast('Ponele un texto a la subtarea','err'); return; }
+  const who=$('#seWho')?$('#seWho').value:''; const dueV=$('#seDue')?$('#seDue').value:''; const prev=s.assigneeId;
+  s.title=title; s.assigneeId=who||''; s.due = dueV? new Date(dueV+'T12:00').getTime() : null;
+  t.updatedAt=now(); save();
+  if(who && who!==prev && who!==SES.userId) notify([who], `${me().name.split(' ')[0]} te asignó una subtarea: "${title}" (en "${t.title}")`, '✅', {view:'tareas'});
+  taskDetail(taskId); render();
+}
+window.subAdd=subAdd; window.subToggle=subToggle; window.subDel=subDel; window.subEditModal=subEditModal; window.subSave=subSave;
 /* Reordenar tarjetas dentro/entre columnas del tablero */
 function taskColKey(s){ return s==='proceso'?'proceso':s==='hecha'?'hecha':'porhacer'; }
 function boardCardDrop(dragId, targetId){
@@ -1338,7 +1360,7 @@ function taskDetail(id){
   const subs=t.subtasks||[]; const subDoneN=subs.filter(s=>s.done).length;
   const subHtml=`<div class="td-sec">Subtareas${subs.length?` <span class="td-subcount">${subDoneN}/${subs.length}</span>`:''}</div>
     <div class="td-subs">
-      ${subs.map(s=>`<div class="td-sub ${s.done?'done':''}"><button class="sub-check ${s.done?'on':''}" ${canManage?`onclick="subToggle('${t.id}','${s.id}')"`:'disabled'}>${s.done?svgIcon('check','icon icon-sm'):''}</button><span class="sub-t">${esc(s.title)}</span>${canManage?`<button class="sub-del" title="Quitar" onclick="subDel('${t.id}','${s.id}')">${svgIcon('x','icon icon-sm')}</button>`:''}</div>`).join('')}
+      ${subs.map(s=>{const su=s.assigneeId?userById(s.assigneeId):null; const slate=s.due&&!s.done&&s.due<now(); return `<div class="td-sub ${s.done?'done':''}"><button class="sub-check ${s.done?'on':''}" ${canManage?`onclick="subToggle('${t.id}','${s.id}')"`:'disabled'}>${s.done?svgIcon('check','icon icon-sm'):''}</button><span class="sub-t" ${canManage?`onclick="subEditModal('${t.id}','${s.id}')" style="cursor:pointer"`:''}>${esc(s.title)}</span>${su?`<span class="sub-who" title="${esc(su.name)}">${avatarHTML(su)}</span>`:''}${s.due?`<span class="sub-due ${slate?'late':''}">${svgIcon('clock','icon icon-sm')} ${fmtDate(s.due)}</span>`:''}${canManage?`<button class="sub-del" title="Editar subtarea" onclick="subEditModal('${t.id}','${s.id}')">${svgIcon('edit','icon icon-sm')}</button>`:''}</div>`;}).join('')}
       ${canManage?`<div class="td-sub-add"><input class="input" id="subNew" placeholder="+ agregar subtarea" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();subAdd('${t.id}');}"><button class="chip" onclick="subAdd('${t.id}')">Agregar</button></div>`:(subs.length?'':'<div class="td-empty">Sin subtareas.</div>')}
     </div>`;
 
