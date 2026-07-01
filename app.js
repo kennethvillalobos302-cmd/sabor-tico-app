@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v97 · Tablero: botón "+ Agregar tarea" en cada columna (estilo Asana)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v98 · Tareas: etiquetas, subtareas y reordenar tarjetas (estilo Asana)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -511,7 +511,13 @@ function seedSouvenirs(suc){
 
 /* Garantiza que todas las colecciones existan como arreglos (defensa universal:
    se llama en cada render por si entran datos incompletos desde la nube). */
-const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','invoices','recipes','shifts','reservations','clients','souvenirs','souvSales','bodegas'];
+const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','invoices','recipes','shifts','reservations','clients','souvenirs','souvSales','bodegas','taskLabels'];
+function defaultTaskLabels(){ return [
+  {id:uid(),name:'Urgente',color:'#e0533d'},
+  {id:uid(),name:'Compras',color:'#5b8def'},
+  {id:uid(),name:'Limpieza',color:'#0ea5b7'},
+  {id:uid(),name:'Mantenimiento',color:'#e0a13d'},
+]; }
 function ensureCollections(){ if(!DB||typeof DB!=='object') return; DB_COLLECTIONS.forEach(k=>{ if(!Array.isArray(DB[k])) DB[k]=[]; }); if(!DB.invCats||typeof DB.invCats!=='object') DB.invCats=JSON.parse(JSON.stringify(DEFAULT_CATS)); }
 
 /* ---------------- Migración de DBs existentes ---------------- */
@@ -546,6 +552,7 @@ function migrate(remote){
   if(DB.invMoves===undefined){ DB.invMoves=[]; ch=true; }
   if(DB.recipes===undefined){ const chef=DB.users.find(u=>u.role==='chef'); DB.recipes=seedRecipes(DB.inventory,chef?chef.id:DB.users[0].id); ch=true; }
   if(DB.shifts===undefined){ DB.shifts=seedShifts(s1,s2,DB.users); ch=true; }
+  if(DB.taskLabels===undefined){ DB.taskLabels=defaultTaskLabels(); ch=true; }
   (DB.users||[]).forEach(u=>{ if(u.phone===undefined){ u.phone=''; ch=true; } });
   (DB.pedidos||[]).forEach(p=>{ if(p.productId===undefined){ p.productId=null; ch=true; } });
   (DB.shifts||[]).forEach(sh=>{ if(sh.breaks===undefined){ sh.breaks=[]; ch=true; } });
@@ -557,7 +564,7 @@ function migrate(remote){
   if(DB._shiftNotif===undefined){ DB._shiftNotif={}; ch=true; }
   // reparar registros sincronizados que vengan sin campos esperados
   (DB.chats||[]).forEach(c=>{ if(!Array.isArray(c.msgs)){ c.msgs=[]; ch=true; } if(!Array.isArray(c.memberIds)){ c.memberIds=[]; ch=true; } });
-  (DB.tasks||[]).forEach(t=>{ if(!Array.isArray(t.toIds)){ t.toIds=[]; ch=true; } if(!Array.isArray(t.log)) t.log=[]; if(!Array.isArray(t.comments)) t.comments=[]; });
+  (DB.tasks||[]).forEach(t=>{ if(!Array.isArray(t.toIds)){ t.toIds=[]; ch=true; } if(!Array.isArray(t.log)) t.log=[]; if(!Array.isArray(t.comments)) t.comments=[]; if(!Array.isArray(t.labels)) t.labels=[]; if(!Array.isArray(t.subtasks)) t.subtasks=[]; });
   (DB.projects||[]).forEach(p=>{ if(!Array.isArray(p.cards)){ p.cards=[]; ch=true; } if(!Array.isArray(p.memberIds)){ p.memberIds=[]; ch=true; } });
   (DB.pedidos||[]).forEach(p=>{ if(!Array.isArray(p.log)) p.log=[]; if(!Array.isArray(p.comments)) p.comments=[]; });
   // Limitar historiales operativos (orden: más nuevo primero) para que el estado compartido no crezca sin fin.
@@ -1147,8 +1154,56 @@ function horaSaludo(){ const h=new Date().getHours(); return h<12?'Buenos días'
 /* =====================================================================
    VISTA: TAREAS
    ===================================================================== */
-let taskFilter='todas', taskSearch='', taskView='lista', _boardAddStatus=null;
+let taskFilter='todas', taskSearch='', taskView='lista', _boardAddStatus=null, taskLabelFilter='';
 window.setTaskView = v => { taskView=v; render(); };
+window.setTaskLabelFilter = id => { taskLabelFilter = (taskLabelFilter===id?'':id); render(); };
+/* ===== Etiquetas de tareas, subtareas y reordenar (estilo Asana) ===== */
+const TASK_LABEL_COLORS=['#e0533d','#e0a13d','#5aa777','#5b8def','#8b5cf6','#c879a9','#0ea5b7','#64748b','#db2777','#0891b2'];
+function allTaskLabels(){ return Array.isArray(DB.taskLabels)?DB.taskLabels:[]; }
+function taskLabelById(id){ return allTaskLabels().find(l=>l&&l.id===id); }
+function taskLabelChips(ids){ if(!ids||!ids.length) return ''; const chips=ids.map(id=>{const l=taskLabelById(id); return l?`<span class="tlabel" style="--lc:${l.color}">${esc(l.name)}</span>`:'';}).join(''); return chips?`<div class="tlabels">${chips}</div>`:''; }
+let _taskFormLabels=[];
+function taskLabelPickerHTML(){
+  return `<div class="tlbl-pick" id="tlblPick">${allTaskLabels().map(l=>`<button type="button" class="tlbl-opt ${_taskFormLabels.includes(l.id)?'on':''}" style="--lc:${l.color}" onclick="taskLabelToggle('${l.id}')">${esc(l.name)}</button>`).join('')}<span class="tlbl-add"><input class="input" id="tlblNew" placeholder="+ nueva" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();taskLabelAdd();}"><button type="button" class="chip" onclick="taskLabelAdd()">Agregar</button></span></div>`;
+}
+function taskLabelToggle(id){ const i=_taskFormLabels.indexOf(id); if(i>=0)_taskFormLabels.splice(i,1); else _taskFormLabels.push(id); const el=$('#tlblPick'); if(el) el.outerHTML=taskLabelPickerHTML(); }
+function taskLabelAdd(){
+  const el=$('#tlblNew'); const v=el?el.value.trim():''; if(!v) return;
+  const ex=allTaskLabels().find(l=>l.name.toLowerCase()===v.toLowerCase());
+  if(ex){ if(!_taskFormLabels.includes(ex.id)) _taskFormLabels.push(ex.id); }
+  else { const l={id:uid(),name:clip(v,24),color:TASK_LABEL_COLORS[allTaskLabels().length%TASK_LABEL_COLORS.length]}; DB.taskLabels=allTaskLabels(); DB.taskLabels.push(l); _taskFormLabels.push(l.id); save(); }
+  const p=$('#tlblPick'); if(p) p.outerHTML=taskLabelPickerHTML();
+}
+window.taskLabelToggle=taskLabelToggle; window.taskLabelAdd=taskLabelAdd;
+/* Subtareas */
+function subProgress(t){ const ss=t&&t.subtasks||[]; if(!ss.length) return null; return {done:ss.filter(s=>s.done).length, total:ss.length}; }
+function subAdd(taskId){ const t=DB.tasks.find(x=>x.id===taskId); if(!t||!taskCanManage(t)) return; const el=$('#subNew'); const v=el?el.value.trim():''; if(!v) return; t.subtasks=t.subtasks||[]; t.subtasks.push({id:uid(),title:clip(v,140),done:false}); t.updatedAt=now(); save(); taskDetail(taskId); render(); }
+function subToggle(taskId,sid){ const t=DB.tasks.find(x=>x.id===taskId); if(!t||!taskCanManage(t)) return; const s=(t.subtasks||[]).find(x=>x.id===sid); if(!s) return; s.done=!s.done; t.updatedAt=now(); save(); taskDetail(taskId); render(); }
+function subDel(taskId,sid){ const t=DB.tasks.find(x=>x.id===taskId); if(!t||!taskCanManage(t)) return; t.subtasks=(t.subtasks||[]).filter(x=>x.id!==sid); t.updatedAt=now(); save(); taskDetail(taskId); render(); }
+window.subAdd=subAdd; window.subToggle=subToggle; window.subDel=subDel;
+/* Reordenar tarjetas dentro/entre columnas del tablero */
+function taskColKey(s){ return s==='proceso'?'proceso':s==='hecha'?'hecha':'porhacer'; }
+function boardCardDrop(dragId, targetId){
+  if(dragId===targetId) return;
+  const t=DB.tasks.find(x=>x.id===dragId), tgt=DB.tasks.find(x=>x.id===targetId); if(!t||!tgt) return;
+  if(!taskCanManage(t)){ toast('No podés mover esta tarea','err'); return; }
+  const key=taskColKey(tgt.status);
+  if(taskColKey(t.status)!==key){
+    const ns = key==='proceso'?'proceso':key==='hecha'?'hecha':'pendiente';
+    t.status=ns; t.updatedAt=now(); t.log=t.log||[];
+    const lbl=ns==='hecha'?'marcó la tarea como HECHA':ns==='proceso'?'puso la tarea en proceso':'movió la tarea a Por hacer';
+    t.log.push({at:now(),byId:SES.userId,text:lbl}); audit('tarea',`${lbl}: "${t.title}"`,t.sucursalId);
+    if(ns==='hecha') notify([t.fromId], `${me().name.split(' ')[0]} completó "${t.title}"`, '✅', {view:'tareas'});
+  }
+  const col=DB.tasks.filter(x=>x&&taskColKey(x.status)===key).sort((a,b)=>((a.ord==null?1e9:a.ord)-(b.ord==null?1e9:b.ord))||((a.due||9e15)-(b.due||9e15)));
+  const list=col.filter(x=>x.id!==dragId); const ti=list.findIndex(x=>x.id===targetId);
+  list.splice(ti<0?list.length:ti,0,t); list.forEach((x,i)=>x.ord=i);
+  save(); render();
+}
+function kbCardOver(e){ e.preventDefault(); e.stopPropagation(); try{e.dataTransfer.dropEffect='move';}catch(_){}; e.currentTarget.classList.add('kb-cardover'); }
+function kbCardLeave(e){ e.currentTarget.classList.remove('kb-cardover'); }
+function kbCardDrop(e,targetId){ e.preventDefault(); e.stopPropagation(); e.currentTarget.classList.remove('kb-cardover'); document.querySelectorAll('.kb-col.over').forEach(c=>c.classList.remove('over')); const id=_kbDrag||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); _kbDrag=null; if(id) boardCardDrop(id,targetId); }
+window.boardCardDrop=boardCardDrop; window.kbCardOver=kbCardOver; window.kbCardLeave=kbCardLeave; window.kbCardDrop=kbCardDrop;
 function viewTareas(){
   const all = (DB.tasks||[]).filter(t=> t && visibleTask(t) && (inScope(t.sucursalId) || (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId));
   refreshOverdue();
@@ -1168,6 +1223,8 @@ function viewTareas(){
     </ul>`);
 
   if(taskSearch){ const q=taskSearch.toLowerCase(); list=list.filter(t=>(t.title||'').toLowerCase().includes(q)||(t.desc||'').toLowerCase().includes(q)); }
+  if(taskLabelFilter && !taskLabelById(taskLabelFilter)) taskLabelFilter='';
+  if(taskLabelFilter) list=list.filter(t=>(t.labels||[]).includes(taskLabelFilter));
 
   const mineActive=all.filter(t=>(t.toIds||[]).includes(SES.userId)&&(t.status==='pendiente'||t.status==='proceso'||t.status==='atrasada')).length;
   const procN=all.filter(t=>t.status==='proceso').length;
@@ -1189,10 +1246,12 @@ function viewTareas(){
   html += `<div class="toolbar">
     <div class="seg tk-viewseg"><button type="button" class="seg-b ${taskView==='lista'?'on':''}" onclick="setTaskView('lista')">${svgIcon('list','icon icon-sm')} Lista</button><button type="button" class="seg-b ${taskView==='tablero'?'on':''}" onclick="setTaskView('tablero')">${svgIcon('clipboard','icon icon-sm')} Tablero</button></div>
     <input class="input search" placeholder="Buscar tarea…" value="${esc(taskSearch)}" oninput="taskSearch=this.value;clearTimeout(window._ts);window._ts=setTimeout(render,250)"></div>`;
+  if(allTaskLabels().length) html += `<div class="chipscroll tlbl-filter">${allTaskLabels().map(l=>`<button class="tlbl-fchip ${taskLabelFilter===l.id?'on':''}" style="--lc:${l.color}" onclick="setTaskLabelFilter('${l.id}')">${esc(l.name)}</button>`).join('')}</div>`;
   if(taskView==='tablero'){
     const boardTasks=all.filter(t=>{
       if(taskFilter==='mias' && !(t.toIds||[]).includes(SES.userId)) return false;
       if(taskFilter==='asignadas' && t.fromId!==SES.userId) return false;
+      if(taskLabelFilter && !(t.labels||[]).includes(taskLabelFilter)) return false;
       if(taskSearch){ const q=taskSearch.toLowerCase(); if(!((t.title||'').toLowerCase().includes(q)||(t.desc||'').toLowerCase().includes(q))) return false; }
       return true;
     });
@@ -1236,7 +1295,9 @@ function taskRow(t){
         <span class="${overdue?'tk-due-late':''}">${svgIcon('clock','icon icon-sm')} ${fmtDate(t.due)}</span>
         <span class="tk-avs">${avs||'—'}</span>
         <span>${svgIcon('pin','icon icon-sm')} ${esc(sucName(t.sucursalId))}</span>
+        ${(()=>{const sp=subProgress(t); return sp?`<span>${svgIcon('check','icon icon-sm')} ${sp.done}/${sp.total}</span>`:'';})()}
       </div>
+      ${taskLabelChips(t.labels)}
       ${t.desc?`<div class="tk-desc">${esc(t.desc).slice(0,110)}${t.desc.length>110?'…':''}</div>`:''}
     </div>
   </div>`;
@@ -1274,6 +1335,12 @@ function taskDetail(id){
     actions+=`<button class="btn btn-danger" onclick="delTask('${t.id}')">${svgIcon('trash','icon icon-sm')} Eliminar</button>`;
   }
   const pr=prioMeta(t.prio); const overdue=t.status==='atrasada';
+  const subs=t.subtasks||[]; const subDoneN=subs.filter(s=>s.done).length;
+  const subHtml=`<div class="td-sec">Subtareas${subs.length?` <span class="td-subcount">${subDoneN}/${subs.length}</span>`:''}</div>
+    <div class="td-subs">
+      ${subs.map(s=>`<div class="td-sub ${s.done?'done':''}"><button class="sub-check ${s.done?'on':''}" ${canManage?`onclick="subToggle('${t.id}','${s.id}')"`:'disabled'}>${s.done?svgIcon('check','icon icon-sm'):''}</button><span class="sub-t">${esc(s.title)}</span>${canManage?`<button class="sub-del" title="Quitar" onclick="subDel('${t.id}','${s.id}')">${svgIcon('x','icon icon-sm')}</button>`:''}</div>`).join('')}
+      ${canManage?`<div class="td-sub-add"><input class="input" id="subNew" placeholder="+ agregar subtarea" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();subAdd('${t.id}');}"><button class="chip" onclick="subAdd('${t.id}')">Agregar</button></div>`:(subs.length?'':'<div class="td-empty">Sin subtareas.</div>')}
+    </div>`;
 
   openModal(`
     <div class="modal-head"><h3>${esc(t.title)}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
@@ -1283,6 +1350,7 @@ function taskDetail(id){
         <span class="td-badge"><span class="dot-prio" style="background:${pr.color}"></span>Prioridad ${pr.label}</span>
         <span class="td-badge ${overdue?'tk-due-late':''}">${svgIcon('clock','icon icon-sm')} ${fmtDateTime(t.due)}</span>
       </div>
+      ${taskLabelChips(t.labels)}
       ${t.desc?`<div class="td-desc">${esc(t.desc)}</div>`:''}
       ${imgs?`<div class="img-prev">${imgs}</div>`:''}
       <div class="td-meta">
@@ -1292,6 +1360,7 @@ function taskDetail(id){
         <div class="td-mrow"><span class="td-ml">Creada</span><span class="td-mv">${fmtDate(t.createdAt)}</span></div>
       </div>
       ${actions?`<div class="td-actions">${actions}</div>`:''}
+      ${subHtml}
       <div class="td-sec">Historial</div>
       <div class="log">${logHtml||'<div class="td-empty">Sin movimientos.</div>'}</div>
       <div class="td-sec">Respuestas y comentarios</div>
@@ -1334,7 +1403,7 @@ function taskBoard(tasks){
     {label:'Hecho', statuses:['hecha'], target:'hecha', dot:'var(--success)'},
   ];
   return `<div class="kb-board">${cols.map(c=>{
-    const items=tasks.filter(t=>c.statuses.includes(t.status)).sort((a,b)=>(a.due||9e15)-(b.due||9e15));
+    const items=tasks.filter(t=>c.statuses.includes(t.status)).sort((a,b)=>((a.ord==null?1e9:a.ord)-(b.ord==null?1e9:b.ord))||((a.due||9e15)-(b.due||9e15)));
     return `<div class="kb-col" ondragover="kbOver(event)" ondragleave="kbLeave(event)" ondrop="kbDrop(event,'${c.target}')">
       <div class="kb-col-head"><span class="kb-dot" style="background:${c.dot}"></span>${c.label}<span class="kb-count">${items.length}</span></div>
       <div class="kb-list">${items.map(taskCard).join('')||'<div class="kb-empty">Sin tareas</div>'}</div>
@@ -1350,9 +1419,11 @@ function taskCard(t){
   const check = canM
     ? `<button class="kb-check ${done?'on':''}" title="${done?'Marcar por hacer':'Marcar hecha'}" onclick="event.stopPropagation();boardMove('${t.id}','${done?'pendiente':'hecha'}')">${done?svgIcon('check','icon icon-sm'):''}</button>`
     : `<span class="kb-check ${done?'on':''}">${done?svgIcon('check','icon icon-sm'):''}</span>`;
-  return `<div class="kb-card ${done?'done':''} ${overdue?'late':''}" style="--pc:${pr.color}" draggable="${canM?'true':'false'}" ondragstart="kbDragStart(event,'${t.id}')" ondragend="kbDragEnd(event)" onclick="taskDetail('${t.id}')">
+  const sp=subProgress(t);
+  return `<div class="kb-card ${done?'done':''} ${overdue?'late':''}" style="--pc:${pr.color}" draggable="${canM?'true':'false'}" ondragstart="kbDragStart(event,'${t.id}')" ondragend="kbDragEnd(event)" ondragover="kbCardOver(event)" ondragleave="kbCardLeave(event)" ondrop="kbCardDrop(event,'${t.id}')" onclick="taskDetail('${t.id}')">
     <div class="kb-card-top">${check}<div class="kb-title ${done?'done':''}">${esc(t.title)}${t.images&&t.images.length?' '+svgIcon('clip','icon icon-sm'):''}</div></div>
-    <div class="kb-meta"><span class="kb-prio"><span class="dot-prio" style="background:${pr.color}"></span>${pr.label}</span><span class="${overdue?'tk-due-late':''}">${svgIcon('clock','icon icon-sm')} ${fmtDate(t.due)}</span></div>
+    ${taskLabelChips(t.labels)}
+    <div class="kb-meta"><span class="kb-prio"><span class="dot-prio" style="background:${pr.color}"></span>${pr.label}</span><span class="${overdue?'tk-due-late':''}">${svgIcon('clock','icon icon-sm')} ${fmtDate(t.due)}</span>${sp?`<span class="kb-sub">${svgIcon('check','icon icon-sm')} ${sp.done}/${sp.total}</span>`:''}</div>
     <div class="kb-foot"><span class="tk-avs">${avs||''}</span><span class="kb-suc">${svgIcon('pin','icon icon-sm')} ${esc(sucName(t.sucursalId))}</span></div>
   </div>`;
 }
@@ -1432,6 +1503,7 @@ function taskFormBody(t){
   return `
     <div class="field"><label>Título</label><input class="input" id="ntTitle" value="${t?esc(t.title):''}" placeholder="Ej: Preparar salsas del día" autocomplete="off"></div>
     <div class="field"><label>Detalle / instrucciones</label><textarea class="textarea" id="ntDesc" placeholder="Explicá qué hay que hacer…">${t?esc(t.desc||''):''}</textarea></div>
+    <div class="field"><label>Etiquetas</label>${taskLabelPickerHTML()}</div>
     <div class="ip-sec">${svgIcon('users','icon icon-sm')} ¿A quién se la asignás?</div>
     ${peoplePicker('ntPeople', people, sel)}
     <div class="ip-sec">${svgIcon('clock','icon icon-sm')} Prioridad y fecha</div>
@@ -1446,7 +1518,7 @@ function taskFormBody(t){
     <div class="field"><label>Sucursal</label><select class="select" id="ntSuc">${t?sucOptionsSel(t.sucursalId):sucOptionsFor()}</select></div>`;
 }
 function newTaskModal(status){
-  newImgs=[];
+  newImgs=[]; _taskFormLabels=[];
   _boardAddStatus = (status==='proceso'||status==='hecha') ? status : null;   // desde el tablero: crear directo en esa columna
   openModal(`
     <div class="modal-head"><h3>${svgIcon('check','icon')} Nueva tarea${_boardAddStatus?` <span class="pill ${_boardAddStatus}" style="font-size:11px">${statusLabel(_boardAddStatus)}</span>`:''}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
@@ -1463,6 +1535,7 @@ window.newTaskModal=newTaskModal;
 function editTaskModal(id){
   const t=DB.tasks.find(x=>x.id===id); if(!t) return;
   if(!(t.fromId===SES.userId||isAdmin())){ toast('Solo quien la asignó puede editarla','err'); return; }
+  _taskFormLabels=[...(t.labels||[])];
   openModal(`
     <div class="modal-head"><h3>${svgIcon('edit','icon')} Editar tarea</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">${taskFormBody(t)}</div>
@@ -1485,7 +1558,7 @@ function readTaskForm(){
   const tStr=$('#ntTH')?readTP('ntT'):'12:00';
   const due = dStr? new Date(dStr+'T'+(tStr||'12:00')).getTime() : null;
   return { title, desc:$('#ntDesc').value.trim(), toIds, sucursalId:$('#ntSuc').value,
-    prio:($('#ntPrio')?$('#ntPrio').value:'media'), due };
+    prio:($('#ntPrio')?$('#ntPrio').value:'media'), due, labels:[..._taskFormLabels] };
 }
 async function createTask(){
   const d=readTaskForm(); if(!d) return;

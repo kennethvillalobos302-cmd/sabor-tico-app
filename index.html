@@ -371,6 +371,33 @@ input,textarea,select{font-size:16px}
 .kb-add{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:9px;padding:9px;border:1px dashed var(--border);border-radius:var(--r-md);background:none;color:var(--text-soft);font-size:12.5px;font-weight:600;cursor:pointer;transition:border-color var(--t-fast),color var(--t-fast)}
 .kb-add:hover{border-color:var(--accent-line);color:var(--accent)}
 .kb-add .icon{width:15px;height:15px}
+.kb-card.kb-cardover{box-shadow:0 -3px 0 var(--accent),var(--e2)}
+.kb-sub{display:inline-flex;align-items:center;gap:4px}
+/* ---- Etiquetas de tareas (labels) ---- */
+.tlabels{display:flex;flex-wrap:wrap;gap:5px;margin:2px 0}
+.tlabel{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px;background:color-mix(in srgb,var(--lc) 20%, var(--bg-soft));color:var(--lc);white-space:nowrap}
+.tlbl-pick{display:flex;flex-wrap:wrap;gap:7px;align-items:center}
+.tlbl-opt{font-size:12px;font-weight:650;padding:6px 11px;border-radius:999px;border:1.5px solid color-mix(in srgb,var(--lc) 45%, var(--border));background:none;color:var(--text);cursor:pointer;transition:background var(--t-fast),color var(--t-fast)}
+.tlbl-opt.on{background:var(--lc);border-color:var(--lc);color:#fff}
+.tlbl-add{display:inline-flex;gap:6px;align-items:center}
+.tlbl-add .input{width:130px;padding:7px 10px}
+.tlbl-filter{margin-bottom:12px}
+.tlbl-fchip{font-size:12px;font-weight:650;padding:6px 11px;border-radius:999px;border:1px solid var(--border);background:var(--bg-soft);color:var(--text-soft);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;gap:6px;flex:0 0 auto}
+.tlbl-fchip::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--lc)}
+.tlbl-fchip.on{border-color:var(--lc);color:var(--lc);background:color-mix(in srgb,var(--lc) 12%, var(--bg-soft))}
+/* ---- Subtareas ---- */
+.td-subcount{font-weight:700;color:var(--text-soft);font-size:12px}
+.td-subs{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}
+.td-sub{display:flex;align-items:center;gap:9px;padding:5px 2px}
+.sub-check{flex:0 0 auto;width:20px;height:20px;border-radius:50%;border:2px solid var(--border);background:none;display:flex;align-items:center;justify-content:center;color:#fff;cursor:pointer;padding:0}
+.sub-check:hover{border-color:var(--success)}
+.sub-check.on{background:var(--success);border-color:var(--success)}
+.sub-check .icon{width:12px;height:12px}
+.sub-t{flex:1;font-size:14px;min-width:0}
+.td-sub.done .sub-t{text-decoration:line-through;color:var(--text-soft)}
+.sub-del{flex:0 0 auto;width:26px;height:26px;border:none;background:none;color:var(--text-dim);border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.sub-del:hover{background:var(--bg-soft);color:var(--danger)}
+.td-sub-add{display:flex;gap:8px;margin-top:6px}
 .kb-card{position:relative;background:var(--bg-card);border:1px solid var(--border-soft);border-left:3px solid var(--pc,var(--accent));border-radius:var(--r-md);padding:11px 12px;cursor:pointer;box-shadow:var(--e1);transition:transform var(--t-fast),box-shadow var(--t-fast)}
 .kb-card[draggable="true"]{cursor:grab}
 .kb-card[draggable="true"]:active{cursor:grabbing}
