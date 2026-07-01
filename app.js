@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v93 · Tareas: Tablero Kanban estilo Asana (arrastrar + marcar hecho)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v94 · Calendario estilo Asana: arrastrar tareas + marcar hecho (tachadas)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4877,11 +4877,11 @@ function calDayItems(iso){
     if(s.off) items.push({kind:'shift', id:s.id, title:'Día libre', allDay:true, color:'#7fa9b8'});
     else items.push({kind:'shift', id:s.id, title:'Turno', start:s.start, end:s.end, allDay:false, color:'#5aa777'});
   });
-  if(calShow.tareas) (DB.tasks||[]).filter(t=>t&&(t.toIds||[]).includes(SES.userId) && t.due && dISO(new Date(t.due))===iso && t.status!=='hecha' && t.status!=='rechazada').forEach(t=>{
-    const d=new Date(t.due); const hasTime=!(d.getHours()===0&&d.getMinutes()===0);
-    items.push({kind:'task', id:t.id, title:t.title||'Tarea', start:hasTime?calHHMM(t.due):'', end:'', allDay:!hasTime, color:'#d59b4a', draggable:calCanMoveTask(t)});
+  if(calShow.tareas) (DB.tasks||[]).filter(t=>t&&(t.toIds||[]).includes(SES.userId) && t.due && dISO(new Date(t.due))===iso && t.status!=='rechazada').forEach(t=>{
+    const d=new Date(t.due); const hasTime=!(d.getHours()===0&&d.getMinutes()===0); const done=t.status==='hecha';
+    items.push({kind:'task', id:t.id, title:t.title||'Tarea', start:hasTime?calHHMM(t.due):'', end:'', allDay:!hasTime, color:done?'#8a8f98':'#d59b4a', done, canDone:calCanMoveTask(t), draggable:!done&&calCanMoveTask(t)});
   });
-  return items.sort((a,b)=> (a.allDay?0:1)-(b.allDay?0:1) || calMin(a.start)-calMin(b.start));
+  return items.sort((a,b)=> (a.done?1:0)-(b.done?1:0) || (a.allDay?0:1)-(b.allDay?0:1) || calMin(a.start)-calMin(b.start));
 }
 function viewCalendario(){
   if(!calCursor) calCursor=calToday();
@@ -4926,8 +4926,12 @@ function calGo(dir){
   render();
 }
 function calChip(it, iso){
+  const done = it.kind==='task' && it.done;
+  const check = (it.kind==='task' && it.canDone)
+    ? `<span class="cal-check ${done?'on':''}" title="${done?'Marcar por hacer':'Marcar hecha'}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();boardMove('${it.id}','${done?'pendiente':'hecha'}')">${done?svgIcon('check','icon icon-sm'):''}</span>`
+    : '';
   const h = it.draggable ? `onpointerdown="calDragStart(event,'${it.kind}','${it.id}','${iso||''}')" onclick="event.stopPropagation()"` : `onclick="event.stopPropagation();calItemClick('${it.kind}','${it.id}')"`;
-  return `<button class="cal-chip${it.draggable?' cdraggable':''}" style="--c:${it.color}" ${h}>${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}${it.allDay?'':`<b>${esc(fmt12(it.start))}</b> `}${esc(it.title)}</button>`;
+  return `<div class="cal-chip cal-chip-${it.kind}${it.draggable?' cdraggable':''}${done?' done':''}" style="--c:${it.color}" ${h}>${check}<span class="cal-chip-body">${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}${it.allDay?'':`<b>${esc(fmt12(it.start))}</b> `}${esc(it.title)}</span></div>`;
 }
 function calMonthView(){
   const first=calParse(calCursor); first.setDate(1);
@@ -4956,7 +4960,7 @@ function calTimeGrid(days){
       const top=(it.s-startH*60)/60*rowH, h=Math.max(20,(it.e-it.s)/60*rowH);
       const cols=it.cols||1, col=it.col||0, lf=col/cols*100, wd=100/cols;
       const handler=it.draggable?`onpointerdown="calDragStart(event,'${it.kind}','${it.id}','${iso}')" onclick="event.stopPropagation()"`:`onclick="event.stopPropagation();calItemClick('${it.kind}','${it.id}')"`;
-      return `<button class="cal-ev${it.draggable?' cdraggable':''}" style="--c:${it.color};top:${top}px;height:${h}px;left:calc(${lf}% + 2px);width:calc(${wd}% - 4px);right:auto" ${handler}>${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}<b>${esc(fmt12(it.start))}</b> ${esc(it.title)}</button>`;
+      return `<button class="cal-ev${it.draggable?' cdraggable':''}${(it.kind==='task'&&it.done)?' done':''}" style="--c:${it.color};top:${top}px;height:${h}px;left:calc(${lf}% + 2px);width:calc(${wd}% - 4px);right:auto" ${handler}>${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}<b>${esc(fmt12(it.start))}</b> ${esc(it.title)}</button>`;
     }).join('');
     return `<div class="cal-tg-col" data-iso="${iso}" style="height:${hours.length*rowH}px" onclick="calCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
   }).join('');
@@ -4987,7 +4991,7 @@ function calAgendaView(){
     const d=calParse(iso);
     html+=`<div class="cal-ag-day${iso===today?' today':''}">
       <div class="cal-ag-date"><b>${d.getDate()}</b><span>${CAL_DOW[(d.getDay()+6)%7]}<br>${CAL_MON[d.getMonth()].slice(0,3)}</span></div>
-      <div class="cal-ag-items">${items.map(it=>`<button class="cal-ag-row" style="--c:${it.color}" onclick="calItemClick('${it.kind}','${it.id}')"><span class="cal-ag-time">${it.allDay?'Todo el día':fmt12(it.start)+(it.end?' – '+fmt12(it.end):'')}</span><span class="cal-ag-t">${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}${esc(it.title)}</span></button>`).join('')}</div>
+      <div class="cal-ag-items">${items.map(it=>{const done=it.kind==='task'&&it.done; const check=(it.kind==='task'&&it.canDone)?`<span class="cal-check ${done?'on':''}" title="${done?'Marcar por hacer':'Marcar hecha'}" onclick="event.stopPropagation();boardMove('${it.id}','${done?'pendiente':'hecha'}')">${done?svgIcon('check','icon icon-sm'):''}</span>`:''; return `<div class="cal-ag-row ${done?'done':''}" style="--c:${it.color}">${check}<button class="cal-ag-body" onclick="calItemClick('${it.kind}','${it.id}')"><span class="cal-ag-time">${it.allDay?'Todo el día':fmt12(it.start)+(it.end?' – '+fmt12(it.end):'')}</span><span class="cal-ag-t">${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}${esc(it.title)}</span></button></div>`;}).join('')}</div>
     </div>`;
   }
   if(!any) html+=emptyState('','Nada agendado','No hay eventos, turnos ni tareas en los próximos días. Tocá "Crear" para agregar algo.');
@@ -5041,7 +5045,7 @@ function calTaskModal(id){
       <div class="page-sub" style="margin:0 0 14px">Vence: ${esc(fmtDateTime(t.due))}</div>
       ${canMove?`<div class="field"><label>Mover a otro día</label><input class="input" type="date" id="ctMove" value="${esc(dISO(new Date(t.due)))}"></div>`:'<div class="page-sub">No tenés permiso para moverla.</div>'}
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal();SES.view='tareas';render();setTimeout(()=>{try{taskDetail('${id}')}catch(_){}}, 60)">Ver tarea</button>${canMove?`<button class="btn btn-primary" onclick="calTaskSaveMove('${id}')">Mover</button>`:''}</div>`);
+    <div class="modal-foot">${canMove?`<button class="btn ${t.status==='hecha'?'btn-ghost':'btn-primary'}" style="flex:1" onclick="closeModal();boardMove('${id}','${t.status==='hecha'?'pendiente':'hecha'}')">${svgIcon('check','icon icon-sm')} ${t.status==='hecha'?'Marcar por hacer':'Marcar hecha'}</button>`:''}<button class="btn btn-ghost" onclick="closeModal();SES.view='tareas';render();setTimeout(()=>{try{taskDetail('${id}')}catch(_){}}, 60)">Ver</button>${canMove?`<button class="btn btn-ghost" onclick="calTaskSaveMove('${id}')">Mover</button>`:''}</div>`);
 }
 function calTaskSaveMove(id){
   const t=(DB.tasks||[]).find(x=>x&&x.id===id); if(!t||!calCanMoveTask(t)) return;
