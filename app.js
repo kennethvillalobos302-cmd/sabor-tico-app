@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v94 · Calendario estilo Asana: arrastrar tareas + marcar hecho (tachadas)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v95 · Reservas tipo Asana: arrastrar de día + check "Llegó"';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -5021,6 +5021,7 @@ function calEventView(e){
 function calItemClick(kind,id){
   if(kind==='event') return calEditEvent(id);
   if(kind==='task') return calTaskModal(id);
+  if(kind==='reserva') return reservDetail(id);
   if(kind==='shift'){ SES.view='horarios'; render(); return; }
 }
 function calCanMoveTask(t){ return t && (t.fromId===SES.userId || isAdmin() || (t.toIds||[]).includes(SES.userId)); }
@@ -5162,6 +5163,11 @@ function calMoveItem(kind,id,iso,time){
     else { const od=new Date(t.due); if(od.getHours()||od.getMinutes()) nd.setHours(od.getHours(),od.getMinutes(),0,0); else nd.setHours(12,0,0,0); }
     t.due=nd.getTime(); if(t.status==='atrasada') t.status='pendiente'; t.updatedAt=now();
     audit('tarea',`movió "${t.title}"`,t.sucursalId); toast('Tarea movida ✓','ok'); save(); render(); return;
+  }
+  if(kind==='reserva'){ const r=(DB.reservations||[]).find(x=>x.id===id); if(!r||!canReservEdit()){ toast('No podés mover esta reserva','err'); return; }
+    if(r.resDate===iso) return;
+    r.resDate=iso; r.updatedAt=now();
+    audit('reserva',`movió la reserva de ${r.clientName} al ${iso}`,r.sucursalId); toast('Reserva movida ✓','ok'); save(); render(); return;
   }
 }
 /* recordatorios de eventos -> notificación (popup + sonido), una sola vez */
@@ -5534,9 +5540,27 @@ function fmtResDate(d){ if(!d) return '—'; const x=new Date(d+'T00:00'); retur
 /* ---- CALENDARIO DE RESERVAS (reusa el estilo del calendario personal) ---- */
 function rvcItems(iso){
   return reservFiltered().filter(r=>r&&r.resDate===iso).sort((a,b)=>(a.resTime||'').localeCompare(b.resTime||''))
-    .map(r=>({id:r.id, name:r.clientName||'Reserva', people:+r.people||0, time:r.resTime||'', color:RVC_COLOR[r.status]||'#d59b4a'}));
+    .map(r=>({id:r.id, name:r.clientName||'Reserva', people:+r.people||0, time:r.resTime||'', color:RVC_COLOR[r.status]||'#d59b4a', status:r.status}));
 }
-function rvcChip(it){ return `<button class="cal-chip" style="--c:${it.color}" onclick="event.stopPropagation();reservDetail('${it.id}')">${it.time?`<b>${esc(fmt12(it.time))}</b> `:''}${esc(it.name)}${it.people?' ('+it.people+')':''}</button>`; }
+function rvcChip(it, iso){
+  const edit=canReservEdit();
+  const arrived=it.status==='llego'; const off=it.status==='cancelada'||it.status==='noshow';
+  const drag = edit && it.status!=='cancelada';
+  const check = edit ? `<span class="cal-check ${arrived?'on':''}" title="${arrived?'Quitar Llegó':'Marcar que llegó'}" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation();rvcToggleLlego('${it.id}')">${arrived?svgIcon('check','icon icon-sm'):''}</span>` : '';
+  const h = drag ? `onpointerdown="calDragStart(event,'reserva','${it.id}','${iso||''}')" onclick="event.stopPropagation()"` : `onclick="event.stopPropagation();reservDetail('${it.id}')"`;
+  return `<div class="cal-chip cal-chip-reserva${drag?' cdraggable':''}${off?' done':''}" style="--c:${it.color}" ${h}>${check}<span class="cal-chip-body">${it.time?`<b>${esc(fmt12(it.time))}</b> `:''}${esc(it.name)}${it.people?' ('+it.people+')':''}</span></div>`;
+}
+function rvcToggleLlego(id){
+  const r=DB.reservations.find(x=>x.id===id); if(!r) return;
+  if(!canReservEdit()){ toast('No tenés permiso para cambiar reservas','err'); return; }
+  const to = r.status==='llego' ? 'confirmada' : 'llego';
+  if(to==='llego' && !r.counted){ const c=clientById(r.clientId); if(c) c.visits=(c.visits||0)+1; r.counted=true; }
+  if(to!=='llego' && r.counted){ const c=clientById(r.clientId); if(c) c.visits=Math.max(0,(c.visits||0)-1); r.counted=false; }
+  r.status=to; r.updatedAt=now();
+  audit('reserva',`marcó ${to==='llego'?'que LLEGÓ':'como confirmada'} (${r.clientName})`,r.sucursalId);
+  toast(to==='llego'?'Marcada: Llegó ✓':'Reserva reabierta','ok'); save(); render();
+}
+window.rvcToggleLlego=rvcToggleLlego;
 function reservCalendar(editor){
   if(!rvcCursor) rvcCursor=calToday();
   const d=calParse(rvcCursor); let title;
@@ -5579,7 +5603,7 @@ function rvcMonthView(){
     const shown=items.slice(0,3), more=items.length-shown.length;
     cells+=`<div class="cal-cell${d.getMonth()!==curMonth?' other':''}${iso===today?' today':''}" data-iso="${iso}" onclick="rvcOpenDay('${iso}')">
       <div class="cal-cnum">${d.getDate()}</div>
-      <div class="cal-cev">${shown.map(rvcChip).join('')}${more>0?`<div class="cal-more">+${more} más</div>`:''}</div></div>`;
+      <div class="cal-cev">${shown.map(it=>rvcChip(it,iso)).join('')}${more>0?`<div class="cal-more">+${more} más</div>`:''}</div></div>`;
   }
   return `<div class="cal-month"><div class="cal-dow">${CAL_DOW.map(x=>`<span>${x}</span>`).join('')}</div><div class="cal-grid">${cells}</div></div>`;
 }
@@ -5594,7 +5618,7 @@ function rvcTimeGrid(days){
     const evs=list.map(it=>{
       const top=(it.s-startH*60)/60*rowH, h=Math.max(26,(it.e-it.s)/60*rowH);
       const cols=it.cols||1, col=it.col||0, lf=col/cols*100, wd=100/cols;
-      return `<button class="cal-ev" style="--c:${it.color};top:${top}px;height:${h}px;left:calc(${lf}% + 2px);width:calc(${wd}% - 4px);right:auto" onclick="event.stopPropagation();reservDetail('${it.id}')"><b>${esc(fmt12(it.time))}</b> ${esc(it.name)}${(cols<2&&it.people)?' ('+it.people+'p)':''}</button>`;
+      return `<button class="cal-ev${(it.status==='cancelada'||it.status==='noshow')?' done':''}" style="--c:${it.color};top:${top}px;height:${h}px;left:calc(${lf}% + 2px);width:calc(${wd}% - 4px);right:auto" onclick="event.stopPropagation();reservDetail('${it.id}')"><b>${esc(fmt12(it.time))}</b> ${esc(it.name)}${(cols<2&&it.people)?' ('+it.people+'p)':''}</button>`;
     }).join('');
     return `<div class="cal-tg-col" data-iso="${iso}" style="height:${hours.length*rowH}px" onclick="rvcCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
   }).join('');
@@ -5609,7 +5633,7 @@ function rvcAgendaView(){
   const today=calToday(); let html='<div class="cal-agenda">'; let any=false;
   for(let i=0;i<35;i++){ const iso=calAddDays(rvcCursor,i); const items=rvcItems(iso); if(!items.length) continue; any=true; const d=calParse(iso);
     html+=`<div class="cal-ag-day${iso===today?' today':''}"><div class="cal-ag-date"><b>${d.getDate()}</b><span>${CAL_DOW[(d.getDay()+6)%7]}<br>${CAL_MON[d.getMonth()].slice(0,3)}</span></div>
-      <div class="cal-ag-items">${items.map(it=>`<button class="cal-ag-row" style="--c:${it.color}" onclick="reservDetail('${it.id}')"><span class="cal-ag-time">${it.time?fmt12(it.time):'—'}</span><span class="cal-ag-t">${esc(it.name)}${it.people?' · '+it.people+'p':''}</span></button>`).join('')}</div></div>`;
+      <div class="cal-ag-items">${items.map(it=>{const arrived=it.status==='llego'; const off=it.status==='cancelada'||it.status==='noshow'; const check=canReservEdit()?`<span class="cal-check ${arrived?'on':''}" title="${arrived?'Quitar Llegó':'Marcar que llegó'}" onclick="event.stopPropagation();rvcToggleLlego('${it.id}')">${arrived?svgIcon('check','icon icon-sm'):''}</span>`:''; return `<div class="cal-ag-row ${off?'done':''}" style="--c:${it.color}">${check}<button class="cal-ag-body" onclick="reservDetail('${it.id}')"><span class="cal-ag-time">${it.time?fmt12(it.time):'—'}</span><span class="cal-ag-t">${esc(it.name)}${it.people?' · '+it.people+'p':''}</span></button></div>`;}).join('')}</div></div>`;
   }
   if(!any) html+=emptyState('','Sin reservas','No hay reservas en los próximos días.');
   return html+'</div>';
