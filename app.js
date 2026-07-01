@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v91 · Horarios: editor semanal por persona y día (Salón/Cocina/Gerencia)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v93 · Tareas: Tablero Kanban estilo Asana (arrastrar + marcar hecho)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1147,7 +1147,8 @@ function horaSaludo(){ const h=new Date().getHours(); return h<12?'Buenos días'
 /* =====================================================================
    VISTA: TAREAS
    ===================================================================== */
-let taskFilter='todas', taskSearch='';
+let taskFilter='todas', taskSearch='', taskView='lista';
+window.setTaskView = v => { taskView=v; render(); };
 function viewTareas(){
   const all = (DB.tasks||[]).filter(t=> t && visibleTask(t) && (inScope(t.sucursalId) || (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId));
   refreshOverdue();
@@ -1185,9 +1186,24 @@ function viewTareas(){
     <div class="kpi ${lateN?'alert':''}" onclick="setTaskFilter('atrasada')" style="cursor:pointer"><div class="label">Atrasadas</div><div class="value">${lateN}</div><div class="sub">requieren atención</div></div>
     <div class="kpi ok" onclick="setTaskFilter('hecha')" style="cursor:pointer"><div class="label">Hechas</div><div class="value">${doneN}</div><div class="sub">completadas</div></div>
   </div>`;
-  html += `<div class="toolbar"><input class="input search" placeholder="Buscar tarea…" value="${esc(taskSearch)}" oninput="taskSearch=this.value;clearTimeout(window._ts);window._ts=setTimeout(render,250)"></div><div class="chipscroll">${chips}</div>`;
-  html += list.length ? list.map(taskRow).join('')
-    : emptyState('📝','No hay tareas acá', taskSearch?'No hay tareas que coincidan con la búsqueda.':'Cuando alguien asigne una tarea, aparece en esta lista. Probá creando una.','+ Nueva tarea','newTaskModal()');
+  html += `<div class="toolbar">
+    <div class="seg tk-viewseg"><button type="button" class="seg-b ${taskView==='lista'?'on':''}" onclick="setTaskView('lista')">${svgIcon('list','icon icon-sm')} Lista</button><button type="button" class="seg-b ${taskView==='tablero'?'on':''}" onclick="setTaskView('tablero')">${svgIcon('clipboard','icon icon-sm')} Tablero</button></div>
+    <input class="input search" placeholder="Buscar tarea…" value="${esc(taskSearch)}" oninput="taskSearch=this.value;clearTimeout(window._ts);window._ts=setTimeout(render,250)"></div>`;
+  if(taskView==='tablero'){
+    const boardTasks=all.filter(t=>{
+      if(taskFilter==='mias' && !(t.toIds||[]).includes(SES.userId)) return false;
+      if(taskFilter==='asignadas' && t.fromId!==SES.userId) return false;
+      if(taskSearch){ const q=taskSearch.toLowerCase(); if(!((t.title||'').toLowerCase().includes(q)||(t.desc||'').toLowerCase().includes(q))) return false; }
+      return true;
+    });
+    const bchips=[['todas','Todas'],['mias','Para mí'],['asignadas','Yo asigné']].map(([k,l])=>`<button class="chip ${taskFilter===k?'on':''}" onclick="setTaskFilter('${k}')">${l}</button>`).join('');
+    html += `<div class="chipscroll">${bchips}</div>`;
+    html += taskBoard(boardTasks);
+  } else {
+    html += `<div class="chipscroll">${chips}</div>`;
+    html += list.length ? list.map(taskRow).join('')
+      : emptyState('📝','No hay tareas acá', taskSearch?'No hay tareas que coincidan con la búsqueda.':'Cuando alguien asigne una tarea, aparece en esta lista. Probá creando una.','+ Nueva tarea','newTaskModal()');
+  }
   return html;
 }
 function visibleTask(t){
@@ -1308,6 +1324,55 @@ function setTaskStatus(id,status){
   save(); taskDetail(id); render();
 }
 window.setTaskStatus=setTaskStatus;
+
+/* ----- Tablero Kanban (estilo Asana): columnas por estado, arrastrar tarjetas ----- */
+function taskCanManage(t){ return (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId || isAdmin(); }
+function taskBoard(tasks){
+  const cols=[
+    {label:'Por hacer', statuses:['pendiente','atrasada'], target:'pendiente', dot:'var(--text-soft)'},
+    {label:'En proceso', statuses:['proceso'], target:'proceso', dot:'var(--info)'},
+    {label:'Hecho', statuses:['hecha'], target:'hecha', dot:'var(--success)'},
+  ];
+  return `<div class="kb-board">${cols.map(c=>{
+    const items=tasks.filter(t=>c.statuses.includes(t.status)).sort((a,b)=>(a.due||9e15)-(b.due||9e15));
+    return `<div class="kb-col" ondragover="kbOver(event)" ondragleave="kbLeave(event)" ondrop="kbDrop(event,'${c.target}')">
+      <div class="kb-col-head"><span class="kb-dot" style="background:${c.dot}"></span>${c.label}<span class="kb-count">${items.length}</span></div>
+      <div class="kb-list">${items.map(taskCard).join('')||'<div class="kb-empty">Sin tareas</div>'}</div>
+    </div>`;
+  }).join('')}</div>`;
+}
+function taskCard(t){
+  const pr=prioMeta(t.prio); const overdue=t.status==='atrasada'; const done=t.status==='hecha';
+  const canM=taskCanManage(t);
+  const assignees=(t.toIds||[]).map(i=>userById(i)).filter(Boolean);
+  const avs=assignees.slice(0,3).map(u=>`<span class="tk-av">${avatarHTML(u)}</span>`).join('')+(assignees.length>3?`<span class="tk-av more">+${assignees.length-3}</span>`:'');
+  const check = canM
+    ? `<button class="kb-check ${done?'on':''}" title="${done?'Marcar por hacer':'Marcar hecha'}" onclick="event.stopPropagation();boardMove('${t.id}','${done?'pendiente':'hecha'}')">${done?svgIcon('check','icon icon-sm'):''}</button>`
+    : `<span class="kb-check ${done?'on':''}">${done?svgIcon('check','icon icon-sm'):''}</span>`;
+  return `<div class="kb-card ${done?'done':''} ${overdue?'late':''}" style="--pc:${pr.color}" draggable="${canM?'true':'false'}" ondragstart="kbDragStart(event,'${t.id}')" ondragend="kbDragEnd(event)" onclick="taskDetail('${t.id}')">
+    <div class="kb-card-top">${check}<div class="kb-title ${done?'done':''}">${esc(t.title)}${t.images&&t.images.length?' '+svgIcon('clip','icon icon-sm'):''}</div></div>
+    <div class="kb-meta"><span class="kb-prio"><span class="dot-prio" style="background:${pr.color}"></span>${pr.label}</span><span class="${overdue?'tk-due-late':''}">${svgIcon('clock','icon icon-sm')} ${fmtDate(t.due)}</span></div>
+    <div class="kb-foot"><span class="tk-avs">${avs||''}</span><span class="kb-suc">${svgIcon('pin','icon icon-sm')} ${esc(sucName(t.sucursalId))}</span></div>
+  </div>`;
+}
+function boardMove(id,status){
+  const t=DB.tasks.find(x=>x.id===id); if(!t) return;
+  if(!taskCanManage(t)){ toast('Solo quien la hace, quien la asignó o Gerencia puede moverla','err'); return; }
+  if(t.status===status) return;
+  t.status=status; t.updatedAt=now(); t.log=t.log||[];
+  const lbl = status==='hecha'?'marcó la tarea como HECHA':status==='proceso'?'puso la tarea en proceso':'movió la tarea a Por hacer';
+  t.log.push({at:now(),byId:SES.userId,text:lbl});
+  audit('tarea',`${lbl}: "${t.title}"`,t.sucursalId);
+  if(status==='hecha') notify([t.fromId], `${me().name.split(' ')[0]} completó "${t.title}"`, '✅', {view:'tareas'});
+  save(); render();
+}
+let _kbDrag=null;
+function kbDragStart(e,id){ _kbDrag=id; try{ e.dataTransfer.effectAllowed='move'; e.dataTransfer.setData('text/plain',id); }catch(_){}; try{ e.currentTarget.classList.add('dragging'); }catch(_){} }
+function kbDragEnd(e){ _kbDrag=null; try{ e.currentTarget.classList.remove('dragging'); }catch(_){}; document.querySelectorAll('.kb-col.over').forEach(c=>c.classList.remove('over')); }
+function kbOver(e){ e.preventDefault(); try{ e.dataTransfer.dropEffect='move'; }catch(_){}; e.currentTarget.classList.add('over'); }
+function kbLeave(e){ if(e.currentTarget===e.target) e.currentTarget.classList.remove('over'); }
+function kbDrop(e,status){ e.preventDefault(); e.currentTarget.classList.remove('over'); const id=_kbDrag||(e.dataTransfer&&e.dataTransfer.getData('text/plain')); _kbDrag=null; if(id) boardMove(id,status); }
+window.boardMove=boardMove; window.kbDragStart=kbDragStart; window.kbDragEnd=kbDragEnd; window.kbOver=kbOver; window.kbLeave=kbLeave; window.kbDrop=kbDrop;
 
 async function rejectTask(id){
   const t=DB.tasks.find(x=>x.id===id); if(!t) return;
