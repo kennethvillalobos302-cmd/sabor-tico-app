@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v95 · Reservas tipo Asana: arrastrar de día + check "Llegó"';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v96 · Reservas: arrastrar también en Día/Semana (cambia día y hora)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4962,7 +4962,7 @@ function calTimeGrid(days){
       const handler=it.draggable?`onpointerdown="calDragStart(event,'${it.kind}','${it.id}','${iso}')" onclick="event.stopPropagation()"`:`onclick="event.stopPropagation();calItemClick('${it.kind}','${it.id}')"`;
       return `<button class="cal-ev${it.draggable?' cdraggable':''}${(it.kind==='task'&&it.done)?' done':''}" style="--c:${it.color};top:${top}px;height:${h}px;left:calc(${lf}% + 2px);width:calc(${wd}% - 4px);right:auto" ${handler}>${it.repeat?'🔁 ':''}${it.shared?'👥 ':''}<b>${esc(fmt12(it.start))}</b> ${esc(it.title)}</button>`;
     }).join('');
-    return `<div class="cal-tg-col" data-iso="${iso}" style="height:${hours.length*rowH}px" onclick="calCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
+    return `<div class="cal-tg-col" data-iso="${iso}" data-starth="${startH}" data-rowh="${rowH}" style="height:${hours.length*rowH}px" onclick="calCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
   }).join('');
   return `<div class="cal-timegrid">
     <div class="cal-tg-headrow" style="grid-template-columns:${cols}"><div></div>${head}</div>
@@ -5148,7 +5148,7 @@ function calDragEnd(e){
   if(!dd.moved){ calItemClick(dd.kind, dd.id); return; }   // no se movió = toque normal
   const el=document.elementFromPoint(e.clientX,e.clientY); const cell=el&&el.closest('[data-iso]'); if(!cell) return;
   const iso=cell.getAttribute('data-iso'); let time=null;
-  if(cell.classList.contains('cal-tg-col')){ const r=cell.getBoundingClientRect(); const mins=6*60+Math.max(0,Math.round((e.clientY-r.top)/46*60/15)*15); time=calMinToHHMM(mins); }
+  if(cell.classList.contains('cal-tg-col')){ const r=cell.getBoundingClientRect(); const sh=+cell.getAttribute('data-starth')||6; const rh=+cell.getAttribute('data-rowh')||46; const mins=sh*60+Math.max(0,Math.round((e.clientY-r.top)/rh*60/15)*15); time=calMinToHHMM(mins); }
   calMoveItem(dd.kind, dd.id, iso, time);
 }
 function calMoveItem(kind,id,iso,time){
@@ -5165,9 +5165,9 @@ function calMoveItem(kind,id,iso,time){
     audit('tarea',`movió "${t.title}"`,t.sucursalId); toast('Tarea movida ✓','ok'); save(); render(); return;
   }
   if(kind==='reserva'){ const r=(DB.reservations||[]).find(x=>x.id===id); if(!r||!canReservEdit()){ toast('No podés mover esta reserva','err'); return; }
-    if(r.resDate===iso) return;
-    r.resDate=iso; r.updatedAt=now();
-    audit('reserva',`movió la reserva de ${r.clientName} al ${iso}`,r.sucursalId); toast('Reserva movida ✓','ok'); save(); render(); return;
+    if(r.resDate===iso && (!time || time===r.resTime)) return;
+    r.resDate=iso; if(time) r.resTime=time; r.updatedAt=now();
+    audit('reserva',`movió la reserva de ${r.clientName}`,r.sucursalId); toast('Reserva movida ✓','ok'); save(); render(); return;
   }
 }
 /* recordatorios de eventos -> notificación (popup + sonido), una sola vez */
@@ -5618,9 +5618,11 @@ function rvcTimeGrid(days){
     const evs=list.map(it=>{
       const top=(it.s-startH*60)/60*rowH, h=Math.max(26,(it.e-it.s)/60*rowH);
       const cols=it.cols||1, col=it.col||0, lf=col/cols*100, wd=100/cols;
-      return `<button class="cal-ev${(it.status==='cancelada'||it.status==='noshow')?' done':''}" style="--c:${it.color};top:${top}px;height:${h}px;left:calc(${lf}% + 2px);width:calc(${wd}% - 4px);right:auto" onclick="event.stopPropagation();reservDetail('${it.id}')"><b>${esc(fmt12(it.time))}</b> ${esc(it.name)}${(cols<2&&it.people)?' ('+it.people+'p)':''}</button>`;
+      const off=it.status==='cancelada'||it.status==='noshow'; const drag=canReservEdit()&&it.status!=='cancelada';
+      const handler=drag?`onpointerdown="calDragStart(event,'reserva','${it.id}','${iso}')" onclick="event.stopPropagation()"`:`onclick="event.stopPropagation();reservDetail('${it.id}')"`;
+      return `<button class="cal-ev${drag?' cdraggable':''}${off?' done':''}" style="--c:${it.color};top:${top}px;height:${h}px;left:calc(${lf}% + 2px);width:calc(${wd}% - 4px);right:auto" ${handler}><b>${esc(fmt12(it.time))}</b> ${esc(it.name)}${(cols<2&&it.people)?' ('+it.people+'p)':''}</button>`;
     }).join('');
-    return `<div class="cal-tg-col" data-iso="${iso}" style="height:${hours.length*rowH}px" onclick="rvcCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
+    return `<div class="cal-tg-col" data-iso="${iso}" data-starth="${startH}" data-rowh="${rowH}" style="height:${hours.length*rowH}px" onclick="rvcCreateAt('${iso}',event,${rowH},${startH})">${evs}</div>`;
   }).join('');
   return `<div class="cal-timegrid">
     <div class="cal-tg-headrow" style="grid-template-columns:${cols}"><div></div>${head}</div>
