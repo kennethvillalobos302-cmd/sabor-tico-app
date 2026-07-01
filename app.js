@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v99 · Subtareas con responsable y fecha (estilo Asana)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v100 · Subtareas visibles al responsable + imagen en comentarios';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -972,7 +972,9 @@ function bottomNavItems(){
 }
 
 function pendingForMe(){
-  return (DB.tasks||[]).filter(t=> (t.toIds||[]).includes(SES.userId) && (t.status==='pendiente'||t.status==='proceso'||t.status==='atrasada')).length;
+  const tasks=(DB.tasks||[]).filter(t=> (t.toIds||[]).includes(SES.userId) && (t.status==='pendiente'||t.status==='proceso'||t.status==='atrasada')).length;
+  const subs=(DB.tasks||[]).reduce((n,t)=>{ if(!t||t.status==='hecha'||t.status==='rechazada') return n; return n+(t.subtasks||[]).filter(s=>s&&s.assigneeId===SES.userId&&!s.done).length; },0);
+  return tasks+subs;
 }
 function pedidosForMe(){
   if(!me()) return 0;
@@ -1230,7 +1232,7 @@ function viewTareas(){
   const all = (DB.tasks||[]).filter(t=> t && visibleTask(t) && (inScope(t.sucursalId) || (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId));
   refreshOverdue();
   let list=[...all];
-  if(taskFilter==='mias') list=list.filter(t=>(t.toIds||[]).includes(SES.userId));
+  if(taskFilter==='mias') list=list.filter(t=>(t.toIds||[]).includes(SES.userId)||iHaveSubtask(t));
   else if(taskFilter==='asignadas') list=list.filter(t=>t.fromId===SES.userId);
   else if(taskFilter!=='todas') list=list.filter(t=>t.status===taskFilter);
   list.sort((a,b)=>(a.due||9e15)-(b.due||9e15));
@@ -1271,7 +1273,7 @@ function viewTareas(){
   if(allTaskLabels().length) html += `<div class="chipscroll tlbl-filter">${allTaskLabels().map(l=>`<button class="tlbl-fchip ${taskLabelFilter===l.id?'on':''}" style="--lc:${l.color}" onclick="setTaskLabelFilter('${l.id}')">${esc(l.name)}</button>`).join('')}</div>`;
   if(taskView==='tablero'){
     const boardTasks=all.filter(t=>{
-      if(taskFilter==='mias' && !(t.toIds||[]).includes(SES.userId)) return false;
+      if(taskFilter==='mias' && !((t.toIds||[]).includes(SES.userId)||iHaveSubtask(t))) return false;
       if(taskFilter==='asignadas' && t.fromId!==SES.userId) return false;
       if(taskLabelFilter && !(t.labels||[]).includes(taskLabelFilter)) return false;
       if(taskSearch){ const q=taskSearch.toLowerCase(); if(!((t.title||'').toLowerCase().includes(q)||(t.desc||'').toLowerCase().includes(q))) return false; }
@@ -1287,9 +1289,10 @@ function viewTareas(){
   }
   return html;
 }
+function iHaveSubtask(t){ return (t&&t.subtasks||[]).some(s=>s&&s.assigneeId===SES.userId); }
 function visibleTask(t){
   if(isAdmin()) return true;
-  return (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId || me().role==='chef' || me().role==='jefe_salon';
+  return (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId || iHaveSubtask(t) || me().role==='chef' || me().role==='jefe_salon';
 }
 window.setTaskFilter = k => { taskFilter=k; render(); };
 
@@ -1342,7 +1345,7 @@ function taskDetail(id){
   }).join('');
   const comments = (t.comments||[]).filter(c=>c&&!c.deleted).map(c=>{
     const u=userById(c.byId);
-    return `<div class="comment">${avatarHTML(u)}<div class="cbody"><div class="cname">${u?esc(u.name):'—'}</div><div class="ctext">${esc(c.text)}</div><div class="ctime">${timeAgo(c.at)}</div></div></div>`;
+    return `<div class="comment">${avatarHTML(u)}<div class="cbody"><div class="cname">${u?esc(u.name):'—'}</div>${c.text?`<div class="ctext">${esc(c.text)}</div>`:''}${c.mid?`<div class="cimg">${mediaTag(c.mid,'image','style="cursor:zoom-in" onclick="openImgFromEl(this)"')}</div>`:''}<div class="ctime">${timeAgo(c.at)}</div></div></div>`;
   }).join('');
 
   const canEdit = t.fromId===SES.userId || isAdmin();
@@ -1360,7 +1363,7 @@ function taskDetail(id){
   const subs=t.subtasks||[]; const subDoneN=subs.filter(s=>s.done).length;
   const subHtml=`<div class="td-sec">Subtareas${subs.length?` <span class="td-subcount">${subDoneN}/${subs.length}</span>`:''}</div>
     <div class="td-subs">
-      ${subs.map(s=>{const su=s.assigneeId?userById(s.assigneeId):null; const slate=s.due&&!s.done&&s.due<now(); return `<div class="td-sub ${s.done?'done':''}"><button class="sub-check ${s.done?'on':''}" ${canManage?`onclick="subToggle('${t.id}','${s.id}')"`:'disabled'}>${s.done?svgIcon('check','icon icon-sm'):''}</button><span class="sub-t" ${canManage?`onclick="subEditModal('${t.id}','${s.id}')" style="cursor:pointer"`:''}>${esc(s.title)}</span>${su?`<span class="sub-who" title="${esc(su.name)}">${avatarHTML(su)}</span>`:''}${s.due?`<span class="sub-due ${slate?'late':''}">${svgIcon('clock','icon icon-sm')} ${fmtDate(s.due)}</span>`:''}${canManage?`<button class="sub-del" title="Editar subtarea" onclick="subEditModal('${t.id}','${s.id}')">${svgIcon('edit','icon icon-sm')}</button>`:''}</div>`;}).join('')}
+      ${subs.map(s=>{const su=s.assigneeId?userById(s.assigneeId):null; const slate=s.due&&!s.done&&s.due<now(); return `<div class="td-sub ${s.done?'done':''} ${s.assigneeId===SES.userId?'mine':''}"><button class="sub-check ${s.done?'on':''}" ${canManage?`onclick="subToggle('${t.id}','${s.id}')"`:'disabled'}>${s.done?svgIcon('check','icon icon-sm'):''}</button><span class="sub-t" ${canManage?`onclick="subEditModal('${t.id}','${s.id}')" style="cursor:pointer"`:''}>${esc(s.title)}</span>${su?`<span class="sub-who" title="${esc(su.name)}">${avatarHTML(su)}</span>`:''}${s.due?`<span class="sub-due ${slate?'late':''}">${svgIcon('clock','icon icon-sm')} ${fmtDate(s.due)}</span>`:''}${canManage?`<button class="sub-del" title="Editar subtarea" onclick="subEditModal('${t.id}','${s.id}')">${svgIcon('edit','icon icon-sm')}</button>`:''}</div>`;}).join('')}
       ${canManage?`<div class="td-sub-add"><input class="input" id="subNew" placeholder="+ agregar subtarea" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();subAdd('${t.id}');}"><button class="chip" onclick="subAdd('${t.id}')">Agregar</button></div>`:(subs.length?'':'<div class="td-empty">Sin subtareas.</div>')}
     </div>`;
 
@@ -1387,7 +1390,10 @@ function taskDetail(id){
       <div class="log">${logHtml||'<div class="td-empty">Sin movimientos.</div>'}</div>
       <div class="td-sec">Respuestas y comentarios</div>
       <div class="td-comments">${comments||'<div class="td-empty">Sin respuestas todavía. Escribí la primera.</div>'}</div>
+      <div class="tc-prev" id="tcPrev">${_tcPending?`<img src="${safeImg(_tcPending)}"><button type="button" class="tc-prev-x" title="Quitar" onclick="_tcPending=null;const p=document.getElementById('tcPrev');if(p)p.innerHTML=''">${svgIcon('x','icon icon-sm')}</button>`:''}</div>
       <div class="td-composer">
+        <input type="file" id="tcFile" accept="image/*" style="display:none" onchange="tcPickImg(this)">
+        <button class="chat-attach" title="Adjuntar imagen" onclick="document.getElementById('tcFile').click()">${svgIcon('clip')}</button>
         <input class="input" id="tcInput" placeholder="Escribí una respuesta…" autocomplete="off" onkeydown="if(event.key==='Enter')addTaskComment('${t.id}')">
         <button class="chat-send" title="Enviar" onclick="addTaskComment('${t.id}')">${svgIcon('send')}</button>
       </div>
@@ -1481,10 +1487,19 @@ async function rejectTask(id){
 }
 window.rejectTask=rejectTask;
 
-function addTaskComment(id){
+let _tcPending=null;
+async function tcPickImg(input){
+  const f=input.files&&input.files[0]; if(!f) return;
+  const arr=await readImages([f]); _tcPending=(arr&&arr[0])||null;
+  const p=$('#tcPrev'); if(p&&_tcPending) p.innerHTML=`<img src="${safeImg(_tcPending)}"><button type="button" class="tc-prev-x" title="Quitar" onclick="_tcPending=null;const q=document.getElementById('tcPrev');if(q)q.innerHTML=''">${svgIcon('x','icon icon-sm')}</button>`;
+}
+window.tcPickImg=tcPickImg;
+async function addTaskComment(id){
   const t=DB.tasks.find(x=>x.id===id); if(!t) return;
-  const inp=$('#tcInput'); const txt=inp.value.trim(); if(!txt) return;
-  t.comments.push({id:uid(),byId:SES.userId,text:txt,at:now()});
+  const inp=$('#tcInput'); const txt=inp?inp.value.trim():''; if(!txt && !_tcPending) return;
+  const c={id:uid(),byId:SES.userId,text:txt,at:now()};
+  if(_tcPending){ try{ c.mid=await putMedia(_tcPending); }catch(_){}; _tcPending=null; }
+  t.comments.push(c);
   t.log.push({at:now(),byId:SES.userId,text:'comentó'});
   notify(t.toIds.concat(t.fromId), `${me().name.split(' ')[0]} comentó en "${t.title}"`, '💬', {view:'tareas'});
   save(); taskDetail(id);
