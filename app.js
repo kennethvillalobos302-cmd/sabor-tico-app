@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v96 · Reservas: arrastrar también en Día/Semana (cambia día y hora)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v97 · Tablero: botón "+ Agregar tarea" en cada columna (estilo Asana)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1147,7 +1147,7 @@ function horaSaludo(){ const h=new Date().getHours(); return h<12?'Buenos días'
 /* =====================================================================
    VISTA: TAREAS
    ===================================================================== */
-let taskFilter='todas', taskSearch='', taskView='lista';
+let taskFilter='todas', taskSearch='', taskView='lista', _boardAddStatus=null;
 window.setTaskView = v => { taskView=v; render(); };
 function viewTareas(){
   const all = (DB.tasks||[]).filter(t=> t && visibleTask(t) && (inScope(t.sucursalId) || (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId));
@@ -1338,6 +1338,7 @@ function taskBoard(tasks){
     return `<div class="kb-col" ondragover="kbOver(event)" ondragleave="kbLeave(event)" ondrop="kbDrop(event,'${c.target}')">
       <div class="kb-col-head"><span class="kb-dot" style="background:${c.dot}"></span>${c.label}<span class="kb-count">${items.length}</span></div>
       <div class="kb-list">${items.map(taskCard).join('')||'<div class="kb-empty">Sin tareas</div>'}</div>
+      <button class="kb-add" onclick="newTaskModal('${c.target}')">${svgIcon('plus','icon icon-sm')} Agregar tarea</button>
     </div>`;
   }).join('')}</div>`;
 }
@@ -1444,10 +1445,11 @@ function taskFormBody(t){
     </div>
     <div class="field"><label>Sucursal</label><select class="select" id="ntSuc">${t?sucOptionsSel(t.sucursalId):sucOptionsFor()}</select></div>`;
 }
-function newTaskModal(){
+function newTaskModal(status){
   newImgs=[];
+  _boardAddStatus = (status==='proceso'||status==='hecha') ? status : null;   // desde el tablero: crear directo en esa columna
   openModal(`
-    <div class="modal-head"><h3>${svgIcon('check','icon')} Nueva tarea</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-head"><h3>${svgIcon('check','icon')} Nueva tarea${_boardAddStatus?` <span class="pill ${_boardAddStatus}" style="font-size:11px">${statusLabel(_boardAddStatus)}</span>`:''}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
       ${taskFormBody(null)}
       <div class="field"><label>Fotos / notas (opcional)</label>
@@ -1490,6 +1492,7 @@ async function createTask(){
   const images = await Promise.all((newImgs||[]).map(putMedia));   // subir fotos al nodo aparte, guardar solo ids
   const t={ id:uid(), ...d, fromId:SES.userId, status:'pendiente', images, createdAt:now(), comments:[],
     log:[{at:now(),byId:SES.userId,text:'creó la tarea'}] };
+  if(_boardAddStatus){ t.status=_boardAddStatus; t.log.push({at:now(),byId:SES.userId,text:'creada en '+statusLabel(_boardAddStatus)}); _boardAddStatus=null; }
   DB.tasks.unshift(t);
   audit('tarea',`creó "${d.title}" → ${d.toIds.map(i=>userById(i)?.name.split(' ')[0]).join(', ')}`,t.sucursalId);
   notify(d.toIds, `${me().name.split(' ')[0]} te asignó: "${d.title}"`, '✅', {view:'tareas'});
