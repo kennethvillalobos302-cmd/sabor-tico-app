@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v102 · Caja: control cruzado del efectivo (anti-fraude)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v103 · Caja: cruce real POS vs conteo (Z + por método)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3199,9 +3199,22 @@ function cajaToday(sucId){ const d=todayISO(); return (DB.cajas||[]).find(c=>c&&
 function cajaCashOut(c){ return (c.movs||[]).filter(m=>m.type==='gasto'||m.type==='retiro').reduce((s,m)=>s+(+m.amount||0),0); }
 function cajaCashIn(c){ return (c.movs||[]).filter(m=>m.type==='ingreso').reduce((s,m)=>s+(+m.amount||0),0); }
 function cajaDenomTotal(denom){ if(!denom) return 0; return CAJA_DENOMS.reduce((s,d)=>s+d*(+denom[d]||0),0); }
-function cajaExpected(c){ const salesCash=c.sales?(+c.sales.efectivo||0):0; return (+c.openFloat||0)+salesCash+cajaCashIn(c)-cajaCashOut(c); }
+/* POS = la verdad (reporte Z). recv = lo realmente recibido/liquidado por método (no efectivo).
+   Compatibilidad: cajas viejas (v102) usaban c.sales como ventas declaradas → se tratan como POS. */
+function cajaPos(c){ return c.pos||c.sales||{}; }
+function cajaRecv(c){ return c.recv||{}; }
+function cajaExpected(c){ const posCash=+(cajaPos(c).efectivo)||0; return (+c.openFloat||0)+posCash+cajaCashIn(c)-cajaCashOut(c); }
 function cajaSalesTotal(s){ s=s||{}; return (+s.efectivo||0)+(+s.tarjeta||0)+(+s.sinpe||0)+(+s.transfer||0); }
+function cajaMethodCross(c){
+  const pos=cajaPos(c), recv=cajaRecv(c);
+  return [['tarjeta','Tarjeta'],['sinpe','SINPE'],['transfer','Transferencia']].map(([k,lbl])=>{
+    const p=+pos[k]||0; const rv=recv[k]; const r=(rv==null||rv==='')?null:(+rv||0);
+    return {k,lbl,pos:p,recv:r,diff:r==null?null:(r-p)};
+  }).filter(m=>m.pos>0||m.recv!=null);
+}
+function cajaHasMethodMismatch(c){ return cajaMethodCross(c).some(m=>m.diff!=null&&m.diff!==0); }
 function cajaDiffLabel(diff){ diff=+diff||0; if(diff===0) return {txt:'Cuadra exacto',cls:'ok'}; return diff<0?{txt:'Faltante '+money(-diff),cls:'bad'}:{txt:'Sobrante '+money(diff),cls:'warn'}; }
+function cajaDiffShort(diff){ diff=+diff||0; if(diff===0) return {txt:'✓',cls:'ok'}; return diff<0?{txt:'−'+money(-diff),cls:'bad'}:{txt:'+'+money(diff),cls:'warn'}; }
 
 function viewCaja(){
   const canCashier=cajaIsCashier(), canVerify=cajaIsVerifier();
@@ -3257,7 +3270,8 @@ function cajaAlerts(scoped){
     const f=arr.filter(c=>(+c.diff||0)<0).length;
     if(f>=3) alerts.push({cls:'bad',txt:`${sucName(sid)}: ${f} faltantes en los últimos ${arr.length} cierres. Conviene revisar quién hace caja.`});
   });
-  closed.filter(c=>c.status==='cerrada'&&Math.abs(+c.diff||0)>=5000).forEach(c=>alerts.push({cls:'warn',txt:`${cajaDateLbl(c.date)} · ${sucName(c.sucursalId)}: descuadre de ${money(Math.abs(c.diff))} sin revisar.`}));
+  closed.filter(c=>c.status==='cerrada'&&Math.abs(+c.diff||0)>=5000).forEach(c=>alerts.push({cls:'warn',txt:`${cajaDateLbl(c.date)} · ${sucName(c.sucursalId)}: descuadre de efectivo de ${money(Math.abs(c.diff))} sin revisar.`}));
+  closed.filter(c=>c.status==='cerrada'&&cajaHasMethodMismatch(c)).forEach(c=>{ const mm=cajaMethodCross(c).filter(m=>m.diff!=null&&m.diff!==0).map(m=>`${m.lbl} ${cajaDiffShort(m.diff).txt}`).join(', '); alerts.push({cls:'warn',txt:`${cajaDateLbl(c.date)} · ${sucName(c.sucursalId)}: POS no coincide con lo recibido (${mm}).`}); });
   if(!alerts.length) return '';
   return `<div class="caja-alerts">${alerts.slice(0,5).map(a=>`<div class="caja-alert ${a.cls}">${svgIcon('shield','icon icon-sm')} ${esc(a.txt)}</div>`).join('')}</div>`;
 }
@@ -3298,25 +3312,39 @@ function cajaMovsList(c, canManage){
     return `<div class="caja-mov"><span class="caja-mov-t">${esc(mt.label)}</span><span class="caja-mov-c">${esc(m.concept||'')}</span>${m.mid?mediaTag(m.mid,'image','style="width:30px;height:30px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex:0 0 auto" onclick="openImgFromEl(this)"'):''}<span class="caja-mov-a ${mt.sign<0?'out':'in'}">${mt.sign<0?'−':'+'}${money(m.amount)}</span>${canManage?`<button class="caja-mov-x" title="Quitar" onclick="cajaDelMov('${c.id}','${m.id}')">${svgIcon('x','icon icon-sm')}</button>`:''}</div>`;
   }).join('')}</div>`;
 }
+function cajaMethodCrossHTML(c){
+  const rows=cajaMethodCross(c);
+  if(!rows.length) return '';
+  return `<div class="caja-mcross">${rows.map(m=>{
+    if(m.diff==null) return `<div class="caja-mrow"><span>${m.lbl}</span><b>POS ${money(m.pos)}</b><span class="caja-mrow-d">sin cruzar</span></div>`;
+    const md=cajaDiffShort(m.diff);
+    return `<div class="caja-mrow"><span>${m.lbl}</span><b>POS ${money(m.pos)} · rec. ${money(m.recv)}</b><span class="caja-mrow-d cjdiff-${md.cls}">${md.txt}</span></div>`;
+  }).join('')}</div>`;
+}
 function cajaClosedCard(c, canVerify){
-  const dl=cajaDiffLabel(c.diff); const s=c.sales||{};
+  const dl=cajaDiffLabel(c.diff); const p=cajaPos(c);
   const badge=c.status==='aprobada'?'<span class="pill hecha">Aprobada</span>':c.status==='observada'?'<span class="pill rechazada">Observada</span>':'<span class="pill pendiente">Cerrada · por revisar</span>';
   const canReview=canVerify&&c.status==='cerrada';
+  const mism=cajaHasMethodMismatch(c);
   return `<div class="caja-card">
-    <div class="caja-head">${badge}<span class="caja-sub">Cerró ${esc(userFirst(c.closedBy))} · ${timeAgo(c.closedAt)}</span></div>
+    <div class="caja-head">${badge}${mism?'<span class="pill rechazada">Difiere en medios</span>':''}<span class="caja-sub">Cerró ${esc(userFirst(c.closedBy))} · ${timeAgo(c.closedAt)}</span></div>
     <div class="caja-cross">
-      <div class="caja-cross-col"><span>Esperado (sistema)</span><b>${money(c.expectedCash)}</b></div>
+      <div class="caja-cross-col"><span>Efectivo esperado (POS)</span><b>${money(c.expectedCash)}</b></div>
       <div class="caja-cross-col"><span>Contado (físico)</span><b>${money(c.countedCash)}</b></div>
-      <div class="caja-cross-col diff ${dl.cls}"><span>Descuadre</span><b>${dl.txt}</b></div>
+      <div class="caja-cross-col diff ${dl.cls}"><span>Descuadre efectivo</span><b>${dl.txt}</b></div>
     </div>
+    ${cajaMethodCrossHTML(c)}
     <div class="caja-grid">
-      <div class="caja-stat"><span>Ventas efectivo</span><b>${money(s.efectivo)}</b></div>
-      <div class="caja-stat"><span>Tarjeta</span><b>${money(s.tarjeta)}</b></div>
-      <div class="caja-stat"><span>SINPE</span><b>${money(s.sinpe)}</b></div>
-      <div class="caja-stat"><span>Transferencia</span><b>${money(s.transfer)}</b></div>
-      <div class="caja-stat"><span>Ventas totales</span><b>${money(cajaSalesTotal(s))}</b></div>
+      <div class="caja-stat"><span>Efectivo POS</span><b>${money(p.efectivo)}</b></div>
+      <div class="caja-stat"><span>Tarjeta POS</span><b>${money(p.tarjeta)}</b></div>
+      <div class="caja-stat"><span>SINPE POS</span><b>${money(p.sinpe)}</b></div>
+      <div class="caja-stat"><span>Transferencia POS</span><b>${money(p.transfer)}</b></div>
+      <div class="caja-stat"><span>Ventas POS totales</span><b>${money(cajaSalesTotal(p))}</b></div>
       <div class="caja-stat"><span>Fondo apertura</span><b>${money(c.openFloat)}</b></div>
+      ${+p.descuentos?`<div class="caja-stat"><span>Descuentos/cortesías</span><b>${money(p.descuentos)}</b></div>`:''}
+      ${+p.anulaciones?`<div class="caja-stat"><span>Anulaciones</span><b>${p.anulaciones}</b></div>`:''}
     </div>
+    ${c.zmid?`<div class="caja-z"><span class="lbl-soft">Reporte Z:</span> ${mediaTag(c.zmid,'image','style="width:54px;height:54px;object-fit:cover;border-radius:8px;cursor:zoom-in;vertical-align:middle" onclick="openImgFromEl(this)"')}</div>`:''}
     ${c.closeNote?`<div class="caja-note">${svgIcon('message','icon icon-sm')} ${esc(c.closeNote)}</div>`:''}
     ${c.reviewNote?`<div class="caja-note"><b>Revisión:</b> ${esc(c.reviewNote)} — ${esc(userFirst(c.reviewedBy))}</div>`:''}
     <div class="caja-actions">
@@ -3402,61 +3430,97 @@ function cajaDelMov(id,mid){
   c.log.push({at:now(),byId:SES.userId,text:'quitó un movimiento'});
   save(); render();
 }
+let _cajaZImg=null;
 function cajaCloseModal(id){
   const c=cajaFind(id); if(!c||c.status!=='abierta') return;
   if(!cajaIsCashier()){ toast('Sin permiso','err'); return; }
-  const s=c.sales||{};
+  _cajaZImg=null;
+  const p=cajaPos(c), rv=cajaRecv(c);
   const denomRows=CAJA_DENOMS.map(d=>`<div class="denom-row"><span class="denom-face">${money(d)}</span><span class="denom-x">×</span><input class="input denom-in" type="number" min="0" step="1" inputmode="numeric" data-d="${d}" value="" oninput="cajaCalc('${id}')"><span class="denom-sub" id="dsub-${d}">${money(0)}</span></div>`).join('');
   openModal(`
-    <div class="modal-head"><h3>${svgIcon('check','icon')} Cerrar caja</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-head"><h3>${svgIcon('check','icon')} Cerrar caja · control cruzado</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
-      <div class="ip-sec">Ventas declaradas del día</div>
-      <div class="row2"><div class="field"><label>Efectivo (₡)</label><input class="input" id="csEf" type="number" min="0" step="any" inputmode="numeric" value="${+s.efectivo||''}" oninput="cajaCalc('${id}')"></div>
-        <div class="field"><label>Tarjeta (₡)</label><input class="input" id="csTa" type="number" min="0" step="any" inputmode="numeric" value="${+s.tarjeta||''}" oninput="cajaCalc('${id}')"></div></div>
-      <div class="row2"><div class="field"><label>SINPE Móvil (₡)</label><input class="input" id="csSi" type="number" min="0" step="any" inputmode="numeric" value="${+s.sinpe||''}" oninput="cajaCalc('${id}')"></div>
-        <div class="field"><label>Transferencia (₡)</label><input class="input" id="csTr" type="number" min="0" step="any" inputmode="numeric" value="${+s.transfer||''}" oninput="cajaCalc('${id}')"></div></div>
-      <div class="ip-sec">Conteo del efectivo (billetes y monedas)</div>
+      <div class="caja-step">1 · Cierre del POS <span class="lbl-soft">(lo que dice el reporte Z)</span></div>
+      <div class="row2"><div class="field"><label>Efectivo POS (₡)</label><input class="input" id="cpEf" type="number" min="0" step="any" inputmode="numeric" value="${+p.efectivo||''}" oninput="cajaCalc('${id}')"></div>
+        <div class="field"><label>Tarjeta POS (₡)</label><input class="input" id="cpTa" type="number" min="0" step="any" inputmode="numeric" value="${+p.tarjeta||''}" oninput="cajaCalc('${id}')"></div></div>
+      <div class="row2"><div class="field"><label>SINPE POS (₡)</label><input class="input" id="cpSi" type="number" min="0" step="any" inputmode="numeric" value="${+p.sinpe||''}" oninput="cajaCalc('${id}')"></div>
+        <div class="field"><label>Transferencia POS (₡)</label><input class="input" id="cpTr" type="number" min="0" step="any" inputmode="numeric" value="${+p.transfer||''}" oninput="cajaCalc('${id}')"></div></div>
+      <div class="row2"><div class="field"><label>Descuentos/cortesías (₡) <span class="lbl-soft">opcional</span></label><input class="input" id="cpDesc" type="number" min="0" step="any" inputmode="numeric" value="${+p.descuentos||''}"></div>
+        <div class="field"><label>Anulaciones (cantidad) <span class="lbl-soft">opcional</span></label><input class="input" id="cpAnul" type="number" min="0" step="1" inputmode="numeric" value="${+p.anulaciones||''}"></div></div>
+      <div class="field"><label>Foto del reporte Z <span style="color:var(--danger)">(obligatoria — evidencia)</span></label>
+        <input type="file" id="cpZ" accept="image/*" onchange="cajaZPick(this)"><div class="img-prev" id="cpZPrev"></div></div>
+
+      <div class="caja-step">2 · Conteo real <span class="lbl-soft">(lo que hay de verdad)</span></div>
+      <div class="ip-sec">Efectivo contado (billetes y monedas)</div>
       <div class="denom-grid">${denomRows}</div>
+      <div class="ip-sec">Otros medios recibidos <span class="lbl-soft">(datáfono, comprobantes — opcional)</span></div>
+      <div class="row2"><div class="field"><label>Tarjeta recibida (₡)</label><input class="input" id="crTa" type="number" min="0" step="any" inputmode="numeric" value="${rv.tarjeta!=null?rv.tarjeta:''}" oninput="cajaCalc('${id}')"></div>
+        <div class="field"><label>SINPE recibido (₡)</label><input class="input" id="crSi" type="number" min="0" step="any" inputmode="numeric" value="${rv.sinpe!=null?rv.sinpe:''}" oninput="cajaCalc('${id}')"></div></div>
+      <div class="field"><label>Transferencia recibida (₡)</label><input class="input" id="crTr" type="number" min="0" step="any" inputmode="numeric" value="${rv.transfer!=null?rv.transfer:''}" oninput="cajaCalc('${id}')"></div>
+
+      <div class="caja-step">3 · Cruce</div>
       <div class="caja-live">
+        <div class="caja-live-row"><span>Efectivo esperado (POS)</span><b id="cjExpected">${money(cajaExpected(c))}</b></div>
         <div class="caja-live-row"><span>Efectivo contado</span><b id="cjCounted">${money(0)}</b></div>
-        <div class="caja-live-row"><span>Efectivo esperado (sistema)</span><b id="cjExpected">${money(cajaExpected(c))}</b></div>
-        <div class="caja-live-row big"><span>Descuadre</span><b id="cjDiff" class="cjdiff-ok">—</b></div>
+        <div class="caja-live-row big"><span>Descuadre de efectivo</span><b id="cjDiff" class="cjdiff-ok">—</b></div>
+        <div id="cjMethods"></div>
       </div>
       <div class="field"><label>Nota <span class="lbl-soft">(opcional — explicación del descuadre)</span></label><textarea class="textarea" id="cjNote" placeholder="Observaciones…"></textarea></div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="cajaClose('${id}')">${svgIcon('check','icon icon-sm')} Cerrar y registrar</button></div>`, true);
   cajaCalc(id);
 }
-function _cajaReadSales(){ return { efectivo:+($('#csEf')?$('#csEf').value:0)||0, tarjeta:+($('#csTa')?$('#csTa').value:0)||0, sinpe:+($('#csSi')?$('#csSi').value:0)||0, transfer:+($('#csTr')?$('#csTr').value:0)||0 }; }
+async function cajaZPick(input){ const arr=await readImages(input.files); _cajaZImg=(arr&&arr[0])||null; const el=$('#cpZPrev'); if(el) el.innerHTML=_cajaZImg?`<img src="${safeImg(_cajaZImg)}">`:''; }
+function _cajaReadPos(){ return { efectivo:+($('#cpEf')?$('#cpEf').value:0)||0, tarjeta:+($('#cpTa')?$('#cpTa').value:0)||0, sinpe:+($('#cpSi')?$('#cpSi').value:0)||0, transfer:+($('#cpTr')?$('#cpTr').value:0)||0, descuentos:+($('#cpDesc')?$('#cpDesc').value:0)||0, anulaciones:+($('#cpAnul')?$('#cpAnul').value:0)||0 }; }
+function _cajaReadRecv(){ const g=id=>{ const el=$('#'+id); return (el&&el.value!=='')?(+el.value||0):null; }; return { tarjeta:g('crTa'), sinpe:g('crSi'), transfer:g('crTr') }; }
 function _cajaReadDenom(){ const denom={}; document.querySelectorAll('.denom-in').forEach(el=>{ denom[el.getAttribute('data-d')]=+el.value||0; }); return denom; }
 function cajaCalc(id){
   const c=cajaFind(id); if(!c) return;
-  const sales=_cajaReadSales(); const denom=_cajaReadDenom();
+  const pos=_cajaReadPos(); const recv=_cajaReadRecv(); const denom=_cajaReadDenom();
   CAJA_DENOMS.forEach(d=>{ const el=$('#dsub-'+d); if(el) el.textContent=money(d*(+denom[d]||0)); });
   const counted=cajaDenomTotal(denom);
-  const expected=(+c.openFloat||0)+(+sales.efectivo||0)+cajaCashIn(c)-cajaCashOut(c);
+  const expected=(+c.openFloat||0)+(+pos.efectivo||0)+cajaCashIn(c)-cajaCashOut(c);
   const diff=counted-expected; const dl=cajaDiffLabel(diff);
   const ce=$('#cjCounted'); if(ce) ce.textContent=money(counted);
   const ex=$('#cjExpected'); if(ex) ex.textContent=money(expected);
   const dd=$('#cjDiff'); if(dd){ dd.textContent=dl.txt; dd.className='cjdiff-'+dl.cls; }
+  const mm=$('#cjMethods');
+  if(mm){
+    const rows=[['tarjeta','Tarjeta'],['sinpe','SINPE'],['transfer','Transferencia']].map(([k,lbl])=>{
+      const p=+pos[k]||0; const r=recv[k];
+      if(r==null && p===0) return '';
+      if(r==null) return `<div class="caja-live-row"><span>${lbl}: POS ${money(p)}</span><b class="cjdiff-ok">sin cruzar</b></div>`;
+      const md=cajaDiffShort(r-p);
+      return `<div class="caja-live-row"><span>${lbl}: POS ${money(p)} vs ${money(r)}</span><b class="cjdiff-${md.cls}">${md.txt}</b></div>`;
+    }).join('');
+    mm.innerHTML=rows;
+  }
 }
 function cajaClose(id){
   const c=cajaFind(id); if(!c||c.status!=='abierta') return;
   if(!cajaIsCashier()){ toast('Sin permiso','err'); return; }
-  const sales=_cajaReadSales(); const denom=_cajaReadDenom();
+  const pos=_cajaReadPos(); const recv=_cajaReadRecv(); const denom=_cajaReadDenom();
+  if(cajaSalesTotal(pos)<=0){ toast('Poné las ventas del POS (reporte Z)','err'); return; }
+  if(!_cajaZImg){ toast('Falta la foto del reporte Z (evidencia obligatoria)','err'); return; }
   const counted=cajaDenomTotal(denom);
-  c.sales=sales; c.denom=denom; c.countedCash=counted;
-  c.expectedCash=cajaExpected(c);
-  c.diff=counted-c.expectedCash;
-  c.status='cerrada'; c.closedBy=SES.userId; c.closedAt=now(); c.closeNote=($('#cjNote')?$('#cjNote').value.trim():''); c.updatedAt=now();
-  const dl=cajaDiffLabel(c.diff);
-  c.log.push({at:now(),byId:SES.userId,text:`cerró la caja · ${dl.txt} (contado ${money(counted)} vs esperado ${money(c.expectedCash)})`});
-  audit('caja',`cerró caja (${sucName(c.sucursalId)}) · ${dl.txt}`,c.sucursalId);
-  if(c.diff!==0){
-    const verifiers=DB.users.filter(u=>u&&u.active&&['admin','contarh'].includes(u.role)&&(u.sucursalId===c.sucursalId||u.sucursalId==='all'||!u.sucursalId)).map(u=>u.id);
-    notify(verifiers, `Descuadre en caja ${sucName(c.sucursalId)}: ${dl.txt}`, '⚠️', {view:'caja'});
-  }
-  closeModal(); toast(c.diff===0?'Caja cerrada, cuadra exacto ✅':'Caja cerrada · '+dl.txt, c.diff===0?'ok':'err'); save(); render();
+  (async()=>{
+    let zmid=null; try{ zmid=await putMedia(_cajaZImg); }catch(_){}
+    c.pos=pos; c.recv=recv; c.sales=pos; c.denom=denom; c.countedCash=counted; c.zmid=zmid;
+    c.expectedCash=cajaExpected(c);
+    c.diff=counted-c.expectedCash;
+    c.status='cerrada'; c.closedBy=SES.userId; c.closedAt=now(); c.closeNote=($('#cjNote')?$('#cjNote').value.trim():''); c.updatedAt=now();
+    const dl=cajaDiffLabel(c.diff);
+    const mism=cajaMethodCross(c).filter(m=>m.diff!=null&&m.diff!==0);
+    const mismTxt=mism.length?(' · '+mism.map(m=>`${m.lbl} ${cajaDiffShort(m.diff).txt}`).join(', ')):'';
+    _cajaZImg=null;
+    c.log.push({at:now(),byId:SES.userId,text:`cerró la caja · efectivo ${dl.txt} (contado ${money(counted)} vs esperado POS ${money(c.expectedCash)})${mismTxt}`});
+    audit('caja',`cerró caja (${sucName(c.sucursalId)}) · efectivo ${dl.txt}${mismTxt}`,c.sucursalId);
+    if(c.diff!==0 || mism.length){
+      const verifiers=DB.users.filter(u=>u&&u.active&&['admin','contarh'].includes(u.role)&&(u.sucursalId===c.sucursalId||u.sucursalId==='all'||!u.sucursalId)).map(u=>u.id);
+      notify(verifiers, `Revisar caja ${sucName(c.sucursalId)}: efectivo ${dl.txt}${mismTxt}`, '⚠️', {view:'caja'});
+    }
+    closeModal(); toast(c.diff===0&&!mism.length?'Caja cerrada, todo cuadra ✅':'Caja cerrada · efectivo '+dl.txt, (c.diff===0&&!mism.length)?'ok':'err'); save(); render();
+  })();
 }
 function cajaReview(id,status){
   const c=cajaFind(id); if(!c||c.status!=='cerrada') return;
@@ -3473,7 +3537,7 @@ function cajaReview(id,status){
 function cajaDetail(id){
   const c=cajaFind(id); if(!c) return;
   const canVerify=cajaIsVerifier();
-  const dl=cajaDiffLabel(c.diff); const s=c.sales||{};
+  const dl=cajaDiffLabel(c.diff); const p=cajaPos(c);
   const denomHtml=c.denom? (CAJA_DENOMS.filter(d=>(+c.denom[d]||0)>0).map(d=>`<div class="denom-row"><span class="denom-face">${money(d)}</span><span class="denom-x">× ${(+c.denom[d]||0)}</span><span class="denom-sub">${money(d*(+c.denom[d]||0))}</span></div>`).join('')||'<div class="td-empty">Sin desglose.</div>') : '<div class="td-empty">Caja no cerrada.</div>';
   const movs=c.movs||[];
   const movHtml=movs.length?movs.map(m=>{const mt=CAJA_MOV_TYPES[m.type]||{label:m.type,sign:-1};return `<div class="caja-mov"><span class="caja-mov-t">${esc(mt.label)}</span><span class="caja-mov-c">${esc(m.concept||'')}</span>${m.mid?mediaTag(m.mid,'image','style="width:30px;height:30px;object-fit:cover;border-radius:6px;cursor:zoom-in;flex:0 0 auto" onclick="openImgFromEl(this)"'):''}<span class="caja-mov-a ${mt.sign<0?'out':'in'}">${mt.sign<0?'−':'+'}${money(m.amount)}</span></div>`;}).join(''):'<div class="td-empty">Sin movimientos.</div>';
@@ -3484,23 +3548,27 @@ function cajaDetail(id){
     <div class="modal-body">
       <div class="td-top"><span class="pill ${c.status==='abierta'?'proceso':c.status==='aprobada'?'hecha':c.status==='observada'?'rechazada':'pendiente'}">${cap(c.status)}</span><span class="td-badge">${cajaDateLbl(c.date)}</span></div>
       ${c.status!=='abierta'?`<div class="caja-cross">
-        <div class="caja-cross-col"><span>Esperado</span><b>${money(c.expectedCash)}</b></div>
+        <div class="caja-cross-col"><span>Efectivo esperado (POS)</span><b>${money(c.expectedCash)}</b></div>
         <div class="caja-cross-col"><span>Contado</span><b>${money(c.countedCash)}</b></div>
-        <div class="caja-cross-col diff ${dl.cls}"><span>Descuadre</span><b>${dl.txt}</b></div></div>`:''}
+        <div class="caja-cross-col diff ${dl.cls}"><span>Descuadre efectivo</span><b>${dl.txt}</b></div></div>
+      ${cajaMethodCrossHTML(c)}`:''}
       <div class="td-meta">
         <div class="td-mrow"><span class="td-ml">Fondo apertura</span><span class="td-mv">${money(c.openFloat)}</span></div>
         <div class="td-mrow"><span class="td-ml">Abrió</span><span class="td-mv">${esc(userFirst(c.openedBy))} · ${fmtDateTime(c.openAt)}</span></div>
         ${c.closedBy?`<div class="td-mrow"><span class="td-ml">Cerró</span><span class="td-mv">${esc(userFirst(c.closedBy))} · ${fmtDateTime(c.closedAt)}</span></div>`:''}
         ${c.reviewedBy?`<div class="td-mrow"><span class="td-ml">Revisó</span><span class="td-mv">${esc(userFirst(c.reviewedBy))} · ${fmtDateTime(c.reviewedAt)}</span></div>`:''}
       </div>
-      ${c.status!=='abierta'?`<div class="ip-sec">Ventas declaradas</div>
+      ${c.status!=='abierta'?`<div class="ip-sec">Ventas según el POS (reporte Z)</div>
       <div class="caja-grid">
-        <div class="caja-stat"><span>Efectivo</span><b>${money(s.efectivo)}</b></div>
-        <div class="caja-stat"><span>Tarjeta</span><b>${money(s.tarjeta)}</b></div>
-        <div class="caja-stat"><span>SINPE</span><b>${money(s.sinpe)}</b></div>
-        <div class="caja-stat"><span>Transferencia</span><b>${money(s.transfer)}</b></div>
-        <div class="caja-stat"><span>Total ventas</span><b>${money(cajaSalesTotal(s))}</b></div>
-      </div>`:''}
+        <div class="caja-stat"><span>Efectivo</span><b>${money(p.efectivo)}</b></div>
+        <div class="caja-stat"><span>Tarjeta</span><b>${money(p.tarjeta)}</b></div>
+        <div class="caja-stat"><span>SINPE</span><b>${money(p.sinpe)}</b></div>
+        <div class="caja-stat"><span>Transferencia</span><b>${money(p.transfer)}</b></div>
+        <div class="caja-stat"><span>Total ventas</span><b>${money(cajaSalesTotal(p))}</b></div>
+        ${+p.descuentos?`<div class="caja-stat"><span>Descuentos/cortesías</span><b>${money(p.descuentos)}</b></div>`:''}
+        ${+p.anulaciones?`<div class="caja-stat"><span>Anulaciones</span><b>${p.anulaciones}</b></div>`:''}
+      </div>
+      ${c.zmid?`<div class="caja-z"><span class="lbl-soft">Reporte Z (evidencia):</span><br>${mediaTag(c.zmid,'image','style="max-width:180px;max-height:180px;border-radius:10px;cursor:zoom-in;margin-top:6px" onclick="openImgFromEl(this)"')}</div>`:''}`:''}
       <div class="ip-sec">Movimientos</div>${movHtml}
       ${c.status!=='abierta'?`<div class="ip-sec">Desglose de efectivo contado</div><div class="denom-grid">${denomHtml}</div>`:''}
       ${c.closeNote?`<div class="caja-note">${esc(c.closeNote)}</div>`:''}
@@ -3532,15 +3600,17 @@ function cajaReportModal(){
 }
 function cajaExportCSV(){
   const scoped=(DB.cajas||[]).filter(c=>c&&inScope(c.sucursalId)&&c.status!=='abierta').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
-  const head=['Fecha','Sucursal','Estado','Fondo','Vta efectivo','Tarjeta','SINPE','Transferencia','Vta total','Gastos+retiros','Esperado','Contado','Descuadre','Cerró','Revisó'];
+  const head=['Fecha','Sucursal','Estado','Fondo','POS efectivo','POS tarjeta','POS SINPE','POS transf','POS total','Descuentos','Anulaciones','Gastos+retiros','Efectivo esperado','Efectivo contado','Descuadre efectivo','Tarjeta recibida','Dif tarjeta','SINPE recibido','Dif SINPE','Transf recibida','Dif transf','Cerró','Revisó'];
   const lines=[head.map(csvCell).join(',')];
-  scoped.forEach(c=>{ const s=c.sales||{}; lines.push([c.date,sucName(c.sucursalId),c.status,c.openFloat,+s.efectivo||0,+s.tarjeta||0,+s.sinpe||0,+s.transfer||0,cajaSalesTotal(s),cajaCashOut(c),c.expectedCash,c.countedCash,c.diff,userFirst(c.closedBy),c.reviewedBy?userFirst(c.reviewedBy):''].map(csvCell).join(',')); });
+  const md=(c,k)=>{ const m=cajaMethodCross(c).find(x=>x.k===k); return m||{recv:null,diff:null}; };
+  scoped.forEach(c=>{ const p=cajaPos(c); const ta=md(c,'tarjeta'),si=md(c,'sinpe'),tr=md(c,'transfer');
+    lines.push([c.date,sucName(c.sucursalId),c.status,c.openFloat,+p.efectivo||0,+p.tarjeta||0,+p.sinpe||0,+p.transfer||0,cajaSalesTotal(p),+p.descuentos||0,+p.anulaciones||0,cajaCashOut(c),c.expectedCash,c.countedCash,c.diff,ta.recv==null?'':ta.recv,ta.diff==null?'':ta.diff,si.recv==null?'':si.recv,si.diff==null?'':si.diff,tr.recv==null?'':tr.recv,tr.diff==null?'':tr.diff,userFirst(c.closedBy),c.reviewedBy?userFirst(c.reviewedBy):''].map(csvCell).join(',')); });
   downloadText('caja_'+todayISO()+'.csv', '﻿'+lines.join('\n'), 'text/csv');
   toast('Reporte CSV descargado','ok');
 }
 window.setCajaSuc=setCajaSuc; window.cajaOpenModal=cajaOpenModal; window.cajaOpen=cajaOpen;
 window.cajaMovModal=cajaMovModal; window.cajaMovPick=cajaMovPick; window.cajaAddMov=cajaAddMov; window.cajaDelMov=cajaDelMov;
-window.cajaCloseModal=cajaCloseModal; window.cajaCalc=cajaCalc; window.cajaClose=cajaClose;
+window.cajaCloseModal=cajaCloseModal; window.cajaCalc=cajaCalc; window.cajaClose=cajaClose; window.cajaZPick=cajaZPick;
 window.cajaReview=cajaReview; window.cajaDetail=cajaDetail; window.cajaReportModal=cajaReportModal; window.cajaExportCSV=cajaExportCSV;
 
 /* =====================================================================
