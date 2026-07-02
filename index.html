@@ -125,7 +125,7 @@ input,textarea,select{font-family:inherit;font-size:14.5px}
 }
 
 /* ---------- LOGIN ---------- */
-.login-screen{position:fixed;inset:0;display:flex;justify-content:center;overflow-y:auto;
+.login-screen{position:fixed;top:var(--app-top,0px);left:var(--app-left,0px);width:var(--app-w,100%);height:var(--app-h,100%);display:flex;justify-content:center;overflow-y:auto;
   background:
     radial-gradient(900px 480px at 50% -8%, var(--accent-soft), transparent 70%),
     radial-gradient(600px 400px at 100% 110%, var(--accent-soft), transparent 70%),
@@ -196,7 +196,7 @@ input,textarea,select{font-family:inherit;font-size:14.5px}
 .app{display:none;flex-direction:column}
 /* La app cubre EXACTAMENTE toda la pantalla (incluye notch y home indicator con viewport-fit=cover),
    así la barra inferior llega al borde de abajo y nada queda "subido". */
-.app.on{display:flex;position:fixed;left:0;right:0;top:var(--app-top,0px);height:var(--app-h,100dvh)}
+.app.on{display:flex;position:fixed;left:var(--app-left,0px);right:auto;width:var(--app-w,100%);top:var(--app-top,0px);height:var(--app-h,100dvh)}
 .topbar{display:flex;align-items:center;gap:12px;padding:calc(11px + env(safe-area-inset-top)) 18px 11px;border-bottom:1px solid var(--border-soft);
   background:color-mix(in srgb,var(--bg-elev) 88%, transparent);backdrop-filter:blur(10px);flex-shrink:0;z-index:20}
 .tb-logo{font-size:18px;font-weight:800;letter-spacing:-.4px;white-space:nowrap}
@@ -645,7 +645,7 @@ button.kb-check:hover{border-color:var(--success)}
 .empty .em-d{font-size:13px;max-width:360px;margin:0 auto 18px;line-height:1.6}
 
 /* ---------- MODAL ---------- */
-.modal-bg{position:fixed;inset:0;background:rgba(6,8,14,.72);display:none;align-items:center;justify-content:center;z-index:60;padding:16px}
+.modal-bg{position:fixed;top:var(--app-top,0px);left:var(--app-left,0px);width:var(--app-w,100%);height:var(--app-h,100%);background:rgba(6,8,14,.72);display:none;align-items:center;justify-content:center;z-index:60;padding:16px}
 .modal-bg.on{display:flex}
 .modal{background:var(--bg-card);border:1px solid var(--border);border-radius:calc(var(--r-lg) + 2px);box-shadow:var(--e3);width:100%;max-width:540px;max-height:92vh;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
 .modal.wide{max-width:760px}
@@ -653,7 +653,7 @@ button.kb-check:hover{border-color:var(--success)}
 .modal-head h3{font-size:18px;font-weight:750;letter-spacing:-.3px}
 .modal-close{margin-left:auto;width:32px;height:32px;border-radius:var(--r-sm);font-size:20px;color:var(--text-soft);transition:background var(--t-fast),color var(--t-fast)}
 .modal-close:hover{background:var(--bg-soft);color:var(--text)}
-.modal-body{padding:22px}
+.modal-body{padding:22px;overflow-x:auto;max-width:100%}
 .modal-foot{display:flex;gap:10px;padding:16px 22px;border-top:1px solid var(--border-soft);position:sticky;bottom:0;background:var(--bg-card)}
 .modal-foot .btn{flex:1}
 .field{margin-bottom:15px}

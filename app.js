@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v105 · Arreglo definitivo: la app siempre encaja a lo ancho en celular';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v106 · La app se estira al ancho visible aunque Safari guarde zoom viejo';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -7331,11 +7331,22 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
   function apply(){ raf=0;
     root.style.setProperty('--app-h', Math.round(vv.height) + 'px');
     root.style.setProperty('--app-top', Math.round(vv.offsetTop) + 'px');
+    // ANCHO: si Safari quedó con la página encogida (zoom viejo pegado en la pestaña),
+    // la app se estira para cubrir TODO lo visible también a lo ancho (sin bandas negras).
+    const s = vv.scale || 1;
+    if(s < 0.99){
+      root.style.setProperty('--app-w', Math.round(vv.width) + 'px');
+      root.style.setProperty('--app-left', Math.round(vv.offsetLeft) + 'px');
+    } else {
+      root.style.setProperty('--app-w', '100%');
+      root.style.setProperty('--app-left', '0px');
+    }
   }
   function onChange(){ if(!raf) raf=requestAnimationFrame(apply); }
   vv.addEventListener('resize', onChange);
   vv.addEventListener('scroll', onChange);
   window.addEventListener('orientationchange', ()=>setTimeout(apply,300));
+  window.addEventListener('pageshow', ()=>setTimeout(apply,50));   // Safari restaurando la pestaña
   document.addEventListener('focusin', ()=>setTimeout(apply,80));
   document.addEventListener('focusout', ()=>setTimeout(apply,80));
   apply();
