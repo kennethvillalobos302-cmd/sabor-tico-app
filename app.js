@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v110 · Chat: sin salto al abrir + teclado pegado al escribir';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v111 · El cuadro de escribir queda pegado al teclado (sin colchón)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -7383,9 +7383,14 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
   const root = document.documentElement;
   let raf=0;
   function editing(){ const ae=document.activeElement; return !!(ae && (/INPUT|TEXTAREA/.test(ae.tagName) || ae.isContentEditable)); }
+  let baseH = 0;   // alto con teclado cerrado (para detectar cuándo está abierto)
   function apply(){ raf=0;
     root.style.setProperty('--app-h', Math.round(vv.height) + 'px');
     root.style.setProperty('--app-top', Math.round(vv.offsetTop) + 'px');
+    // TECLADO ABIERTO: el teclado ya cubre la zona de la barrita de inicio del iPhone,
+    // así que el colchón de safe-area bajo el composer/pie sobra y deja un hueco → quitarlo.
+    if(!editing() && vv.height > baseH) baseH = vv.height;
+    document.body.classList.toggle('kb-open', editing() && baseH > 0 && vv.height < baseH - 110);
     // iOS "revela" el campo enfocado scrolleando el documento; como la app es fija y se
     // acomoda sola, ese scroll solo crea un HUECO entre el teclado y el cuadro de escribir.
     if(editing() && (window.scrollY||window.pageYOffset)>0){ try{ window.scrollTo(0,0); }catch(_){} }
@@ -7403,7 +7408,7 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
   function onChange(){ if(!raf) raf=requestAnimationFrame(apply); }
   vv.addEventListener('resize', onChange);
   vv.addEventListener('scroll', onChange);
-  window.addEventListener('orientationchange', ()=>setTimeout(apply,300));
+  window.addEventListener('orientationchange', ()=>{ baseH=0; setTimeout(apply,300); });
   window.addEventListener('pageshow', ()=>setTimeout(apply,50));   // Safari restaurando la pestaña
   window.addEventListener('scroll', ()=>{ if(editing() && (window.scrollY||window.pageYOffset)>0){ try{ window.scrollTo(0,0); }catch(_){} } }, {passive:true});
   // el teclado de iOS anima ~300ms y luego acomoda la barra: re-aplicar varias veces

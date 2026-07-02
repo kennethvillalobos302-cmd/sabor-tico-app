@@ -2030,6 +2030,10 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   .seg .seg-b{padding:8px 10px;font-size:12px;white-space:nowrap}
   .toolbar{flex-wrap:wrap}
 }
+/* Teclado ABIERTO (clase kb-open puesta por JS): el teclado ya cubre la zona de la barrita
+   de inicio del iPhone → el colchón de safe-area bajo el composer/pie sobra y dejaba un hueco */
+body.kb-open .chat-input,body.chat-open.kb-open .chat-input{padding-bottom:9px}
+body.kb-open .modal-foot{padding-bottom:14px}
 @media(max-width:480px){
   /* botones del pie de los pop-ups: parejos y fáciles de tocar */
   .modal-foot .btn{flex:1 1 auto;justify-content:center}
