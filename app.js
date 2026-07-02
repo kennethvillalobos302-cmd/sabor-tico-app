@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v103 · Caja: cruce real POS vs conteo (Z + por método)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v104 · Mensajes estilo WhatsApp (✓✓, mic↔enviar, colitas) + ajuste por dispositivo';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2249,14 +2249,14 @@ function projSide(proj){
       <button class="chat-attach rec-cancel" title="Cancelar" onclick="vaRecCancel()">${svgIcon('trash')}</button>
       <div class="rec-mid"><span class="rec-dot"></span><span id="vaRecTime">0:00</span> <span class="rec-lbl">Grabando…</span></div>
       <button class="chat-send" title="Listo" onclick="vaRecStop()">${svgIcon('check')}</button>
-    </div>`:`<div class="chat-input">
+    </div>`:`<div class="chat-input chat-swap ${projPending?'has-text':''}">
       <input type="file" id="projFile" accept="image/*,video/*,.pdf,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv" style="display:none" onchange="projAttachPick('${proj.id}')">
       <button class="chat-attach" title="Adjuntar archivo" onclick="document.getElementById('projFile').click()">${svgIcon('plus')}</button>
       <div class="chat-field">
-        <input id="projMsg" placeholder="Mensaje al grupo" onkeydown="if(event.key==='Enter')sendProjMsg('${proj.id}')">
-        <button class="chat-field-mic" title="Grabar nota de voz" onclick="vaRecStart('${proj.id}',true)">${svgIcon('mic')}</button>
+        <input id="projMsg" placeholder="Mensaje al grupo" oninput="chatTyping(this)" onkeydown="if(event.key==='Enter')sendProjMsg('${proj.id}')">
       </div>
-      <button class="chat-send" onclick="sendProjMsg('${proj.id}')">${svgIcon('send')}</button>
+      <button class="chat-send chat-mic" title="Grabar nota de voz" onclick="vaRecStart('${proj.id}',true)">${svgIcon('mic')}</button>
+      <button class="chat-send chat-sendbtn" title="Enviar" onclick="sendProjMsg('${proj.id}')">${svgIcon('send')}</button>
     </div>`}
   </div>`;
 }
@@ -2687,6 +2687,13 @@ function markSeen(c){
   DB._seen=DB._seen||{}; DB._seen[SES.userId]=DB._seen[SES.userId]||{};
   DB._seen[SES.userId][c.id]=now(); save();
 }
+/* ✓✓ leído: todos los demás miembros abrieron el chat después de este mensaje */
+function msgReadByAll(c,m){
+  const others=(c.memberIds||[]).filter(i=>i!==SES.userId);
+  if(!others.length) return false;
+  const seen=DB._seen||{};
+  return others.every(uid=> ((seen[uid]||{})[c.id]||0) >= m.at);
+}
 
 function dayKey(ts){ const d=new Date(ts); return d.getFullYear()+'-'+d.getMonth()+'-'+d.getDate(); }
 function dayLabel(ts){
@@ -2727,7 +2734,7 @@ function viewChat(){
          + (last.text || (last.media?(last.media.type==='video'?'🎬 Video':last.media.type==='audio'?'🎤 Nota de voz':'📷 Foto'):'')))
       : 'Sin mensajes';
     const lastT = last ? new Date(last.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'}) : '';
-    return `<div class="chat-li ${sel===c.id?'sel':''}" onclick="openChat('${c.id}')">
+    return `<div class="chat-li ${sel===c.id?'sel':''} ${ur?'unread':''}" onclick="openChat('${c.id}')">
       ${c.type==='group'?`<div class="av" style="background:var(--accent)">${esc((c.name||'#')[0])}</div>`:avatarHTML(u)}
       <div class="cl-mid"><div class="cn">${esc(name)} ${c.type==='group'?'<span class="cl-grp">grupo</span>':''}</div>
       <div class="cp">${esc(prevTxt)}</div></div>
@@ -2752,35 +2759,39 @@ function viewChat(){
       const showName = !mine && cur.type==='group' && !grouped;
       const time = new Date(m.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'});
       const onlyMedia = media && !m.text && !(m.media&&m.media.type==='audio');
-      return sep + `<div class="msg ${mine?'mine':''} ${grouped?'grouped':''} ${onlyMedia?'media-only':''}">${showName?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?`<span class="mtext">${esc(m.text)}</span>`:''}${media}<div class="mtime">${time}${mine?svgIcon('check','icon icon-sm'):''}<button class="msg-del" title="Eliminar" onclick="delMsgMenu('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button></div></div>`;
+      const readAll = mine && msgReadByAll(cur,m);
+      return sep + `<div class="msg ${mine?'mine':''} ${grouped?'grouped':''} ${onlyMedia?'media-only':''}" data-c="${cur.id}" data-m="${m.id}">${showName?`<div class="mname">${u?esc((u.name||'').split(' ')[0]):''}</div>`:''}${m.text?`<span class="mtext">${esc(m.text)}</span>`:''}${media}<div class="mtime">${time}${mine?svgIcon(readAll?'checks':'check','icon icon-sm'+(readAll?' read':'')):''}<button class="msg-del" title="Eliminar" onclick="delMsgMenu('${cur.id}','${m.id}')">${svgIcon('trash','icon icon-sm')}</button></div></div>`;
     }).join('');
+    const other = cur.type!=='group' ? userById(curMem.find(i=>i!==SES.userId)) : null;
+    const headSub = cur.type==='group' ? curMem.length+' miembros · tocá para ver info' : (other&&ROLES[other.role]?ROLES[other.role].label:'Chat directo');
     paneHtml=`<div class="chat-pane" id="chatPane">
       <div class="chat-head">
-        <button class="icon-btn mobile-only" style="width:32px;height:32px" onclick="backChatList()">←</button>
+        <button class="icon-btn mobile-only chat-back" title="Volver a chats" onclick="backChatList()">${svgIcon('back','icon')}</button>
         <div class="chat-head-main" ${cur.type==='group'?`onclick="groupInfoModal('${cur.id}')" style="cursor:pointer"`:''}>
-          ${cur.type==='group'?`<div class="av" style="background:var(--grad-accent)">${esc((cur.name||'#')[0])}</div>`:avatarHTML(userById(curMem.find(i=>i!==SES.userId)))}
-          <div><div style="font-weight:700">${esc(headName)}</div><div style="font-size:11px;color:var(--text-soft)">${cur.type==='group'?curMem.length+' miembros · tocá para ver info':'Chat directo'}</div></div>
+          ${cur.type==='group'?`<div class="av" style="background:var(--grad-accent)">${esc((cur.name||'#')[0])}</div>`:avatarHTML(other)}
+          <div style="min-width:0"><div class="chat-head-name">${esc(headName)}</div><div class="chat-head-sub">${esc(headSub)}</div></div>
         </div>
         <div class="ph-spacer"></div>
         ${adminPeek?`<span class="admin-eye">👁️ Gerencia</span>`:''}
-        ${cur.type!=='group'?`<button class="icon-btn" style="width:36px;height:36px" title="Llamar por WhatsApp" onclick="waCall('${curMem.find(i=>i!==SES.userId)}')">${svgIcon('phone','icon icon-sm')}</button>`:''}
-        ${cur.type==='group'?`<button class="icon-btn" style="width:36px;height:36px" title="Info del grupo" onclick="groupInfoModal('${cur.id}')">${svgIcon('info','icon icon-sm')}</button>`:''}
+        ${cur.type!=='group'?`<button class="icon-btn" style="width:38px;height:38px" title="Llamar por WhatsApp" onclick="waCall('${curMem.find(i=>i!==SES.userId)}')">${svgIcon('phone','icon icon-sm')}</button>`:''}
+        ${cur.type==='group'?`<button class="icon-btn" style="width:38px;height:38px" title="Info del grupo" onclick="groupInfoModal('${cur.id}')">${svgIcon('info','icon icon-sm')}</button>`:''}
       </div>
       <div class="chat-msgs" id="chatMsgs">${msgsHtml||'<div style="margin:auto;color:var(--text-soft);font-size:13px">Escribí el primer mensaje 👋</div>'}</div>
+      <button class="chat-jump" id="chatJump" title="Ir al final" onclick="chatJumpBottom()"><svg class="icon" viewBox="0 0 24 24" style="transform:rotate(-90deg)"><use href="#i-back"/></svg></button>
       ${curMem.includes(SES.userId)?`
         ${chatPending?`<div class="chat-pending">${chatPending.type==='video'?`<video src="${safeVid(chatPending.data)}"></video>`:chatPending.type==='audio'?vaPreviewHTML(chatPending.data,chatPending.dur):`<img src="${safeImg(chatPending.data)}">`}<span>${chatPending.type==='video'?'Video':chatPending.type==='audio'?'Nota de voz':'Foto'} lista para enviar</span><button class="btn btn-ghost" style="padding:5px 10px;margin-left:auto" onclick="chatPending=null;render()">Quitar</button></div>`:''}
         ${vaRecording(cur.id)?`<div class="chat-input chat-rec">
           <button class="chat-attach rec-cancel" title="Cancelar" onclick="vaRecCancel()">${svgIcon('trash')}</button>
           <div class="rec-mid"><span class="rec-dot"></span><span id="vaRecTime">0:00</span> <span class="rec-lbl">Grabando…</span></div>
           <button class="chat-send" title="Listo" onclick="vaRecStop()">${svgIcon('check')}</button>
-        </div>`:`<div class="chat-input">
+        </div>`:`<div class="chat-input chat-swap ${chatPending?'has-text':''}">
           <input type="file" id="chatFile" accept="image/*,video/*" style="display:none" onchange="chatAttachPick('${cur.id}')">
           <button class="chat-attach" title="Adjuntar foto o video" onclick="document.getElementById('chatFile').click()">${svgIcon('plus')}</button>
           <div class="chat-field">
-            <input id="chatField" placeholder="Mensaje" onkeydown="if(event.key==='Enter')sendMsg('${cur.id}')">
-            <button class="chat-field-mic" title="Grabar nota de voz" onclick="vaRecStart('${cur.id}')">${svgIcon('mic')}</button>
+            <input id="chatField" placeholder="Mensaje" oninput="chatTyping(this)" onkeydown="if(event.key==='Enter')sendMsg('${cur.id}')">
           </div>
-          <button class="chat-send" onclick="sendMsg('${cur.id}')">${svgIcon('send')}</button>
+          <button class="chat-send chat-mic" title="Grabar nota de voz" onclick="vaRecStart('${cur.id}')">${svgIcon('mic')}</button>
+          <button class="chat-send chat-sendbtn" title="Enviar" onclick="sendMsg('${cur.id}')">${svgIcon('send')}</button>
         </div>`}`
         :`<div class="chat-input" style="justify-content:center;color:var(--text-soft);font-size:12px">Solo lectura — no sos miembro de este chat</div>`}
     </div>`;
@@ -2801,7 +2812,28 @@ function afterChatRender(){
     if(SES.activeChat && cur){ if(list)list.classList.add('hide-mobile'); if(pane)pane.classList.remove('hide-mobile'); document.body.classList.add('chat-open'); }
     else { if(list)list.classList.remove('hide-mobile'); if(pane)pane.classList.add('hide-mobile'); document.body.classList.remove('chat-open'); }
   } else { document.body.classList.remove('chat-open'); }
+  // botón "bajar al final" cuando el usuario scrollea hacia arriba
+  const jump=$('#chatJump');
+  if(m && jump){
+    const upd=()=>jump.classList.toggle('on', m.scrollHeight-m.scrollTop-m.clientHeight>350);
+    m.onscroll=upd; upd();
+  }
+  // celular: mantener presionado un mensaje = menú de eliminar (como WhatsApp)
+  if(m && !m._lpWired){
+    m._lpWired=true;
+    let lpT=null, lpMoved=false;
+    m.addEventListener('touchstart',e=>{
+      const b=e.target.closest('.msg'); if(!b) return;
+      lpMoved=false;
+      lpT=setTimeout(()=>{ if(!lpMoved){ const cid=b.getAttribute('data-c'), mid=b.getAttribute('data-m'); if(cid&&mid){ try{ if(navigator.vibrate) navigator.vibrate(12); }catch(_){}; delMsgMenu(cid,mid); } } },480);
+    },{passive:true});
+    m.addEventListener('touchmove',()=>{ lpMoved=true; clearTimeout(lpT); },{passive:true});
+    m.addEventListener('touchend',()=>clearTimeout(lpT),{passive:true});
+  }
 }
+function chatTyping(inp){ const w=inp.closest('.chat-input'); if(!w) return; const pend=(inp.id==='projMsg')?projPending:chatPending; w.classList.toggle('has-text', !!inp.value.trim() || !!pend); }
+window.chatTyping=chatTyping;
+window.chatJumpBottom=()=>{ const m=$('#chatMsgs'); if(m) m.scrollTo({top:m.scrollHeight,behavior:'smooth'}); };
 window.openChat=id=>{ SES.activeChat=id; render(); };
 window.backChatList=()=>{ SES.activeChat=null; document.body.classList.remove('chat-open'); render(); };
 

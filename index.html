@@ -714,17 +714,35 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .chat-li .cl-end{display:flex;flex-direction:column;align-items:flex-end;gap:5px;flex:0 0 auto}
 .chat-li .cl-time{font-size:10.5px;color:var(--text-dim)}
 .chat-li .cbadge{background:var(--accent);color:#fff;font-size:10px;font-weight:800;border-radius:10px;min-width:19px;height:19px;display:flex;align-items:center;justify-content:center;padding:0 5px}
-.chat-pane{flex:1;display:flex;flex-direction:column;min-width:0}
+.chat-pane{flex:1;display:flex;flex-direction:column;min-width:0;position:relative}
 .chat-head{padding:13px 17px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:11px;flex-shrink:0;background:var(--bg-elev)}
+.chat-head-name{font-weight:750;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-head-sub{font-size:11px;color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chat-back{width:38px;height:38px;flex:0 0 auto}
+.chat-back .icon{width:20px;height:20px}
 .chat-msgs{flex:1;overflow-y:auto;padding:14px 12px;display:flex;flex-direction:column;gap:2px;
-  background-color:var(--bg);background-image:radial-gradient(var(--border) .6px, transparent .6px);background-size:20px 20px}
+  background-color:var(--bg);background-image:radial-gradient(color-mix(in srgb,var(--accent) 20%, var(--border)) .7px, transparent .7px);background-size:19px 19px}
 .chat-day{align-self:center;margin:12px 0 8px;background:var(--bg-elev);color:var(--text-soft);font-size:11px;font-weight:700;
   padding:4px 13px;border-radius:var(--r-pill);box-shadow:var(--e1)}
-.msg{position:relative;max-width:80%;padding:7px 11px 5px;border-radius:14px 14px 14px 5px;font-size:14px;background:var(--bg-elev);
+.msg{position:relative;max-width:80%;padding:7px 11px 5px;border-radius:6px 16px 16px 16px;font-size:14px;background:var(--bg-elev);
   align-self:flex-start;word-wrap:break-word;overflow-wrap:anywhere;line-height:1.4;box-shadow:0 1px 1.5px rgba(0,0,0,.28);border:1px solid var(--border-soft)}
 .chat-msgs .msg{margin-top:8px}
-.chat-msgs .msg.grouped{margin-top:2px}
-.msg.mine{background:var(--accent-2);color:#fff;align-self:flex-end;border:none;border-radius:14px 14px 5px 14px}
+.chat-msgs .msg.grouped{margin-top:2px;border-radius:16px}
+.msg.mine{background:var(--accent-2);color:#fff;align-self:flex-end;border:none;border-radius:16px 6px 16px 16px}
+.msg.mine.grouped{border-radius:16px}
+/* colita del primer mensaje de cada grupo (como WhatsApp) */
+.msg:not(.grouped)::before{content:"";position:absolute;top:0;left:-7px;width:12px;height:12px;background:var(--bg-elev);clip-path:polygon(0 0,100% 0,100% 100%)}
+.msg.mine:not(.grouped)::before{left:auto;right:-7px;background:var(--accent-2);clip-path:polygon(0 0,100% 0,0 100%)}
+/* ✓ enviado · ✓✓ leído por todos */
+.msg .mtime .icon.read{color:#6fd2ff;opacity:1}
+/* botón flotante "bajar al final" */
+.chat-jump{position:absolute;right:13px;bottom:calc(76px + env(safe-area-inset-bottom,0px));width:42px;height:42px;border-radius:50%;background:var(--bg-elev);border:1px solid var(--border);box-shadow:var(--e2);color:var(--text-soft);display:none;align-items:center;justify-content:center;z-index:6;cursor:pointer}
+.chat-jump.on{display:flex;animation:pop .15s var(--ease-out) both}
+.chat-jump .icon{width:19px;height:19px}
+/* chat sin leer: negrita como WhatsApp */
+.chat-li.unread .cn{font-weight:800}
+.chat-li.unread .cp{color:var(--text);font-weight:650}
+.chat-li.unread .cl-time{color:var(--accent);font-weight:800}
 .msg .mname{font-size:11.5px;font-weight:750;color:var(--accent);margin-bottom:2px}
 .msg.mine .mname{color:rgba(255,255,255,.92)}
 .msg .mtext{white-space:pre-wrap}
@@ -737,6 +755,15 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 .msg-del{background:none;border:none;cursor:pointer;opacity:.4;padding:0 0 0 4px;color:inherit;display:inline-flex}
 .msg-del:hover{opacity:1}
 .msg-del .icon{width:12px;height:12px}
+/* compu: acciones ocultas hasta pasar el mouse (como WhatsApp) */
+@media(hover:hover){ .msg-del{opacity:0;transition:opacity var(--t-fast)} .msg:hover .msg-del{opacity:.55} .msg-del:hover{opacity:1} }
+/* celular: sin basurita; se elimina manteniendo presionado el mensaje */
+@media(max-width:780px){ .msg-del{display:none} }
+/* mic cuando está vacío ↔ enviar cuando hay texto (como WhatsApp) */
+.chat-swap .chat-sendbtn{display:none}
+.chat-swap.has-text .chat-sendbtn{display:flex}
+.chat-swap.has-text .chat-mic{display:none}
+.chat-swap .chat-field{padding:0 15px}
 /* Input de chat estilo WhatsApp: [+]  ( pastilla ancha · mic )  (enviar) */
 .chat-input{display:flex;align-items:flex-end;gap:7px;padding:9px 10px;border-top:1px solid var(--border-soft);flex-shrink:0;background:var(--bg-elev)}
 .chat-attach{flex:0 0 auto;width:40px;height:40px;border-radius:50%;background:none;border:none;color:var(--text-soft);display:flex;align-items:center;justify-content:center;cursor:pointer;transition:background var(--t-fast),color var(--t-fast)}
@@ -1982,6 +2009,34 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
   .board-tools::-webkit-scrollbar{display:none}
   .bt-tool,.bt-add button{padding:8px 11px;font-size:12.5px}
 }
+/* ===================================================================
+   AJUSTE FINO POR DISPOSITIVO — cada vista encaja en cualquier pantalla
+   =================================================================== */
+@media(max-width:600px){
+  /* Cronograma (Gantt): columna de nombres más angosta, todo se desliza */
+  .gantt-name,.gantt-hname{width:112px}
+  .gantt-name{padding:6px 8px;gap:6px}
+  .gantt-nt{font-size:11.5px}
+  .gantt-lbl{min-width:0;flex:1;font-size:14px}
+  .gantt-wrap{max-height:64vh}
+  /* segmentos (Lista/Tablero/Cronograma) compactos para que entren en una línea */
+  .seg .seg-b{padding:8px 10px;font-size:12px;white-space:nowrap}
+  .toolbar{flex-wrap:wrap}
+}
+@media(max-width:480px){
+  /* botones del pie de los pop-ups: parejos y fáciles de tocar */
+  .modal-foot .btn{flex:1 1 auto;justify-content:center}
+  /* login / PIN cómodo en pantallas chicas */
+  .login-card{padding:22px 18px}
+  .login-logo{font-size:28px}
+  /* Caja: cruce y stats en pantalla angosta */
+  .caja-cross{gap:6px}
+  .caja-cross-col{padding:8px 6px}
+  .caja-cross-col b{font-size:13.5px}
+  .caja-grid{grid-template-columns:1fr 1fr}
+  .denom-face{width:56px}
+  .caja-actions .btn{flex:1 1 auto;justify-content:center}
+}
 </style>
 </head>
 <body class="app-loading">
@@ -1990,6 +2045,7 @@ img.media-broken,video.media-broken{min-width:120px;min-height:60px;animation:no
 <svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
 <g id="i-home"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></g>
 <g id="i-check"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></g>
+<g id="i-checks"><path d="M2 12.5l4.2 4.5L14 8"/><path d="M9.5 13.5l3 3.5L22 8"/></g>
 <g id="i-box"><path d="M3 7l9-4 9 4v10l-9 4-9-4z"/><path d="M3 7l9 4 9-4"/><path d="M12 11v10"/></g>
 <g id="i-chart"><path d="M4 20V10"/><path d="M10 20V4"/><path d="M16 20v-7"/><path d="M3 20h18"/></g>
 <g id="i-cash"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M5.5 9.5h.01M18.5 14.5h.01"/></g>
