@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v106 · La app se estira al ancho visible aunque Safari guarde zoom viejo';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v107 · Diagnóstico de pantalla integrado';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2765,7 +2765,7 @@ function viewChat(){
     const other = cur.type!=='group' ? userById(curMem.find(i=>i!==SES.userId)) : null;
     const headSub = cur.type==='group' ? curMem.length+' miembros · tocá para ver info' : (other&&ROLES[other.role]?ROLES[other.role].label:'Chat directo');
     paneHtml=`<div class="chat-pane" id="chatPane">
-      <div class="chat-head">
+      <div class="chat-head" ondblclick="screenDiag()">
         <button class="icon-btn mobile-only chat-back" title="Volver a chats" onclick="backChatList()">${svgIcon('back','icon')}</button>
         <div class="chat-head-main" ${cur.type==='group'?`onclick="groupInfoModal('${cur.id}')" style="cursor:pointer"`:''}>
           ${cur.type==='group'?`<div class="av" style="background:var(--grad-accent)">${esc((cur.name||'#')[0])}</div>`:avatarHTML(other)}
@@ -2833,6 +2833,33 @@ function afterChatRender(){
 }
 function chatTyping(inp){ const w=inp.closest('.chat-input'); if(!w) return; const pend=(inp.id==='projMsg')?projPending:chatPending; w.classList.toggle('has-text', !!inp.value.trim() || !!pend); }
 window.chatTyping=chatTyping;
+/* Diagnóstico de pantalla: medidas reales del dispositivo para cazar problemas de encaje.
+   Se abre desde el menú de usuario o con doble toque en el encabezado del chat. */
+function screenDiag(){
+  try{
+    const rect=sel=>{ const e=document.querySelector(sel); if(!e) return '—'; const b=e.getBoundingClientRect(); return `${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}×${Math.round(b.height)}`; };
+    const vv=window.visualViewport;
+    const app=document.getElementById('app'); const cs=app?getComputedStyle(app):null;
+    const rootCS=getComputedStyle(document.documentElement);
+    const lines=[
+      APP_VERSION,
+      `ventana: ${window.innerWidth}×${window.innerHeight}  dpr:${devicePixelRatio}`,
+      `docEl: ${document.documentElement.clientWidth}×${document.documentElement.clientHeight}`,
+      `pantalla: ${screen.width}×${screen.height}`,
+      vv?`vv: ${Math.round(vv.width)}×${Math.round(vv.height)}  escala:${(+vv.scale).toFixed(3)}  off:${Math.round(vv.offsetLeft)},${Math.round(vv.offsetTop)}`:'vv: no disponible',
+      `app: ${rect('#app')}  pos:${cs?cs.position:'—'} left:${cs?cs.left:'—'} w:${cs?cs.width:'—'}`,
+      `main: ${rect('.main')}`,
+      `view: ${rect('#view')}`,
+      `chatwrap: ${rect('.chat-wrap')}  head: ${rect('.chat-head')}`,
+      `body: ${document.body.className||'(sin clases)'}`,
+      `media≤780: ${matchMedia('(max-width:780px)').matches}`,
+      `--app-w:${rootCS.getPropertyValue('--app-w')||'—'}  --app-left:${rootCS.getPropertyValue('--app-left')||'—'}`,
+      `--app-h:${rootCS.getPropertyValue('--app-h')||'—'}  --app-top:${rootCS.getPropertyValue('--app-top')||'—'}`,
+    ];
+    alert('DIAGNÓSTICO DE PANTALLA\n\n'+lines.join('\n'));
+  }catch(e){ alert('Error del diagnóstico: '+e.message); }
+}
+window.screenDiag=screenDiag;
 window.chatJumpBottom=()=>{ const m=$('#chatMsgs'); if(m) m.scrollTo({top:m.scrollHeight,behavior:'smooth'}); };
 window.openChat=id=>{ SES.activeChat=id; render(); };
 window.backChatList=()=>{ SES.activeChat=null; document.body.classList.remove('chat-open'); render(); };
@@ -6892,6 +6919,7 @@ $('#userBtn').addEventListener('click',e=>{
     ${pushSupported()?`<button class="um-item" onclick="pushToggle()">${svgIcon('bell')} ${pushIsOn()?'Notificaciones del celular ✓':'Activar notificaciones'}</button>
     <button class="um-item" onclick="pushTest()">${svgIcon('send')} Probar notificación</button>`:''}
     <button class="um-item" onclick="toggleTheme()">${svgIcon('theme')} Cambiar tema</button>
+    <button class="um-item" onclick="screenDiag()">${svgIcon('info')} Diagnóstico de pantalla</button>
     <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>
     <div style="padding:8px 15px;font-size:10.5px;color:var(--text-dim);text-align:center;border-top:1px solid var(--border-soft)">${esc(APP_VERSION)}</div>`;
   m.classList.toggle('on');
