@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v107 · Diagnóstico de pantalla integrado';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v108 · Cura del zoom pegado de Safari (la app vuelve a escala 1 sola)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2836,12 +2836,14 @@ window.chatTyping=chatTyping;
 /* Diagnóstico de pantalla: medidas reales del dispositivo para cazar problemas de encaje.
    Se abre desde el menú de usuario o con doble toque en el encabezado del chat. */
 function screenDiag(){
+  let txt='';
   try{
     const rect=sel=>{ const e=document.querySelector(sel); if(!e) return '—'; const b=e.getBoundingClientRect(); return `${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}×${Math.round(b.height)}`; };
     const vv=window.visualViewport;
     const app=document.getElementById('app'); const cs=app?getComputedStyle(app):null;
     const rootCS=getComputedStyle(document.documentElement);
-    const lines=[
+    const meta=document.querySelector('meta[name="viewport"]');
+    txt=[
       APP_VERSION,
       `ventana: ${window.innerWidth}×${window.innerHeight}  dpr:${devicePixelRatio}`,
       `docEl: ${document.documentElement.clientWidth}×${document.documentElement.clientHeight}`,
@@ -2855,9 +2857,15 @@ function screenDiag(){
       `media≤780: ${matchMedia('(max-width:780px)').matches}`,
       `--app-w:${rootCS.getPropertyValue('--app-w')||'—'}  --app-left:${rootCS.getPropertyValue('--app-left')||'—'}`,
       `--app-h:${rootCS.getPropertyValue('--app-h')||'—'}  --app-top:${rootCS.getPropertyValue('--app-top')||'—'}`,
-    ];
-    alert('DIAGNÓSTICO DE PANTALLA\n\n'+lines.join('\n'));
-  }catch(e){ alert('Error del diagnóstico: '+e.message); }
+      `meta: ${meta?meta.getAttribute('content'):'—'}`,
+    ].join('\n');
+  }catch(e){ txt='Error del diagnóstico: '+e.message; }
+  try{
+    openModal(`
+      <div class="modal-head"><h3>${svgIcon('info','icon')} Diagnóstico de pantalla</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+      <div class="modal-body"><pre style="font-size:12px;line-height:1.8;white-space:pre-wrap;word-break:break-word;font-family:ui-monospace,Menlo,Consolas,monospace;margin:0">${esc(txt)}</pre>
+      <div class="td-empty" style="margin-top:10px">Mandale una captura de esto a soporte para diagnosticar el encaje de pantalla.</div></div>`, false);
+  }catch(e){ try{ alert(txt); }catch(_){} }
 }
 window.screenDiag=screenDiag;
 window.chatJumpBottom=()=>{ const m=$('#chatMsgs'); if(m) m.scrollTo({top:m.scrollHeight,behavior:'smooth'}); };
@@ -7362,7 +7370,7 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
     // ANCHO: si Safari quedó con la página encogida (zoom viejo pegado en la pestaña),
     // la app se estira para cubrir TODO lo visible también a lo ancho (sin bandas negras).
     const s = vv.scale || 1;
-    if(s < 0.99){
+    if(s < 0.995){
       root.style.setProperty('--app-w', Math.round(vv.width) + 'px');
       root.style.setProperty('--app-left', Math.round(vv.offsetLeft) + 'px');
     } else {
@@ -7378,6 +7386,22 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
   document.addEventListener('focusin', ()=>setTimeout(apply,80));
   document.addEventListener('focusout', ()=>setTimeout(apply,80));
   apply();
+
+  /* CURA del zoom pegado: Safari restaura la escala guardada de la pestaña (página encogida
+     con bandas negras) aunque el meta viewport diga escala fija. Re-escribir el meta en
+     runtime obliga a WebKit a RE-APLICAR la escala 1 al momento. Se intenta varias veces
+     por si la restauración de Safari llega tarde. */
+  const BASE_VIEWPORT='width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, viewport-fit=cover';
+  function snapScale(){
+    try{
+      if(Math.abs((vv.scale||1)-1) < 0.02) return;          // ya está bien
+      const m=document.querySelector('meta[name="viewport"]'); if(!m) return;
+      m.setAttribute('content', BASE_VIEWPORT+', user-scalable=no');   // contenido DISTINTO → WebKit lo re-procesa
+      setTimeout(()=>{ m.setAttribute('content', BASE_VIEWPORT); setTimeout(apply,60); }, 80);
+    }catch(_){}
+  }
+  window.addEventListener('pageshow', ()=>setTimeout(snapScale,150));
+  setTimeout(snapScale, 300); setTimeout(snapScale, 1200); setTimeout(snapScale, 3000);
 })();
 
 /* Service worker: la app abre y muestra lo último cargado aunque no haya internet.
