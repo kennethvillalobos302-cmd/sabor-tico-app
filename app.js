@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v104 · Mensajes estilo WhatsApp (✓✓, mic↔enviar, colitas) + ajuste por dispositivo';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v105 · Arreglo definitivo: la app siempre encaja a lo ancho en celular';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
