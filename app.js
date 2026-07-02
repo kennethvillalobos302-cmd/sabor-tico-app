@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v108 · Cura del zoom pegado de Safari (la app vuelve a escala 1 sola)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v109 · ARREGLADO: el chat ocupa todo el ancho del celular';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
