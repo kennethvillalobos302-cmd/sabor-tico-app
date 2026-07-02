@@ -761,6 +761,9 @@ input[type=file]::file-selector-button:hover{border-color:var(--accent-line)}
 @media(hover:hover){ .msg-del{opacity:0;transition:opacity var(--t-fast)} .msg:hover .msg-del{opacity:.55} .msg-del:hover{opacity:1} }
 /* celular: sin basurita; se elimina manteniendo presionado el mensaje */
 @media(max-width:780px){ .msg-del{display:none} }
+/* foto/video del chat cargando: reservar el espacio (evita que todo "salte" al llegar) */
+.chat-msgs img.media-loading,.chat-msgs video.media-loading{width:210px;height:200px;background:var(--bg-soft);border-radius:10px;animation:mediapulse 1.3s ease-in-out infinite}
+@keyframes mediapulse{0%,100%{opacity:.55}50%{opacity:.9}}
 /* mic cuando está vacío ↔ enviar cuando hay texto (como WhatsApp) */
 .chat-swap .chat-sendbtn{display:none}
 .chat-swap.has-text .chat-sendbtn{display:flex}

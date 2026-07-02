@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v109 · ARREGLADO: el chat ocupa todo el ancho del celular';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v110 · Chat: sin salto al abrir + teclado pegado al escribir';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -895,11 +895,21 @@ function loadMedia(id){
   if(cloudOn && fbdb){ fbdb.ref('media/'+id).get().then(s=>done(s&&s.exists()?s.val():'')).catch(()=>done('')); }
   else done('');
 }
+/* Si una foto/video del chat crece al cargar, mantener la vista anclada al final
+   (iOS no tiene anclaje de scroll: sin esto se ve todo "subiendo" al abrir el chat). */
+function _chatMediaRepin(el){
+  const m=document.getElementById('chatMsgs');
+  if(!m || !m.contains(el)) return;
+  const pin=()=>{ if(m.scrollHeight-m.scrollTop-m.clientHeight < 420) m.scrollTop=m.scrollHeight; };
+  pin();
+  const ev = el.tagName==='VIDEO' ? 'loadedmetadata' : 'load';
+  el.addEventListener(ev, pin, {once:true});
+}
 function applyMediaToDom(id){
   const d=mediaCache[id]||''; const safe=d.indexOf('data:video')===0?safeVid(d):d.indexOf('data:audio')===0?safeAud(d):safeImg(d);
   let sel; try{ sel='[data-mid="'+(window.CSS&&CSS.escape?CSS.escape(id):id)+'"]'; }catch(_){ sel='[data-mid="'+id+'"]'; }
   document.querySelectorAll(sel).forEach(el=>{
-    if(safe){ el.src=safe; el.classList.remove('media-loading'); } else { el.classList.remove('media-loading'); el.classList.add('media-broken'); }
+    if(safe){ el.src=safe; el.classList.remove('media-loading'); _chatMediaRepin(el); } else { el.classList.remove('media-loading'); el.classList.add('media-broken'); }
   });
 }
 // Construye <img>/<video> por referencia (id o data: legado). Si aún no cargó, deja data-mid y lo completa al llegar.
@@ -2803,7 +2813,15 @@ function viewChat(){
   return html;
 }
 function afterChatRender(){
-  const m=$('#chatMsgs'); if(m) m.scrollTop=m.scrollHeight;
+  const m=$('#chatMsgs');
+  if(m){
+    // anclar al final SIN animación y re-anclar mientras cargan fotos/notas
+    // (solo si el usuario sigue abajo, para no pelear con su scroll)
+    m.scrollTop=m.scrollHeight;
+    const pin=()=>{ if(m.scrollHeight-m.scrollTop-m.clientHeight < 420) m.scrollTop=m.scrollHeight; };
+    requestAnimationFrame(()=>{ m.scrollTop=m.scrollHeight; });
+    setTimeout(pin,120); setTimeout(pin,350); setTimeout(pin,900);
+  }
   const cur=DB.chats.find(c=>c.id===SES.activeChat);
   if(cur) markSeen(cur);
   // celular: con chat abierto = pantalla completa (estilo WhatsApp); sin chat = lista
@@ -7364,9 +7382,13 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
   const vv = window.visualViewport; if(!vv) return;
   const root = document.documentElement;
   let raf=0;
+  function editing(){ const ae=document.activeElement; return !!(ae && (/INPUT|TEXTAREA/.test(ae.tagName) || ae.isContentEditable)); }
   function apply(){ raf=0;
     root.style.setProperty('--app-h', Math.round(vv.height) + 'px');
     root.style.setProperty('--app-top', Math.round(vv.offsetTop) + 'px');
+    // iOS "revela" el campo enfocado scrolleando el documento; como la app es fija y se
+    // acomoda sola, ese scroll solo crea un HUECO entre el teclado y el cuadro de escribir.
+    if(editing() && (window.scrollY||window.pageYOffset)>0){ try{ window.scrollTo(0,0); }catch(_){} }
     // ANCHO: si Safari quedó con la página encogida (zoom viejo pegado en la pestaña),
     // la app se estira para cubrir TODO lo visible también a lo ancho (sin bandas negras).
     const s = vv.scale || 1;
@@ -7383,8 +7405,16 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
   vv.addEventListener('scroll', onChange);
   window.addEventListener('orientationchange', ()=>setTimeout(apply,300));
   window.addEventListener('pageshow', ()=>setTimeout(apply,50));   // Safari restaurando la pestaña
-  document.addEventListener('focusin', ()=>setTimeout(apply,80));
-  document.addEventListener('focusout', ()=>setTimeout(apply,80));
+  window.addEventListener('scroll', ()=>{ if(editing() && (window.scrollY||window.pageYOffset)>0){ try{ window.scrollTo(0,0); }catch(_){} } }, {passive:true});
+  // el teclado de iOS anima ~300ms y luego acomoda la barra: re-aplicar varias veces
+  document.addEventListener('focusin', e=>{
+    setTimeout(apply,80); setTimeout(apply,260); setTimeout(apply,550);
+    // en el chat: que el último mensaje quede visible sobre el teclado
+    if(e.target && (e.target.id==='chatField'||e.target.id==='projMsg')){
+      setTimeout(()=>{ const m=document.getElementById(e.target.id==='projMsg'?'projChatMsgs':'chatMsgs'); if(m) m.scrollTop=m.scrollHeight; }, 380);
+    }
+  });
+  document.addEventListener('focusout', ()=>{ setTimeout(apply,80); setTimeout(apply,300); });
   apply();
 
   /* CURA del zoom pegado: Safari restaura la escala guardada de la pestaña (página encogida
