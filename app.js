@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v111 · El cuadro de escribir queda pegado al teclado (sin colchón)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v112 · Scroll del chat natural (sin efecto inverso ni tirones)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -900,7 +900,8 @@ function loadMedia(id){
 function _chatMediaRepin(el){
   const m=document.getElementById('chatMsgs');
   if(!m || !m.contains(el)) return;
-  const pin=()=>{ if(m.scrollHeight-m.scrollTop-m.clientHeight < 420) m.scrollTop=m.scrollHeight; };
+  // no re-anclar si el usuario está tocando/deslizando la lista (pelearía con el dedo)
+  const pin=()=>{ if(!m._tch && m.scrollHeight-m.scrollTop-m.clientHeight < 120) m.scrollTop=m.scrollHeight; };
   pin();
   const ev = el.tagName==='VIDEO' ? 'loadedmetadata' : 'load';
   el.addEventListener(ev, pin, {once:true});
@@ -2815,10 +2816,15 @@ function viewChat(){
 function afterChatRender(){
   const m=$('#chatMsgs');
   if(m){
+    // marcar cuándo el usuario está tocando/deslizando: los re-anclajes se pausan
+    m._tch=false;
+    m.addEventListener('touchstart',()=>{ m._tch=true; },{passive:true});
+    m.addEventListener('touchend',()=>{ setTimeout(()=>{ m._tch=false; },600); },{passive:true});
+    m.addEventListener('touchcancel',()=>{ m._tch=false; },{passive:true});
     // anclar al final SIN animación y re-anclar mientras cargan fotos/notas
-    // (solo si el usuario sigue abajo, para no pelear con su scroll)
+    // (solo si el usuario sigue abajo y no está tocando, para no pelear con su dedo)
     m.scrollTop=m.scrollHeight;
-    const pin=()=>{ if(m.scrollHeight-m.scrollTop-m.clientHeight < 420) m.scrollTop=m.scrollHeight; };
+    const pin=()=>{ if(!m._tch && m.scrollHeight-m.scrollTop-m.clientHeight < 120) m.scrollTop=m.scrollHeight; };
     requestAnimationFrame(()=>{ m.scrollTop=m.scrollHeight; });
     setTimeout(pin,120); setTimeout(pin,350); setTimeout(pin,900);
   }
@@ -7386,7 +7392,9 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
   let baseH = 0;   // alto con teclado cerrado (para detectar cuándo está abierto)
   function apply(){ raf=0;
     root.style.setProperty('--app-h', Math.round(vv.height) + 'px');
-    root.style.setProperty('--app-top', Math.round(vv.offsetTop) + 'px');
+    // offsetTop negativo = rebote elástico de iOS (rubber-band): NO seguirlo,
+    // si no el contenido se mueve al revés del dedo.
+    root.style.setProperty('--app-top', Math.max(0, Math.round(vv.offsetTop)) + 'px');
     // TECLADO ABIERTO: el teclado ya cubre la zona de la barrita de inicio del iPhone,
     // así que el colchón de safe-area bajo el composer/pie sobra y deja un hueco → quitarlo.
     if(!editing() && vv.height > baseH) baseH = vv.height;
@@ -7416,7 +7424,7 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
     setTimeout(apply,80); setTimeout(apply,260); setTimeout(apply,550);
     // en el chat: que el último mensaje quede visible sobre el teclado
     if(e.target && (e.target.id==='chatField'||e.target.id==='projMsg')){
-      setTimeout(()=>{ const m=document.getElementById(e.target.id==='projMsg'?'projChatMsgs':'chatMsgs'); if(m) m.scrollTop=m.scrollHeight; }, 380);
+      setTimeout(()=>{ const m=document.getElementById(e.target.id==='projMsg'?'projChatMsgs':'chatMsgs'); if(m && !m._tch) m.scrollTop=m.scrollHeight; }, 380);
     }
   });
   document.addEventListener('focusout', ()=>{ setTimeout(apply,80); setTimeout(apply,300); });
