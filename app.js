@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v112 · Scroll del chat natural (sin efecto inverso ni tirones)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v113 · Caja estilo hoja: factura por factura, guardada por día';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3307,6 +3307,127 @@ function cajaHasMethodMismatch(c){ return cajaMethodCross(c).some(m=>m.diff!=nul
 function cajaDiffLabel(diff){ diff=+diff||0; if(diff===0) return {txt:'Cuadra exacto',cls:'ok'}; return diff<0?{txt:'Faltante '+money(-diff),cls:'bad'}:{txt:'Sobrante '+money(diff),cls:'warn'}; }
 function cajaDiffShort(diff){ diff=+diff||0; if(diff===0) return {txt:'✓',cls:'ok'}; return diff<0?{txt:'−'+money(-diff),cls:'bad'}:{txt:'+'+money(diff),cls:'warn'}; }
 
+/* ===== Facturas del día (estilo hoja de caja: una fila por factura, desglosada por método) =====
+   Campos por factura: num · efectivo ₡/$ · tarjeta BAC ₡ / BN ₡ / BAC $ / BN $ ·
+   SINPE ₡ · propina ₡/$. TC = tipo de cambio del día.
+   El total de la fila (en colones, SIN propina) alimenta el cruce del cierre. */
+const CAJA_FAC_NUM=['efCol','efDol','bacCol','bnCol','bacDol','bnDol','sinpe','propCol','propDol'];
+function cajaTc(c){ return +(c&&c.tc)||520; }
+function cajaFacTotal(f,tc){ f=f||{}; return (+f.efCol||0)+(+f.bacCol||0)+(+f.bnCol||0)+(+f.sinpe||0)+tc*((+f.efDol||0)+(+f.bacDol||0)+(+f.bnDol||0)); }
+function cajaFacSums(c){
+  const tc=cajaTc(c); const t={total:0,n:(c.facturas||[]).length};
+  CAJA_FAC_NUM.forEach(k=>t[k]=0);
+  (c.facturas||[]).forEach(f=>{ if(!f) return; CAJA_FAC_NUM.forEach(k=>t[k]+=(+f[k]||0)); t.total+=cajaFacTotal(f,tc); });
+  t.efectivo=t.efCol+tc*t.efDol;                       // efectivo total en ₡ (para el cruce)
+  t.tarjeta=t.bacCol+t.bnCol+tc*(t.bacDol+t.bnDol);    // tarjeta total en ₡
+  t.propina=t.propCol+tc*t.propDol;
+  return t;
+}
+function _fc(n){ return +n?money(n):''; }                                          // colones (vacío si 0, como la hoja)
+function _fd(n){ return +n?('$'+(+n).toLocaleString('es-CR',{maximumFractionDigits:2})):''; }  // dólares
+function cajaFacTable(c, editable){
+  const tc=cajaTc(c); const t=cajaFacSums(c);
+  const rows=(c.facturas||[]).map(f=>`<tr ${editable?`class="fct-r" onclick="cajaFacModal('${c.id}','${f.id}')"`:''}>
+    <td class="fct-num">${esc(f.num||'—')}</td>
+    <td>${_fc(f.efCol)}</td><td>${_fd(f.efDol)}</td>
+    <td>${_fc(f.bacCol)}</td><td>${_fc(f.bnCol)}</td><td>${_fd(f.bacDol)}</td><td>${_fd(f.bnDol)}</td>
+    <td>${_fc(f.sinpe)}</td>
+    <td>${_fc(f.propCol)}</td><td>${_fd(f.propDol)}</td>
+    <td class="fct-tot">${money(cajaFacTotal(f,tc))}</td>
+  </tr>`).join('');
+  return `<div class="fct-wrap"><table class="fct">
+    <thead>
+      <tr class="fct-g"><th rowspan="2" class="fct-num">Factura</th><th colspan="2" class="g-ef">Efectivo</th><th colspan="4" class="g-tj">Tarjeta</th><th rowspan="2" class="g-si">SINPE ₡</th><th colspan="2" class="g-pp">Propina</th><th rowspan="2" class="g-tot">Total ₡</th></tr>
+      <tr class="fct-s"><th class="g-ef">₡</th><th class="g-ef">$</th><th class="g-tj">BAC ₡</th><th class="g-tj">BN ₡</th><th class="g-tj">BAC $</th><th class="g-tj">BN $</th><th class="g-pp">₡</th><th class="g-pp">$</th></tr>
+    </thead>
+    <tbody>${rows||`<tr><td colspan="11" class="fct-empty">Sin facturas todavía.${editable?' Tocá “Agregar factura”.':''}</td></tr>`}</tbody>
+    <tfoot><tr class="fct-t">
+      <td class="fct-num">TOTALES</td>
+      <td>${_fc(t.efCol)}</td><td>${_fd(t.efDol)}</td>
+      <td>${_fc(t.bacCol)}</td><td>${_fc(t.bnCol)}</td><td>${_fd(t.bacDol)}</td><td>${_fd(t.bnDol)}</td>
+      <td>${_fc(t.sinpe)}</td>
+      <td>${_fc(t.propCol)}</td><td>${_fd(t.propDol)}</td>
+      <td class="fct-tot">${money(t.total)}</td>
+    </tr></tfoot>
+  </table></div>`;
+}
+function cajaFacSection(c, editable){
+  const t=cajaFacSums(c);
+  return `<div class="fct-head">
+      <span class="td-sec" style="margin:0">Facturas del día <span class="fct-count">${t.n}</span></span>
+      <div class="ph-spacer"></div>
+      <label class="fct-tc">TC $1 = ₡<input type="number" min="1" step="any" inputmode="decimal" value="${cajaTc(c)}" ${editable?`onchange="cajaSetTc('${c.id}',this.value)"`:'disabled'}></label>
+      ${editable?`<button class="btn btn-primary" style="padding:9px 14px" onclick="cajaFacModal('${c.id}')">${svgIcon('plus','icon icon-sm')} Agregar factura</button>`:''}
+    </div>
+    ${cajaFacTable(c, editable)}
+    ${t.n?`<div class="fct-sum">Ventas: <b>${money(t.total)}</b> · Efectivo: <b>${money(t.efectivo)}</b> · Tarjeta: <b>${money(t.tarjeta)}</b> · Propinas: <b>${money(t.propina)}</b></div>`:''}`;
+}
+function cajaSetTc(id,v){
+  const c=cajaFind(id); if(!c||c.status!=='abierta'||!cajaIsCashier()) return;
+  c.tc=+v||520; c.updatedAt=now();
+  c.log.push({at:now(),byId:SES.userId,text:'fijó el tipo de cambio en ₡'+c.tc});
+  save(); render();
+}
+function cajaFacModal(cajaId, facId){
+  const c=cajaFind(cajaId); if(!c) return;
+  if(c.status!=='abierta'||!cajaIsCashier()){ if(facId) return; toast('La caja no está abierta','err'); return; }
+  const f=facId?(c.facturas||[]).find(x=>x&&x.id===facId):null;
+  if(facId&&!f) return;
+  let sugNum='';
+  if(!f){ const last=(c.facturas||[]).map(x=>parseInt(x&&x.num,10)).filter(n=>!isNaN(n)).sort((a,b)=>a-b).pop(); if(last) sugNum=String(last+1); }
+  const V=k=>f&&+f[k]?f[k]:'';
+  const NUM=(id,lbl,val)=>`<div class="field"><label>${lbl}</label><input class="input" id="${id}" type="number" min="0" step="any" inputmode="decimal" value="${val}" placeholder="0"></div>`;
+  openModal(`
+    <div class="modal-head"><h3>${svgIcon('cash','icon')} ${f?'Editar factura':'Nueva factura'}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Número de factura</label><input class="input" id="fcNum" value="${f?esc(f.num||''):sugNum}" placeholder="Ej: 963" autocomplete="off"></div>
+      <div class="ip-sec">Efectivo</div>
+      <div class="row2">${NUM('fcEfC','Colones (₡)',V('efCol'))}${NUM('fcEfD','Dólares ($)',V('efDol'))}</div>
+      <div class="ip-sec">Tarjeta</div>
+      <div class="row2">${NUM('fcBacC','BAC colones (₡)',V('bacCol'))}${NUM('fcBnC','BN colones (₡)',V('bnCol'))}</div>
+      <div class="row2">${NUM('fcBacD','BAC dólares ($)',V('bacDol'))}${NUM('fcBnD','BN dólares ($)',V('bnDol'))}</div>
+      <div class="ip-sec">SINPE Móvil</div>
+      ${NUM('fcSi','SINPE (₡)',V('sinpe'))}
+      <div class="ip-sec">Propina</div>
+      <div class="row2">${NUM('fcPpC','Colones (₡)',V('propCol'))}${NUM('fcPpD','Dólares ($)',V('propDol'))}</div>
+    </div>
+    <div class="modal-foot">
+      ${f?`<button class="btn btn-danger" onclick="cajaFacDel('${c.id}','${f.id}')">${svgIcon('trash','icon icon-sm')} Quitar</button>`:''}
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="cajaFacSave('${c.id}','${f?f.id:''}')">${svgIcon('check','icon icon-sm')} Guardar</button>
+    </div>`, true);
+}
+function cajaFacSave(cajaId, facId){
+  const c=cajaFind(cajaId); if(!c||c.status!=='abierta'||!cajaIsCashier()) return;
+  const g=id=>+($('#'+id)?$('#'+id).value:0)||0;
+  const num=($('#fcNum')?$('#fcNum').value.trim():'');
+  const data={ num, efCol:g('fcEfC'), efDol:g('fcEfD'), bacCol:g('fcBacC'), bnCol:g('fcBnC'), bacDol:g('fcBacD'), bnDol:g('fcBnD'),
+    sinpe:g('fcSi'), propCol:g('fcPpC'), propDol:g('fcPpD') };
+  const monto=cajaFacTotal(data,cajaTc(c));
+  if(!num && monto<=0){ toast('Poné el número de factura o algún monto','err'); return; }
+  c.facturas=c.facturas||[];
+  if(facId){
+    const f=c.facturas.find(x=>x&&x.id===facId); if(!f) return;
+    Object.assign(f,data); f.updatedAt=now();
+    c.log.push({at:now(),byId:SES.userId,text:`editó la factura ${num||'—'} (${money(monto)})`});
+    audit('caja',`editó factura ${num||'—'} de la caja (${sucName(c.sucursalId)})`,c.sucursalId);
+  } else {
+    c.facturas.push({id:uid(),...data,byId:SES.userId,at:now()});
+    c.log.push({at:now(),byId:SES.userId,text:`registró la factura ${num||'—'} · ${money(monto)}`});
+  }
+  c.updatedAt=now();
+  closeModal(); toast(facId?'Factura actualizada':'Factura registrada ✅','ok'); save(); render();
+}
+function cajaFacDel(cajaId, facId){
+  const c=cajaFind(cajaId); if(!c||c.status!=='abierta'||!cajaIsCashier()) return;
+  const f=(c.facturas||[]).find(x=>x&&x.id===facId); if(!f) return;
+  if(!confirm(`¿Quitar la factura ${f.num||'—'}? Queda registrado en la bitácora.`)) return;
+  c.facturas=c.facturas.filter(x=>x.id!==facId); c.updatedAt=now();
+  c.log.push({at:now(),byId:SES.userId,text:`QUITÓ la factura ${f.num||'—'} (${money(cajaFacTotal(f,cajaTc(c)))})`});
+  audit('caja',`quitó factura ${f.num||'—'} de la caja (${sucName(c.sucursalId)})`,c.sucursalId);
+  closeModal(); toast('Factura quitada','ok'); save(); render();
+}
+
 function viewCaja(){
   const canCashier=cajaIsCashier(), canVerify=cajaIsVerifier();
   const sucId=cajaSucId();
@@ -3321,13 +3442,14 @@ function viewCaja(){
 
   let html=`<div class="page-head"><div><div class="page-title">Caja</div><div class="page-sub">Control cruzado del efectivo · una caja por día por sucursal</div></div><div class="ph-spacer"></div></div>`;
   html+=sectionGuide('caja','¿Cómo funciona el control de Caja?',`
-    El <b>cajero</b> abre la caja con su fondo, registra gastos y retiros durante el día, y al cerrar
-    <b>declara las ventas</b> (efectivo, tarjeta, SINPE, transferencia) y <b>cuenta el efectivo por denominación</b>.
+    El <b>cajero</b> abre la caja con su fondo y va registrando <b>cada factura</b> del día con su
+    desglose (efectivo ₡/$, tarjeta BAC/BN ₡/$, SINPE, propina), como en la hoja de caja.
     <ul style="margin:8px 0 0 18px">
-      <li>El sistema calcula el <b>efectivo esperado</b> y lo cruza con lo contado → marca <b>faltante o sobrante</b>.</li>
+      <li>Los <b>totales se calculan solos</b> (con el tipo de cambio del día para los dólares).</li>
+      <li>Al cerrar, el sistema <b>cruza</b>: facturas registradas vs <b>conteo físico por denominación</b> → marca <b>faltante o sobrante</b>.</li>
       <li>Los <b>gastos</b> exigen foto del comprobante.</li>
       <li><b>Gerencia y Contabilidad</b> revisan cada cierre: lo <b>aprueban</b> u <b>observan</b>.</li>
-      <li>Todo queda en una <b>bitácora que no se puede borrar</b> (anti-fraude).</li>
+      <li>Cada día queda <b>guardado</b> con sus facturas (historial + CSV para reportes) en una <b>bitácora que no se puede borrar</b>.</li>
     </ul>`);
   if(cajaNeedsPicker() && (DB.sucursales||[]).length>1){
     html+=`<div class="toolbar"><div class="field" style="margin:0;min-width:200px"><label>Sucursal</label><select class="select" onchange="setCajaSuc(this.value)">${(DB.sucursales||[]).map(s=>`<option value="${s.id}" ${s.id===sucId?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div></div>`;
@@ -3375,15 +3497,19 @@ function cajaTodayCard(c, sucId, canCashier, canVerify){
   }
   if(c.status==='abierta'){
     const canManage=canCashier;
-    const cashNow=(+c.openFloat||0)+cajaCashIn(c)-cajaCashOut(c);
+    const tf=cajaFacSums(c);
+    const cashNow=(+c.openFloat||0)+tf.efectivo+cajaCashIn(c)-cajaCashOut(c);
     return `<div class="caja-card">
       <div class="caja-head"><span class="pill proceso">Abierta</span><span class="caja-sub">Abrió ${esc(userFirst(c.openedBy))} · ${timeAgo(c.openAt)}</span></div>
       <div class="caja-grid">
         <div class="caja-stat"><span>Fondo de apertura</span><b>${money(c.openFloat)}</b></div>
+        <div class="caja-stat"><span>Ventas del día (facturas)</span><b>${money(tf.total)}</b></div>
         <div class="caja-stat"><span>Ingresos extra</span><b>+${money(cajaCashIn(c))}</b></div>
         <div class="caja-stat"><span>Gastos y retiros</span><b>−${money(cajaCashOut(c))}</b></div>
-        <div class="caja-stat"><span>Efectivo en caja (sin ventas)</span><b>${money(cashNow)}</b></div>
+        <div class="caja-stat"><span>Efectivo que debería haber</span><b>${money(cashNow)}</b></div>
       </div>
+      ${cajaFacSection(c, canManage)}
+      <div class="td-sec" style="margin-top:14px">Gastos, retiros e ingresos</div>
       ${cajaMovsList(c, canManage)}
       <div class="caja-actions">
         ${canManage?`<button class="btn btn-ghost" onclick="cajaMovModal('${c.id}','gasto')">${svgIcon('box','icon icon-sm')} Gasto</button>
@@ -3527,18 +3653,21 @@ function cajaCloseModal(id){
   if(!cajaIsCashier()){ toast('Sin permiso','err'); return; }
   _cajaZImg=null;
   const p=cajaPos(c), rv=cajaRecv(c);
+  const tf=cajaFacSums(c);
+  // pre-llenar el "sistema" con los totales de las facturas registradas en el día
+  const pre = k => { if(p[k]!=null && +p[k]>0) return +p[k]; if(!tf.n) return ''; return Math.round(k==='efectivo'?tf.efectivo:k==='tarjeta'?tf.tarjeta:k==='sinpe'?tf.sinpe:0)||''; };
   const denomRows=CAJA_DENOMS.map(d=>`<div class="denom-row"><span class="denom-face">${money(d)}</span><span class="denom-x">×</span><input class="input denom-in" type="number" min="0" step="1" inputmode="numeric" data-d="${d}" value="" oninput="cajaCalc('${id}')"><span class="denom-sub" id="dsub-${d}">${money(0)}</span></div>`).join('');
   openModal(`
     <div class="modal-head"><h3>${svgIcon('check','icon')} Cerrar caja · control cruzado</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
-      <div class="caja-step">1 · Cierre del POS <span class="lbl-soft">(lo que dice el reporte Z)</span></div>
-      <div class="row2"><div class="field"><label>Efectivo POS (₡)</label><input class="input" id="cpEf" type="number" min="0" step="any" inputmode="numeric" value="${+p.efectivo||''}" oninput="cajaCalc('${id}')"></div>
-        <div class="field"><label>Tarjeta POS (₡)</label><input class="input" id="cpTa" type="number" min="0" step="any" inputmode="numeric" value="${+p.tarjeta||''}" oninput="cajaCalc('${id}')"></div></div>
-      <div class="row2"><div class="field"><label>SINPE POS (₡)</label><input class="input" id="cpSi" type="number" min="0" step="any" inputmode="numeric" value="${+p.sinpe||''}" oninput="cajaCalc('${id}')"></div>
-        <div class="field"><label>Transferencia POS (₡)</label><input class="input" id="cpTr" type="number" min="0" step="any" inputmode="numeric" value="${+p.transfer||''}" oninput="cajaCalc('${id}')"></div></div>
+      <div class="caja-step">1 · Ventas del sistema <span class="lbl-soft">${tf.n?`(pre-llenado con las ${tf.n} facturas del día — ajustalo con el reporte Z)`:'(lo que dice el reporte Z del POS)'}</span></div>
+      <div class="row2"><div class="field"><label>Efectivo (₡)</label><input class="input" id="cpEf" type="number" min="0" step="any" inputmode="numeric" value="${pre('efectivo')}" oninput="cajaCalc('${id}')"></div>
+        <div class="field"><label>Tarjeta (₡)</label><input class="input" id="cpTa" type="number" min="0" step="any" inputmode="numeric" value="${pre('tarjeta')}" oninput="cajaCalc('${id}')"></div></div>
+      <div class="row2"><div class="field"><label>SINPE (₡)</label><input class="input" id="cpSi" type="number" min="0" step="any" inputmode="numeric" value="${pre('sinpe')}" oninput="cajaCalc('${id}')"></div>
+        <div class="field"><label>Transferencia (₡)</label><input class="input" id="cpTr" type="number" min="0" step="any" inputmode="numeric" value="${+p.transfer||''}" oninput="cajaCalc('${id}')"></div></div>
       <div class="row2"><div class="field"><label>Descuentos/cortesías (₡) <span class="lbl-soft">opcional</span></label><input class="input" id="cpDesc" type="number" min="0" step="any" inputmode="numeric" value="${+p.descuentos||''}"></div>
         <div class="field"><label>Anulaciones (cantidad) <span class="lbl-soft">opcional</span></label><input class="input" id="cpAnul" type="number" min="0" step="1" inputmode="numeric" value="${+p.anulaciones||''}"></div></div>
-      <div class="field"><label>Foto del reporte Z <span style="color:var(--danger)">(obligatoria — evidencia)</span></label>
+      <div class="field"><label>Foto del reporte Z ${tf.n?'<span class="lbl-soft">(opcional — las facturas son la evidencia)</span>':'<span style="color:var(--danger)">(obligatoria — evidencia)</span>'}</label>
         <input type="file" id="cpZ" accept="image/*" onchange="cajaZPick(this)"><div class="img-prev" id="cpZPrev"></div></div>
 
       <div class="caja-step">2 · Conteo real <span class="lbl-soft">(lo que hay de verdad)</span></div>
@@ -3591,8 +3720,8 @@ function cajaClose(id){
   const c=cajaFind(id); if(!c||c.status!=='abierta') return;
   if(!cajaIsCashier()){ toast('Sin permiso','err'); return; }
   const pos=_cajaReadPos(); const recv=_cajaReadRecv(); const denom=_cajaReadDenom();
-  if(cajaSalesTotal(pos)<=0){ toast('Poné las ventas del POS (reporte Z)','err'); return; }
-  if(!_cajaZImg){ toast('Falta la foto del reporte Z (evidencia obligatoria)','err'); return; }
+  if(cajaSalesTotal(pos)<=0){ toast('Poné las ventas del sistema (facturas o reporte Z)','err'); return; }
+  if(!_cajaZImg && !(c.facturas||[]).length){ toast('Falta la foto del reporte Z (o registrá las facturas del día)','err'); return; }
   const counted=cajaDenomTotal(denom);
   (async()=>{
     let zmid=null; try{ zmid=await putMedia(_cajaZImg); }catch(_){}
@@ -3660,6 +3789,7 @@ function cajaDetail(id){
         ${+p.anulaciones?`<div class="caja-stat"><span>Anulaciones</span><b>${p.anulaciones}</b></div>`:''}
       </div>
       ${c.zmid?`<div class="caja-z"><span class="lbl-soft">Reporte Z (evidencia):</span><br>${mediaTag(c.zmid,'image','style="max-width:180px;max-height:180px;border-radius:10px;cursor:zoom-in;margin-top:6px" onclick="openImgFromEl(this)"')}</div>`:''}`:''}
+      ${(c.facturas||[]).length?`<div class="ip-sec">Facturas del día (${(c.facturas||[]).length}) · TC ₡${cajaTc(c)}</div>${cajaFacTable(c, c.status==='abierta'&&cajaIsCashier())}`:''}
       <div class="ip-sec">Movimientos</div>${movHtml}
       ${c.status!=='abierta'?`<div class="ip-sec">Desglose de efectivo contado</div><div class="denom-grid">${denomHtml}</div>`:''}
       ${c.closeNote?`<div class="caja-note">${esc(c.closeNote)}</div>`:''}
@@ -3685,9 +3815,19 @@ function cajaReportModal(){
         <div class="caja-stat"><span>Descuadre neto</span><b>${money(sumDiff(month))}</b></div>
         <div class="caja-stat"><span>Faltantes</span><b>${faltMonth.length}</b></div>
       </div>
-      <div class="td-empty" style="margin-top:8px">El CSV incluye todo el historial visible (para Contabilidad).</div>
+      <div class="td-empty" style="margin-top:8px">Los CSV incluyen todo el historial visible (para Contabilidad): cierres día por día, y facturas una por una.</div>
     </div>
-    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button><button class="btn btn-primary" onclick="cajaExportCSV()">${svgIcon('box','icon icon-sm')} Descargar CSV</button></div>`, false);
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cerrar</button><button class="btn btn-ghost" onclick="cajaFacExportCSV()">${svgIcon('list','icon icon-sm')} CSV facturas</button><button class="btn btn-primary" onclick="cajaExportCSV()">${svgIcon('box','icon icon-sm')} CSV cierres</button></div>`, false);
+}
+function cajaFacExportCSV(){
+  const scoped=(DB.cajas||[]).filter(c=>c&&inScope(c.sucursalId)&&(c.facturas||[]).length).sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const head=['Fecha','Sucursal','Factura','Efectivo ₡','Efectivo $','BAC ₡','BN ₡','BAC $','BN $','SINPE ₡','Propina ₡','Propina $','TC','Total ₡','Registró'];
+  const lines=[head.map(csvCell).join(',')];
+  scoped.forEach(c=>{ const tc=cajaTc(c); (c.facturas||[]).forEach(f=>{ if(!f) return;
+    lines.push([c.date,sucName(c.sucursalId),f.num||'',+f.efCol||0,+f.efDol||0,+f.bacCol||0,+f.bnCol||0,+f.bacDol||0,+f.bnDol||0,+f.sinpe||0,+f.propCol||0,+f.propDol||0,tc,Math.round(cajaFacTotal(f,tc)),userFirst(f.byId)].map(csvCell).join(','));
+  }); });
+  downloadText('caja_facturas_'+todayISO()+'.csv', '﻿'+lines.join('\n'), 'text/csv');
+  toast('CSV de facturas descargado','ok');
 }
 function cajaExportCSV(){
   const scoped=(DB.cajas||[]).filter(c=>c&&inScope(c.sucursalId)&&c.status!=='abierta').sort((a,b)=>(b.date||'').localeCompare(a.date||''));
@@ -3703,6 +3843,7 @@ window.setCajaSuc=setCajaSuc; window.cajaOpenModal=cajaOpenModal; window.cajaOpe
 window.cajaMovModal=cajaMovModal; window.cajaMovPick=cajaMovPick; window.cajaAddMov=cajaAddMov; window.cajaDelMov=cajaDelMov;
 window.cajaCloseModal=cajaCloseModal; window.cajaCalc=cajaCalc; window.cajaClose=cajaClose; window.cajaZPick=cajaZPick;
 window.cajaReview=cajaReview; window.cajaDetail=cajaDetail; window.cajaReportModal=cajaReportModal; window.cajaExportCSV=cajaExportCSV;
+window.cajaSetTc=cajaSetTc; window.cajaFacModal=cajaFacModal; window.cajaFacSave=cajaFacSave; window.cajaFacDel=cajaFacDel; window.cajaFacExportCSV=cajaFacExportCSV;
 
 /* =====================================================================
    VISTA: AUDITORÍA (admin) — movimientos, anti-fraude

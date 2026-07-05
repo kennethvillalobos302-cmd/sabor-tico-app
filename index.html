@@ -488,6 +488,32 @@ input,textarea,select{font-size:16px}
 .denom-x{color:var(--text-soft);flex:0 0 auto}
 .denom-in{width:60px;flex:0 0 auto;text-align:center;padding:6px}
 .denom-sub{font-size:12px;color:var(--text-soft);flex:1;text-align:right;min-width:60px}
+/* ---- Facturas del día (tabla estilo hoja de caja) ---- */
+.fct-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 10px}
+.fct-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 6px;border-radius:10px;background:var(--accent-soft);color:var(--accent);font-size:11.5px;font-weight:800;margin-left:6px}
+.fct-tc{display:flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--text-soft);white-space:nowrap}
+.fct-tc input{width:76px;padding:8px 9px;font-size:14px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg-soft);color:var(--text);text-align:center}
+.fct-wrap{overflow-x:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;border:1px solid var(--border-soft);border-radius:var(--r-md);background:var(--bg-card);margin-bottom:8px}
+.fct{border-collapse:collapse;width:100%;min-width:760px;font-size:12.5px}
+.fct th,.fct td{border-bottom:1px solid var(--border-soft);border-right:1px solid var(--border-soft);padding:7px 9px;text-align:right;white-space:nowrap}
+.fct th:last-child,.fct td:last-child{border-right:none}
+.fct thead th{font-size:10.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;text-align:center;padding:6px 8px}
+.fct .fct-num{text-align:left;font-weight:700;position:sticky;left:0;background:var(--bg-card);z-index:1;box-shadow:1px 0 0 var(--border-soft)}
+.fct thead .fct-num{background:var(--bg-elev)}
+/* grupos de columnas con su color (como la hoja): efectivo·verde, tarjeta·naranja, sinpe·celeste, propina·amarillo, total·dorado */
+.fct .g-ef{background:color-mix(in srgb,#5aa777 14%,var(--bg-card))}
+.fct .g-tj{background:color-mix(in srgb,#d07a3c 14%,var(--bg-card))}
+.fct .g-si{background:color-mix(in srgb,#5f9fc0 14%,var(--bg-card))}
+.fct .g-pp{background:color-mix(in srgb,#c9a53a 16%,var(--bg-card))}
+.fct .g-tot{background:color-mix(in srgb,#c9a53a 26%,var(--bg-card))}
+.fct tbody td{font-variant-numeric:tabular-nums}
+.fct tbody .fct-r{cursor:pointer}
+.fct tbody .fct-r:hover td{background:var(--bg-soft)}
+.fct .fct-tot{font-weight:800}
+.fct tfoot .fct-t td{font-weight:800;border-top:2px solid var(--border);background:var(--bg-soft)}
+.fct .fct-empty{text-align:center;color:var(--text-soft);padding:16px}
+.fct-sum{font-size:12.5px;color:var(--text-soft);margin-bottom:12px}
+.fct-sum b{color:var(--text)}
 .caja-live{background:var(--bg-soft);border-radius:var(--r-md);padding:10px 12px;margin-bottom:12px}
 .caja-live-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:13.5px}
 .caja-live-row.big{border-top:1px solid var(--border);margin-top:4px;padding-top:8px;font-size:15px;font-weight:800}
