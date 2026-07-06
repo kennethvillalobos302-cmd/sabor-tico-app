@@ -488,6 +488,20 @@ input,textarea,select{font-size:16px}
 .denom-x{color:var(--text-soft);flex:0 0 auto}
 .denom-in{width:60px;flex:0 0 auto;text-align:center;padding:6px}
 .denom-sub{font-size:12px;color:var(--text-soft);flex:1;text-align:right;min-width:60px}
+/* ---- Caja Blindada: semáforo del día + corte relámpago ---- */
+.score{border-radius:var(--r-md);padding:11px 13px;margin-bottom:12px;border:1px solid var(--border-soft)}
+.score-verde{background:color-mix(in srgb,var(--success) 10%,var(--bg-card));border-color:color-mix(in srgb,var(--success) 35%,transparent)}
+.score-amarillo{background:color-mix(in srgb,var(--warn) 12%,var(--bg-card));border-color:color-mix(in srgb,var(--warn) 40%,transparent)}
+.score-rojo{background:color-mix(in srgb,var(--danger) 12%,var(--bg-card));border-color:color-mix(in srgb,var(--danger) 40%,transparent)}
+.score-head{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:6px}
+.score-list{margin:0;padding-left:20px;font-size:12.5px;line-height:1.7}
+.score-list .sr-0{color:var(--text-soft)}
+.score-list .sr-1{color:var(--warn);font-weight:650}
+.score-list .sr-2{color:var(--danger);font-weight:750}
+.score-dot{display:inline-block;width:11px;height:11px;border-radius:50%;flex:0 0 auto}
+.sd-verde{background:var(--success)}.sd-amarillo{background:var(--warn)}.sd-rojo{background:var(--danger);box-shadow:0 0 0 3px color-mix(in srgb,var(--danger) 25%,transparent)}
+.spot-banner{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:color-mix(in srgb,var(--warn) 16%,var(--bg-card));border:1px solid color-mix(in srgb,var(--warn) 45%,transparent);border-radius:var(--r-md);padding:12px 14px;font-size:13.5px;color:var(--text);cursor:pointer;margin-bottom:12px;animation:cdpulse 1.6s infinite}
+.spot-done{font-size:12.5px;color:var(--text-soft);background:var(--bg-soft);border-radius:var(--r-md);padding:9px 12px;margin-bottom:12px}
 /* ---- Facturas del día (tabla estilo hoja de caja) ---- */
 .fct-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:4px 0 10px}
 .fct-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:20px;padding:0 6px;border-radius:10px;background:var(--accent-soft);color:var(--accent);font-size:11.5px;font-weight:800;margin-left:6px}

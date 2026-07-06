@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v113 · Caja estilo hoja: factura por factura, guardada por día';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v114 · Caja Blindada: consecutivo + corte relámpago + sello + semáforo';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3418,6 +3418,107 @@ function cajaFacSave(cajaId, facId){
   c.updatedAt=now();
   closeModal(); toast(facId?'Factura actualizada':'Factura registrada ✅','ok'); save(); render();
 }
+/* ===== CAJA BLINDADA: 4 candados que se refuerzan =====
+   1) Candado de consecutivo: primera/última factura del día → los números faltantes cantan.
+   2) Sello del día: hash SHA-256 de todo el día al cerrar → si alguien altera datos después, no coincide.
+   3) Corte relámpago: conteo sorpresa a hora aleatoria → mata el "robo ahora, cuadro luego".
+   4) Semáforo: veredicto automático 🟢🟡🔴 con motivos → gerencia revisa en 10 segundos. */
+async function sha6(str){
+  try{ const d=await crypto.subtle.digest('SHA-256', new TextEncoder().encode('saborTicoCaja|'+str));
+    return [...new Uint8Array(d)].slice(0,3).map(b=>b.toString(16).padStart(2,'0')).join('').toUpperCase(); }
+  catch(_){ return ''; }
+}
+function cajaSealPayload(c){
+  const F=(c.facturas||[]).map(f=>f?[f.num,f.efCol,f.efDol,f.bacCol,f.bnCol,f.bacDol,f.bnDol,f.sinpe,f.propCol,f.propDol,f.at].join('~'):'').join(';');
+  const M=(c.movs||[]).map(m=>m?[m.type,m.amount,m.at].join('~'):'').join(';');
+  return [c.date,c.sucursalId,+c.openFloat||0,c.tc||'',c.firstNum||'',c.lastNum||'',F,M,+c.countedCash||0,+c.expectedCash||0].join('||');
+}
+async function cajaSealCheck(c){ if(!c.seal) return null; return (await sha6(cajaSealPayload(c)))===c.seal; }
+function cajaPrevLastNum(c){
+  const prev=(DB.cajas||[]).filter(x=>x&&x.sucursalId===c.sucursalId&&x.date<c.date).sort((a,b)=>(b.date||'').localeCompare(a.date||''))[0];
+  if(!prev) return null;
+  let pl=parseInt(prev.lastNum,10);
+  if(isNaN(pl)){ const ns=(prev.facturas||[]).map(f=>parseInt(f&&f.num,10)).filter(n=>!isNaN(n)); pl=ns.length?Math.max(...ns):NaN; }
+  return isNaN(pl)?null:pl;
+}
+function cajaSeqCheck(c){
+  const nums=(c.facturas||[]).map(f=>parseInt(f&&f.num,10)).filter(n=>!isNaN(n)).sort((a,b)=>a-b);
+  const res={n:nums.length,gaps:[],dups:[],expected:null,contPrev:null};
+  for(let i=1;i<nums.length;i++) if(nums[i]===nums[i-1]&&!res.dups.includes(nums[i])) res.dups.push(nums[i]);
+  const first=parseInt(c.firstNum,10), last=parseInt(c.lastNum,10);
+  const lo=!isNaN(first)?first:(nums.length?nums[0]:NaN), hi=!isNaN(last)?last:(nums.length?nums[nums.length-1]:NaN);
+  if(!isNaN(lo)&&!isNaN(hi)&&hi>=lo){ res.expected=hi-lo+1; const set=new Set(nums); for(let x=lo;x<=hi;x++) if(!set.has(x)) res.gaps.push(x); }
+  const pl=cajaPrevLastNum(c);
+  if(pl!=null&&!isNaN(lo)) res.contPrev={prevLast:pl, ok: lo===pl+1};
+  return res;
+}
+function cajaBurst(c){
+  const ts=(c.facturas||[]).map(f=>f&&f.at).filter(Boolean).sort((a,b)=>a-b);
+  if(ts.length<5) return false;
+  const win=15*60e3; let best=0;
+  for(let i=0;i<ts.length;i++){ let j=i; while(j<ts.length&&ts[j]-ts[i]<=win) j++; best=Math.max(best,j-i); }
+  return best/ts.length>=0.7;
+}
+function cajaScore(c){
+  if(!c||c.status==='abierta') return null;
+  const rs=[]; let level=0;
+  const add=(lv,txt)=>{ rs.push({lv,txt}); level=Math.max(level,lv); };
+  const d=+c.diff||0;
+  if(d===0) add(0,'Efectivo cuadra exacto');
+  else if(d<0) add(2,'Faltante de '+money(-d));
+  else add(d>=5000?2:1,'Sobrante de '+money(d));
+  cajaMethodCross(c).forEach(m=>{ if(m.diff!=null&&m.diff!==0) add(Math.abs(m.diff)>=5000?2:1, m.lbl+' no coincide ('+cajaDiffShort(m.diff).txt+')'); });
+  const sq=cajaSeqCheck(c);
+  if(sq.gaps.length) add(2,'FALTAN FACTURAS del consecutivo: '+sq.gaps.slice(0,8).join(', ')+(sq.gaps.length>8?` (+${sq.gaps.length-8} más)`:''));
+  else if(sq.expected!=null) add(0,`Consecutivo completo (${sq.expected} facturas, de la ${c.firstNum||'—'} a la ${c.lastNum||'—'})`);
+  if(sq.dups.length) add(1,'Facturas repetidas: '+sq.dups.join(', '));
+  if(sq.contPrev){ if(sq.contPrev.ok) add(0,'Sigue el consecutivo del día anterior'); else add(1,`No sigue el consecutivo del día anterior (ayer terminó en ${sq.contPrev.prevLast})`); }
+  if(cajaBurst(c)) add(1,'Facturas registradas en ráfaga (posible reconstrucción al cierre)');
+  if(c.spot){
+    if(c.spot.skipped) add(1,'Corte relámpago omitido');
+    else if(Math.abs(+c.spot.diff||0)>2000) add(2,'Corte relámpago NO cuadró ('+cajaDiffShort(c.spot.diff).txt+')');
+    else add(0,'Corte relámpago OK ('+new Date(c.spot.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})+')');
+  }
+  return { level:['verde','amarillo','rojo'][level], reasons:rs };
+}
+function cajaScoreHTML(c){
+  const s=cajaScore(c); if(!s) return '';
+  const ico={verde:'🟢',amarillo:'🟡',rojo:'🔴'}[s.level];
+  const lbl={verde:'Día limpio',amarillo:'Día con avisos',rojo:'Día con alertas'}[s.level];
+  return `<div class="score score-${s.level}">
+    <div class="score-head">${ico} <b>${lbl}</b><span class="lbl-soft" style="margin-left:auto">veredicto automático</span></div>
+    <ul class="score-list">${s.reasons.map(r=>`<li class="sr-${r.lv}">${esc(r.txt)}</li>`).join('')}</ul>
+  </div>`;
+}
+/* --- Corte relámpago --- */
+function cajaSpotDue(c){ return c && c.status==='abierta' && c.spotAt && !c.spot && now()>c.spotAt; }
+function cajaSpotModal(id){
+  const c=cajaFind(id); if(!c||c.status!=='abierta'||!cajaIsCashier()) return;
+  const tf=cajaFacSums(c);
+  const expected=(+c.openFloat||0)+Math.round(tf.efectivo)+cajaCashIn(c)-cajaCashOut(c);
+  openModal(`
+    <div class="modal-head"><h3>⚡ Corte relámpago</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="td-empty" style="margin-bottom:10px">Conteo sorpresa: contá <b>todo el efectivo de la caja</b> ahora mismo (billetes + monedas, en colones) y ponelo acá. Toma 1 minuto y queda registrado con hora.</div>
+      <div class="field"><label>Efectivo contado ahora (₡)</label><input class="input" id="spCount" type="number" min="0" step="any" inputmode="numeric" placeholder="0" autofocus></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Después</button><button class="btn btn-primary" onclick="cajaSpotSave('${id}',${expected})">${svgIcon('check','icon icon-sm')} Registrar corte</button></div>`, false);
+}
+function cajaSpotSave(id, expected){
+  const c=cajaFind(id); if(!c||c.status!=='abierta'||!cajaIsCashier()) return;
+  const counted=+($('#spCount')?$('#spCount').value:0)||0;
+  if(counted<=0){ toast('Poné el efectivo contado','err'); return; }
+  const diff=counted-expected;
+  c.spot={at:now(),byId:SES.userId,counted,expected,diff}; c.updatedAt=now();
+  const dl=cajaDiffLabel(diff);
+  c.log.push({at:now(),byId:SES.userId,text:`corte relámpago: contado ${money(counted)} vs esperado ${money(expected)} · ${dl.txt}`});
+  audit('caja',`corte relámpago (${sucName(c.sucursalId)}): ${dl.txt}`,c.sucursalId);
+  if(Math.abs(diff)>2000){
+    const verifiers=DB.users.filter(u=>u&&u.active&&['admin','contarh'].includes(u.role)).map(u=>u.id);
+    notify(verifiers, `⚡ Corte relámpago en ${sucName(c.sucursalId)}: ${dl.txt}`, '⚠️', {view:'caja'});
+  }
+  closeModal(); toast(Math.abs(diff)<=2000?'Corte OK, todo en orden ✅':'Corte registrado · '+dl.txt, Math.abs(diff)<=2000?'ok':'err'); save(); render();
+}
 function cajaFacDel(cajaId, facId){
   const c=cajaFind(cajaId); if(!c||c.status!=='abierta'||!cajaIsCashier()) return;
   const f=(c.facturas||[]).find(x=>x&&x.id===facId); if(!f) return;
@@ -3447,6 +3548,7 @@ function viewCaja(){
     <ul style="margin:8px 0 0 18px">
       <li>Los <b>totales se calculan solos</b> (con el tipo de cambio del día para los dólares).</li>
       <li>Al cerrar, el sistema <b>cruza</b>: facturas registradas vs <b>conteo físico por denominación</b> → marca <b>faltante o sobrante</b>.</li>
+      <li><b>Caja Blindada</b>: candado de <b>consecutivo</b> (los números de factura faltantes cantan), <b>corte relámpago</b> sorpresa (1 min), <b>sello del día</b> (si alguien altera datos después del cierre, se nota) y <b>semáforo 🟢🟡🔴</b> automático para la revisión.</li>
       <li>Los <b>gastos</b> exigen foto del comprobante.</li>
       <li><b>Gerencia y Contabilidad</b> revisan cada cierre: lo <b>aprueban</b> u <b>observan</b>.</li>
       <li>Cada día queda <b>guardado</b> con sus facturas (historial + CSV para reportes) en una <b>bitácora que no se puede borrar</b>.</li>
@@ -3499,8 +3601,12 @@ function cajaTodayCard(c, sucId, canCashier, canVerify){
     const canManage=canCashier;
     const tf=cajaFacSums(c);
     const cashNow=(+c.openFloat||0)+tf.efectivo+cajaCashIn(c)-cajaCashOut(c);
+    const spotBanner = cajaSpotDue(c) && canManage
+      ? `<button class="spot-banner" onclick="cajaSpotModal('${c.id}')">⚡ <b>Corte relámpago:</b> contá el efectivo AHORA (1 minuto) — tocá acá</button>`
+      : (c.spot&&!c.spot.skipped?`<div class="spot-done">⚡ Corte relámpago hecho a las ${new Date(c.spot.at).toLocaleTimeString('es-CR',{hour:'2-digit',minute:'2-digit'})} · ${cajaDiffLabel(c.spot.diff).txt}</div>`:'');
     return `<div class="caja-card">
-      <div class="caja-head"><span class="pill proceso">Abierta</span><span class="caja-sub">Abrió ${esc(userFirst(c.openedBy))} · ${timeAgo(c.openAt)}</span></div>
+      <div class="caja-head"><span class="pill proceso">Abierta</span>${c.firstNum?`<span class="td-badge">1.ª factura: ${esc(c.firstNum)}</span>`:''}<span class="caja-sub">Abrió ${esc(userFirst(c.openedBy))} · ${timeAgo(c.openAt)}</span></div>
+      ${spotBanner}
       <div class="caja-grid">
         <div class="caja-stat"><span>Fondo de apertura</span><b>${money(c.openFloat)}</b></div>
         <div class="caja-stat"><span>Ventas del día (facturas)</span><b>${money(tf.total)}</b></div>
@@ -3544,7 +3650,8 @@ function cajaClosedCard(c, canVerify){
   const canReview=canVerify&&c.status==='cerrada';
   const mism=cajaHasMethodMismatch(c);
   return `<div class="caja-card">
-    <div class="caja-head">${badge}${mism?'<span class="pill rechazada">Difiere en medios</span>':''}<span class="caja-sub">Cerró ${esc(userFirst(c.closedBy))} · ${timeAgo(c.closedAt)}</span></div>
+    <div class="caja-head">${badge}${mism?'<span class="pill rechazada">Difiere en medios</span>':''}<span class="caja-sub">Cerró ${esc(userFirst(c.closedBy))} · ${timeAgo(c.closedAt)}${c.seal?` · sello <b>${esc(c.seal)}</b>`:''}</span></div>
+    ${cajaScoreHTML(c)}
     <div class="caja-cross">
       <div class="caja-cross-col"><span>Efectivo esperado (POS)</span><b>${money(c.expectedCash)}</b></div>
       <div class="caja-cross-col"><span>Contado (físico)</span><b>${money(c.countedCash)}</b></div>
@@ -3574,9 +3681,10 @@ function cajaClosedCard(c, canVerify){
 function cajaRow(c){
   const dl=cajaDiffLabel(c.diff);
   const st=c.status==='abierta'?'<span class="pill proceso">Abierta</span>':c.status==='aprobada'?'<span class="pill hecha">Aprobada</span>':c.status==='observada'?'<span class="pill rechazada">Observada</span>':'<span class="pill pendiente">Por revisar</span>';
+  const sc=cajaScore(c);
   return `<div class="caja-row" onclick="cajaDetail('${c.id}')">
     <div class="caja-row-main">
-      <div class="caja-row-top"><b>${cajaDateLbl(c.date)}</b> ${st}</div>
+      <div class="caja-row-top">${sc?`<span class="score-dot sd-${sc.level}" title="Día ${sc.level}"></span>`:''}<b>${cajaDateLbl(c.date)}</b> ${st}</div>
       <div class="caja-row-sub">${esc(sucName(c.sucursalId))} · ${c.status==='abierta'?('Fondo '+money(c.openFloat)):('Ventas '+money(cajaSalesTotal(c.sales)))}</div>
     </div>
     ${c.status!=='abierta'?`<div class="caja-row-diff ${dl.cls}">${dl.txt}</div>`:''}
@@ -3585,11 +3693,14 @@ function cajaRow(c){
 function cajaOpenModal(sucId){
   if(!cajaIsCashier()){ toast('No tenés permiso para abrir caja','err'); return; }
   if(cajaToday(sucId)){ toast('La caja de hoy ya está abierta','err'); return; }
+  const pl=cajaPrevLastNum({sucursalId:sucId, date:todayISO()});
   openModal(`
     <div class="modal-head"><h3>${svgIcon('cash','icon')} Abrir caja</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
       <div class="td-empty" style="margin-bottom:8px">Sucursal: <b>${esc(sucName(sucId))}</b> · ${cajaDateLbl(todayISO())}</div>
       <div class="field"><label>Fondo de apertura <span class="lbl-soft">(efectivo con el que empieza la caja)</span></label><input class="input" id="cjFloat" type="number" min="0" step="any" inputmode="numeric" placeholder="Ej: 50000" value="0"></div>
+      <div class="field"><label>Primera factura del día <span class="lbl-soft">(candado de consecutivo${pl!=null?` — ayer terminó en ${pl}`:''})</span></label><input class="input" id="cjFirst" type="number" min="0" step="1" inputmode="numeric" placeholder="Ej: 963" value="${pl!=null?pl+1:''}"></div>
+      <div class="td-empty">Durante el día habrá <b>un corte relámpago</b> a una hora sorpresa: la app te avisará para contar el efectivo (1 minuto).</div>
     </div>
     <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="cajaOpen('${sucId}')">Abrir caja</button></div>`, false);
 }
@@ -3597,11 +3708,13 @@ function cajaOpen(sucId){
   if(!cajaIsCashier()) return;
   if(cajaToday(sucId)){ toast('Ya está abierta','err'); return; }
   const openFloat=+($('#cjFloat').value)||0;
+  const firstNum=($('#cjFirst')?$('#cjFirst').value.trim():'');
   const c={ id:uid(), sucursalId:sucId, date:todayISO(), status:'abierta',
-    openFloat, openedBy:SES.userId, openAt:now(), movs:[],
+    openFloat, firstNum, openedBy:SES.userId, openAt:now(), movs:[],
+    spotAt: now() + Math.round((2 + Math.random()*5)*3600e3),   // corte sorpresa entre 2 y 7 horas después
     sales:null, denom:null, countedCash:0, expectedCash:0, diff:0,
     closedBy:null, closedAt:null, closeNote:'', reviewStatus:null, reviewedBy:null, reviewedAt:null, reviewNote:'',
-    log:[{at:now(),byId:SES.userId,text:'abrió la caja con fondo '+money(openFloat)}], updatedAt:now() };
+    log:[{at:now(),byId:SES.userId,text:'abrió la caja con fondo '+money(openFloat)+(firstNum?` · primera factura ${firstNum}`:'')}], updatedAt:now() };
   DB.cajas=DB.cajas||[]; DB.cajas.unshift(c);
   audit('caja',`abrió caja (${sucName(sucId)}) con fondo ${money(openFloat)}`,sucId);
   closeModal(); toast('Caja abierta','ok'); save(); render();
@@ -3665,6 +3778,7 @@ function cajaCloseModal(id){
         <div class="field"><label>Tarjeta (₡)</label><input class="input" id="cpTa" type="number" min="0" step="any" inputmode="numeric" value="${pre('tarjeta')}" oninput="cajaCalc('${id}')"></div></div>
       <div class="row2"><div class="field"><label>SINPE (₡)</label><input class="input" id="cpSi" type="number" min="0" step="any" inputmode="numeric" value="${pre('sinpe')}" oninput="cajaCalc('${id}')"></div>
         <div class="field"><label>Transferencia (₡)</label><input class="input" id="cpTr" type="number" min="0" step="any" inputmode="numeric" value="${+p.transfer||''}" oninput="cajaCalc('${id}')"></div></div>
+      <div class="field"><label>Última factura del día <span class="lbl-soft">(candado de consecutivo — la del talonario/POS)</span></label><input class="input" id="cpLast" type="number" min="0" step="1" inputmode="numeric" value="${(()=>{const ns=(c.facturas||[]).map(f=>parseInt(f&&f.num,10)).filter(n=>!isNaN(n));return ns.length?Math.max(...ns):'';})()}"></div>
       <div class="row2"><div class="field"><label>Descuentos/cortesías (₡) <span class="lbl-soft">opcional</span></label><input class="input" id="cpDesc" type="number" min="0" step="any" inputmode="numeric" value="${+p.descuentos||''}"></div>
         <div class="field"><label>Anulaciones (cantidad) <span class="lbl-soft">opcional</span></label><input class="input" id="cpAnul" type="number" min="0" step="1" inputmode="numeric" value="${+p.anulaciones||''}"></div></div>
       <div class="field"><label>Foto del reporte Z ${tf.n?'<span class="lbl-soft">(opcional — las facturas son la evidencia)</span>':'<span style="color:var(--danger)">(obligatoria — evidencia)</span>'}</label>
@@ -3726,20 +3840,24 @@ function cajaClose(id){
   (async()=>{
     let zmid=null; try{ zmid=await putMedia(_cajaZImg); }catch(_){}
     c.pos=pos; c.recv=recv; c.sales=pos; c.denom=denom; c.countedCash=counted; c.zmid=zmid;
+    c.lastNum=($('#cpLast')?$('#cpLast').value.trim():'');
+    if(c.spotAt && !c.spot && now()>c.spotAt+45*60e3) c.spot={skipped:true,at:now()};   // corte sorpresa ignorado
     c.expectedCash=cajaExpected(c);
     c.diff=counted-c.expectedCash;
     c.status='cerrada'; c.closedBy=SES.userId; c.closedAt=now(); c.closeNote=($('#cjNote')?$('#cjNote').value.trim():''); c.updatedAt=now();
+    c.seal=await sha6(cajaSealPayload(c));   // sello del día: cualquier alteración posterior lo rompe
     const dl=cajaDiffLabel(c.diff);
     const mism=cajaMethodCross(c).filter(m=>m.diff!=null&&m.diff!==0);
     const mismTxt=mism.length?(' · '+mism.map(m=>`${m.lbl} ${cajaDiffShort(m.diff).txt}`).join(', ')):'';
     _cajaZImg=null;
-    c.log.push({at:now(),byId:SES.userId,text:`cerró la caja · efectivo ${dl.txt} (contado ${money(counted)} vs esperado POS ${money(c.expectedCash)})${mismTxt}`});
-    audit('caja',`cerró caja (${sucName(c.sucursalId)}) · efectivo ${dl.txt}${mismTxt}`,c.sucursalId);
-    if(c.diff!==0 || mism.length){
+    const sc=cajaScore(c);
+    c.log.push({at:now(),byId:SES.userId,text:`cerró la caja · efectivo ${dl.txt} (contado ${money(counted)} vs esperado ${money(c.expectedCash)})${mismTxt} · sello ${c.seal}`});
+    audit('caja',`cerró caja (${sucName(c.sucursalId)}) · ${sc?('día '+sc.level+' · '):''}efectivo ${dl.txt}${mismTxt}`,c.sucursalId);
+    if(sc && sc.level!=='verde'){
       const verifiers=DB.users.filter(u=>u&&u.active&&['admin','contarh'].includes(u.role)&&(u.sucursalId===c.sucursalId||u.sucursalId==='all'||!u.sucursalId)).map(u=>u.id);
-      notify(verifiers, `Revisar caja ${sucName(c.sucursalId)}: efectivo ${dl.txt}${mismTxt}`, '⚠️', {view:'caja'});
+      notify(verifiers, `${sc.level==='rojo'?'🔴':'🟡'} Caja ${sucName(c.sucursalId)}: ${sc.reasons.filter(r=>r.lv>0).map(r=>r.txt).slice(0,2).join(' · ')}`, '⚠️', {view:'caja'});
     }
-    closeModal(); toast(c.diff===0&&!mism.length?'Caja cerrada, todo cuadra ✅':'Caja cerrada · efectivo '+dl.txt, (c.diff===0&&!mism.length)?'ok':'err'); save(); render();
+    closeModal(); toast(sc&&sc.level==='verde'?'Caja cerrada · día limpio 🟢':'Caja cerrada · revisá el semáforo del día', sc&&sc.level==='verde'?'ok':'err'); save(); render();
   })();
 }
 function cajaReview(id,status){
@@ -3766,7 +3884,8 @@ function cajaDetail(id){
   openModal(`
     <div class="modal-head"><h3>Caja · ${esc(sucName(c.sucursalId))}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
     <div class="modal-body">
-      <div class="td-top"><span class="pill ${c.status==='abierta'?'proceso':c.status==='aprobada'?'hecha':c.status==='observada'?'rechazada':'pendiente'}">${cap(c.status)}</span><span class="td-badge">${cajaDateLbl(c.date)}</span></div>
+      <div class="td-top"><span class="pill ${c.status==='abierta'?'proceso':c.status==='aprobada'?'hecha':c.status==='observada'?'rechazada':'pendiente'}">${cap(c.status)}</span><span class="td-badge">${cajaDateLbl(c.date)}</span>${c.seal?`<span class="td-badge">Sello ${esc(c.seal)} <span id="sealChk">…</span></span>`:''}</div>
+      ${cajaScoreHTML(c)}
       ${c.status!=='abierta'?`<div class="caja-cross">
         <div class="caja-cross-col"><span>Efectivo esperado (POS)</span><b>${money(c.expectedCash)}</b></div>
         <div class="caja-cross-col"><span>Contado</span><b>${money(c.countedCash)}</b></div>
@@ -3797,6 +3916,8 @@ function cajaDetail(id){
       <div class="ip-sec">Bitácora</div><div class="log">${logHtml||'<div class="td-empty">—</div>'}</div>
       ${canReview?`<div class="td-actions"><button class="btn btn-primary" onclick="cajaReview('${c.id}','aprobada')">${svgIcon('check','icon icon-sm')} Aprobar</button><button class="btn btn-danger" onclick="cajaReview('${c.id}','observada')">${svgIcon('x','icon icon-sm')} Observar</button></div>`:''}
     </div>`, true);
+  // verificar el sello del día: si alguien alteró los datos después del cierre, no coincide
+  if(c.seal){ cajaSealCheck(c).then(ok=>{ const el=document.getElementById('sealChk'); if(el){ el.textContent=ok?'✓ íntegro':'⚠ ALTERADO'; el.style.color=ok?'var(--success)':'var(--danger)'; if(!ok) el.style.fontWeight='800'; } }); }
 }
 function cajaReportModal(){
   const scoped=(DB.cajas||[]).filter(c=>c&&inScope(c.sucursalId)&&c.status!=='abierta');
@@ -3844,6 +3965,7 @@ window.cajaMovModal=cajaMovModal; window.cajaMovPick=cajaMovPick; window.cajaAdd
 window.cajaCloseModal=cajaCloseModal; window.cajaCalc=cajaCalc; window.cajaClose=cajaClose; window.cajaZPick=cajaZPick;
 window.cajaReview=cajaReview; window.cajaDetail=cajaDetail; window.cajaReportModal=cajaReportModal; window.cajaExportCSV=cajaExportCSV;
 window.cajaSetTc=cajaSetTc; window.cajaFacModal=cajaFacModal; window.cajaFacSave=cajaFacSave; window.cajaFacDel=cajaFacDel; window.cajaFacExportCSV=cajaFacExportCSV;
+window.cajaSpotModal=cajaSpotModal; window.cajaSpotSave=cajaSpotSave;
 
 /* =====================================================================
    VISTA: AUDITORÍA (admin) — movimientos, anti-fraude
