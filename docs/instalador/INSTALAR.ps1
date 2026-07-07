@@ -52,7 +52,7 @@ $retain = 2
 if($envRaw -match 'RETAIN_DAYS=(\d+)'){ $retain = [int]$Matches[1] }
 $cfg  = "mqtt:`n  enabled: false`n`n"
 $cfg += "detect:`n  enabled: true`n`n"
-$cfg += "objects:`n  track:`n    - person`n`n"
+$cfg += "objects:`n  track:`n    - person`n    - dog`n    - cat`n    - car`n`n"
 $cfg += "record:`n  enabled: true`n  retain:`n    days: $retain`n    mode: all`n`n"
 $cfg += "cameras:`n"
 foreach($c in $cams){
@@ -76,6 +76,6 @@ Write-Host '   http://localhost:5000  ->  camaras EN VIVO (todas)'
 Write-Host '   http://localhost:5001  ->  GRABACIONES 24/7 (linea de tiempo)'
 Write-Host ''
 Write-Host '  Para verlas DESDE LA APP en el celular:'
-Write-Host '  doble clic a CONECTAR-APP.bat'
+Write-Host '  doble clic a 3-CONECTAR-APP.bat'
 Write-Host '=================================================='
 Read-Host 'Enter para cerrar'
