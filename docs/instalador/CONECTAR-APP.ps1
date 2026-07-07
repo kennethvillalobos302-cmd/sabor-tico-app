@@ -4,7 +4,7 @@
 #  direcciones EXACTAS para pegar en la app.
 # ============================================================
 $Host.UI.RawUI.WindowTitle = 'Camaras Sabor Tico - Conectar a la app'
-Set-Location C:\camaras
+Set-Location $PSScriptRoot
 function Fallo($msg){ Write-Host ''; Write-Host ('[X] ' + $msg) -ForegroundColor Red; Read-Host 'Enter para salir'; exit 1 }
 
 Write-Host '== Paso 1 de 3: Tailscale (el candado del sistema)...' -ForegroundColor Cyan

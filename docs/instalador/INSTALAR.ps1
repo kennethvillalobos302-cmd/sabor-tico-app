@@ -4,11 +4,11 @@
 #  grabador 24/7. Solo requiere el archivo .env lleno.
 # ============================================================
 $Host.UI.RawUI.WindowTitle = 'Camaras Sabor Tico - Instalador'
-Set-Location C:\camaras
+Set-Location $PSScriptRoot
 function Fallo($msg){ Write-Host ''; Write-Host ('[X] ' + $msg) -ForegroundColor Red; Read-Host 'Enter para salir'; exit 1 }
 
 Write-Host '== Paso 1 de 5: Revisando tus datos (.env)...' -ForegroundColor Cyan
-if(-not (Test-Path .env)){ Fallo 'No existe el archivo .env en C:\camaras' }
+if(-not (Test-Path .env)){ Fallo 'No existe el archivo .env en esta carpeta' }
 $envRaw = Get-Content .env -Raw
 if($envRaw -match 'pegar-aqui' -or $envRaw -match 'ejemplo\.com'){ Fallo 'Primero llena el archivo .env con tus datos de Wyze (abrilo con el Bloc de notas, llenalo y guarda)' }
 
@@ -62,7 +62,7 @@ foreach($c in $cams){
   $cfg += "        - path: rtsp://wyze-bridge:8554/$c-sub`n          roles:`n            - detect`n"
 }
 New-Item -ItemType Directory -Force -Path frigate-config | Out-Null
-[IO.File]::WriteAllText('C:\camaras\frigate-config\config.yml', $cfg, (New-Object System.Text.UTF8Encoding($false)))
+[IO.File]::WriteAllText((Join-Path $PSScriptRoot 'frigate-config\config.yml'), $cfg, (New-Object System.Text.UTF8Encoding($false)))
 docker compose up -d
 if($LASTEXITCODE -ne 0){ Fallo 'No se pudo levantar el grabador' }
 

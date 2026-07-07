@@ -37,9 +37,9 @@ PASO 4 (opcional) - VERLAS DESDE SABOR TICO APP:
 --------------------------------------------------------
 
 NOTAS
-- Grabaciones de prueba: se guardan en C:\camaras\grabaciones
-  (2 dias). En la compu del restaurante se cambia al disco
-  grande agregando en .env:
+- Grabaciones de prueba: se guardan en la carpeta "grabaciones"
+  junto a este archivo (2 dias). En la compu del restaurante se
+  cambia al disco grande agregando en .env:
      GRABACIONES_DIR=D:/grabaciones
      RETAIN_DAYS=15
 - Para instalar en OTRA compu: copiar esta carpeta y repetir

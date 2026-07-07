@@ -1,5 +1,7 @@
 # Guía: Sistema de cámaras Wyze v3 gratis (24/7, sin suscripción)
 
+> **⚡ CAMINO FÁCIL (recomendado):** usá la **instalación automática** de la carpeta [`docs/instalador/`](instalador/) — son 3 dobles-clic siguiendo su `LEEME.txt`, y detecta tus cámaras sola. Esta guía manual queda como referencia detallada (usa `C:\camaras` como ejemplo de carpeta, pero sirve cualquiera).
+
 Sistema completo tipo DVR profesional con tus Wyze Cam v3: **ver en vivo (todas o una por una) dentro de Sabor Tico App, grabación 24/7 en disco, retroceder a cualquier momento, y detección de personas** — pagando **₡0 al mes**.
 
 **Qué se ocupa (una sola vez):**
