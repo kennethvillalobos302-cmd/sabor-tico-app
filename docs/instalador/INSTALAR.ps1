@@ -15,8 +15,13 @@ if($envRaw -match 'pegar-aqui' -or $envRaw -match 'ejemplo\.com'){ Fallo 'Primer
 Write-Host '== Paso 2 de 5: Arrancando Docker...' -ForegroundColor Cyan
 docker info *> $null
 if($LASTEXITCODE -ne 0){
-  $dd = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
-  if(Test-Path $dd){ Start-Process $dd } else { Fallo 'Docker Desktop no esta instalado. Instalalo primero y volve a intentar.' }
+  $dd = $null
+  foreach($p in @((Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'),
+                  (Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\Docker Desktop.exe'),
+                  (Join-Path $env:LOCALAPPDATA 'Docker\Docker Desktop.exe'))){
+    if(Test-Path $p){ $dd = $p; break }
+  }
+  if($dd){ Start-Process $dd } else { Fallo 'Docker Desktop no esta instalado. Instalalo primero y volve a intentar.' }
   $ok = $false
   for($i=0; $i -lt 60; $i++){
     Start-Sleep 5

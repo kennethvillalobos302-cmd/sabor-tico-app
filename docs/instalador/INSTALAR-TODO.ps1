@@ -29,21 +29,36 @@ Write-Host '   WSL OK' -ForegroundColor Green
 
 # ---------- 2. Docker Desktop ----------
 Titulo 'Paso 2: Revisando Docker...'
-$dockerExe = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
-if(-not (Test-Path $dockerExe)){
+function BuscarDocker(){
+  $cands = @(
+    (Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'),
+    (Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\Docker Desktop.exe'),
+    (Join-Path $env:LOCALAPPDATA 'Docker\Docker Desktop.exe')
+  )
+  foreach($p in $cands){ if(Test-Path $p){ return $p } }
+  return $null
+}
+$dockerExe = BuscarDocker
+if(-not $dockerExe){
   $inst = Join-Path $PSScriptRoot 'Docker-Desktop-Installer.exe'
   if(-not (Test-Path $inst)){
     Write-Host '   Descargando Docker Desktop (~630 MB, paciencia)...'
     curl.exe -L -o $inst 'https://desktop.docker.com/win/main/amd64/Docker%20Desktop%20Installer.exe'
     if(-not (Test-Path $inst)){ Fallo 'No se pudo descargar Docker. Revisa el internet y proba de nuevo.' }
   }
+  # limpiar rastro de instalaciones anteriores que bloquea al instalador
+  if(Test-Path 'C:\ProgramData\DockerDesktop'){
+    Write-Host '   Limpiando rastro de una instalacion anterior (acepta el permiso)...'
+    try{ Start-Process cmd.exe -ArgumentList '/c','rmdir','/s','/q','C:\ProgramData\DockerDesktop' -Verb RunAs -Wait }catch{}
+  }
   Write-Host '   Instalando Docker (acepta el permiso de Windows; tarda varios minutos)...'
   try{ Start-Process $inst -ArgumentList 'install','--quiet','--accept-license','--backend=wsl-2' -Verb RunAs -Wait }
   catch{ Fallo 'No se acepto el permiso de administrador. Corre INSTALAR-TODO.bat de nuevo.' }
-  if(-not (Test-Path $dockerExe)){ Fallo 'Docker no quedo instalado. Corre INSTALAR-TODO.bat de nuevo.' }
+  $dockerExe = BuscarDocker
+  if(-not $dockerExe){ Fallo 'Docker no quedo instalado. Corre INSTALAR-TODO.bat de nuevo.' }
   Write-Host '   Docker instalado' -ForegroundColor Green
 } else {
-  Write-Host '   Docker OK' -ForegroundColor Green
+  Write-Host ('   Docker OK (' + $dockerExe + ')') -ForegroundColor Green
 }
 
 # ---------- 3. Tus datos de Wyze (sin Bloc de notas) ----------
