@@ -35,3 +35,37 @@ services:
       - ${GRABACIONES_DIR:-./grabaciones}:/media/frigate
     environment:
       - TZ=America/Costa_Rica
+
+  # Túneles gratuitos de Cloudflare: dan una dirección https pública a las
+  # cámaras y a las grabaciones (sin cuentas, sin VPN, sin abrir el router)
+  cloudflared-cams:
+    container_name: cloudflared-cams
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --url http://wyze-bridge:1984 --metrics 0.0.0.0:2000
+    depends_on:
+      - wyze-bridge
+
+  cloudflared-rec:
+    container_name: cloudflared-rec
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --url http://frigate:5000 --metrics 0.0.0.0:2000
+    depends_on:
+      - frigate
+
+  # Sincronizador: escribe las cámaras en la nube de la app → aparecen SOLAS
+  # en la sección Cámaras de sabortico.app (aunque el túnel cambie de URL)
+  camsync:
+    container_name: camsync
+    image: node:20-alpine
+    restart: unless-stopped
+    command: node /camsync.mjs
+    volumes:
+      - ./camsync.mjs:/camsync.mjs:ro
+    environment:
+      - FB_API_KEY=AIzaSyBxTfROnQBLvMBPuhnHTNjJKn1CmrI6im0
+      - FB_DB_URL=https://sabor-tico-app-default-rtdb.firebaseio.com
+    depends_on:
+      - cloudflared-cams
+      - cloudflared-rec

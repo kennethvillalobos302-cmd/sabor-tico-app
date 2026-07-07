@@ -88,7 +88,8 @@ Write-Host '  LISTO. Se abrieron 2 paginas:' -ForegroundColor Green
 Write-Host '   http://localhost:5000  ->  camaras EN VIVO (todas)'
 Write-Host '   http://localhost:5001  ->  GRABACIONES 24/7 (linea de tiempo)'
 Write-Host ''
-Write-Host '  Para verlas DESDE LA APP en el celular:'
-Write-Host '  doble clic a 3-CONECTAR-APP.bat'
+Write-Host '  Y EN SABOR TICO APP (sabortico.app -> Camaras):' -ForegroundColor Green
+Write-Host '  las camaras APARECEN SOLAS en ~2 minutos,' -ForegroundColor Green
+Write-Host '  desde cualquier celular, sin instalar nada.' -ForegroundColor Green
 Write-Host '=================================================='
 Read-Host 'Enter para cerrar'

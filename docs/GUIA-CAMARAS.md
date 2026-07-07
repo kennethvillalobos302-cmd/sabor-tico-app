@@ -120,20 +120,11 @@ La primera vez tarda unos minutos (descarga los programas). Para verificar:
 - **http://localhost:5000** → panel del puente: deben aparecer tus cámaras con imagen.
 - **http://localhost:8971** → Frigate (el grabador): la primera vez muestra el usuario y clave en los "logs" (en Docker Desktop → frigate → Logs, buscá "Password"). Entrá y cambiala.
 
-## Paso 4 — Verlas desde cualquier lado (5 min)
+## Paso 4 — Verlas desde cualquier lado (automático)
 
-En el cmd de la computadora:
+**Ya no hay que hacer nada**: el instalador automático (docs/instalador) incluye túneles gratuitos de Cloudflare y un sincronizador (`camsync`) que **conecta las cámaras solas a Sabor Tico App** — aparecen en la sección Cámaras (en vivo y grabaciones) en ~2 minutos, desde cualquier celular, sin instalar nada.
 
-```
-tailscale serve --bg --https=443 http://localhost:8889
-tailscale serve --bg --https=8443 http://localhost:8971
-```
-
-Eso te da una dirección segura del estilo `https://NOMBRE-PC.tu-red.ts.net` (la ves con `tailscale serve status`):
-- `https://NOMBRE-PC.tu-red.ts.net/comedor/` → cámara en vivo (así se conectan a Sabor Tico App).
-- `https://NOMBRE-PC.tu-red.ts.net:8443` → Frigate: **grabaciones y línea de tiempo**.
-
-> En el celular tenés que tener la app de **Tailscale encendida** (un toque) — ese es el candado: solo tus dispositivos pueden ver las cámaras.
+> Nota de seguridad: las direcciones del túnel son públicas pero **imposibles de adivinar** y **cambian solas** en cada reinicio (la app se actualiza automáticamente). Quien no tenga la dirección exacta del momento, no ve nada.
 
 ## Paso 5 — Que nunca se apague (2 min)
 

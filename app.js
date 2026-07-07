@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v118 · Cámaras completas en la app: En vivo + Grabaciones + Configurar';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v119 · Cámaras sin Tailscale: se conectan SOLAS a la app';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -4000,14 +4000,13 @@ function viewCamaras(){
     <ul style="margin:8px 0 0 18px">
       <li><b>En vivo</b>: todas a la vez (mosaico) o una en grande, con pantalla completa.</li>
       <li><b>Grabaciones</b>: la línea de tiempo — retrocedé a cualquier momento de los últimos días; los movimientos de <b>personas</b> quedan marcados solos.</li>
-      <li>Para verlas fuera del restaurante, el celular necesita la app <b>Tailscale</b> encendida (el candado de seguridad).</li>
+      <li>Las cámaras <b>se conectan solas</b>: basta que la compu de las cámaras esté encendida. Se ven desde cualquier lugar, sin instalar nada en el celular.</li>
     </ul>`);
   if(!cams.length){
     html+=`<div class="empty" style="padding:40px 20px"><div class="em-ico">📹</div><div class="em-t">Tu sistema de cámaras, gratis</div>
-      <div class="em-d" style="max-width:480px;margin:0 auto">Con tus cámaras Wyze + una compu encendida en el restaurante tenés: <b>todo en vivo acá adentro</b>, grabación 24/7, retroceder a cualquier momento y detección de personas — <b>₡0 al mes</b>.</div>
+      <div class="em-d" style="max-width:480px;margin:0 auto">Con tus cámaras Wyze + una compu encendida en el restaurante tenés: <b>todo en vivo acá adentro</b>, grabación 24/7, retroceder a cualquier momento y detección de personas — <b>₡0 al mes</b>. Al instalar el sistema en esa compu, las cámaras <b>aparecen acá solas</b> en ~2 minutos.</div>
       <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="camGuideModal()">${svgIcon('list','icon icon-sm')} Ver los pasos</button>
-        ${isAdmin()?`<button class="btn btn-ghost" onclick="camImportModal()">${svgIcon('box','icon icon-sm')} Importar código de conexión</button>`:''}
       </div></div>`;
     return html;
   }
@@ -4022,8 +4021,7 @@ function viewCamaras(){
         <div class="td-empty" style="margin-top:10px">Arrastrá la línea de tiempo para retroceder · los cuadritos marcan <b>personas y movimiento</b> detectados. <button class="chip" onclick="camReload('rec')">↻ Recargar</button> <a class="chip" href="${esc(rec.url)}" target="_blank" rel="noopener">Abrir aparte ↗</a></div>`;
     } else {
       html+=`<div class="empty" style="padding:36px 20px"><div class="em-ico">⏪</div><div class="em-t">Grabaciones aún sin conectar</div>
-        <div class="em-d" style="max-width:440px;margin:0 auto">Corré <b>3-CONECTAR-APP.bat</b> en la compu de las cámaras y luego ${isAdmin()?'tocá <b>Importar</b> acá abajo y pegá el código':'pedile a Gerencia que importe el código de conexión'}.</div>
-        ${isAdmin()?`<div style="margin-top:14px"><button class="btn btn-primary" onclick="camImportModal()">${svgIcon('box','icon icon-sm')} Importar código de conexión</button></div>`:''}
+        <div class="em-d" style="max-width:440px;margin:0 auto">Se conectan <b>solas</b> cuando el sistema está corriendo en la compu de las cámaras. Si en ~2 minutos no aparecen, revisá que esa compu esté <b>encendida y con internet</b>.</div>
       </div>`;
     }
     return html;
@@ -4041,7 +4039,7 @@ function viewCamaras(){
   } else {
     html+=`<div class="cam-grid">${cams.map(c=>camFrame(c,false)).join('')}</div>`;
   }
-  html+=`<div class="td-empty" style="margin-top:12px">¿No se ve? Revisá que <b>Tailscale</b> esté encendido en este dispositivo y que la compu de las cámaras esté prendida.</div>`;
+  html+=`<div class="td-empty" style="margin-top:12px">¿No se ve? Revisá que la <b>compu de las cámaras esté encendida y con internet</b>, y tocá ↻ Recargar. Si esa compu se reinició, la conexión se renueva sola en ~1 minuto.</div>`;
   return html;
 }
 /* Panel de configuración (gerencia): lista de cámaras + acciones */
@@ -4055,7 +4053,7 @@ function camConfigModal(){
       ${cams.map(c=>`<div class="camcfg-row"><b>${esc(c.name)}</b><span class="camcfg-url">${esc(c.url)}</span><button class="chip" onclick="camModal('${c.id}')">Editar</button></div>`).join('')}`:'<div class="td-empty">Sin cámaras conectadas todavía.</div>'}
       <div class="ip-sec">Grabaciones</div>
       <div class="camcfg-row">${rec?`<b>Conectadas</b><span class="camcfg-url">${esc(rec.url)}</span>`:'<span class="td-empty" style="padding:0">Sin conectar</span>'}<button class="chip" onclick="camModal()">${rec?'Cambiar':'Conectar'}</button></div>
-      <div class="td-empty" style="margin-top:12px">La forma fácil de conectar o actualizar todo: correr <b>3-CONECTAR-APP.bat</b> en la compu de las cámaras e <b>Importar</b> el código.</div>
+      <div class="td-empty" style="margin-top:12px">Las cámaras se conectan y actualizan <b>solas</b> desde la compu del sistema (cada minuto). "Importar" y "Agregar" quedan solo para casos especiales.</div>
     </div>
     <div class="modal-foot">
       <button class="btn btn-ghost" onclick="camGuideModal()">${svgIcon('list','icon icon-sm')} Guía</button>
@@ -4113,16 +4111,14 @@ function camGuideModal(){
     <div class="modal-body" style="font-size:13.5px;line-height:1.7">
       <div class="ip-sec">Qué se ocupa</div>
       <ul style="margin:0 0 12px 18px"><li>Una <b>compu con Windows encendida 24/7</b> en el restaurante (una vieja sirve).</li><li>Un <b>disco de 1 TB</b> para grabaciones (~2–4 semanas, se recicla solo).</li><li>Recomendado: <b>microSD</b> en cada cámara (respaldo si apagan la compu).</li></ul>
-      <div class="ip-sec">Los 6 pasos</div>
+      <div class="ip-sec">Los pasos (en la compu de las cámaras)</div>
       <ol style="margin:0 0 12px 18px">
-        <li><b>Llave de Wyze</b>: crear una API Key gratis en el portal de Wyze.</li>
-        <li><b>Instalar</b> Docker Desktop y Tailscale en la compu (y Tailscale en tu celular).</li>
-        <li><b>Configurar el puente</b> (wyze-bridge saca el video de las Wyze) y el <b>grabador</b> (Frigate: 24/7 + línea de tiempo + detección de personas). Es copiar y pegar 2 archivos.</li>
-        <li><b>Túnel seguro</b>: 2 comandos de Tailscale → dirección https propia, solo tus dispositivos.</li>
-        <li><b>Que nunca se duerma</b>: energía en "nunca suspender" + Docker al arrancar.</li>
-        <li><b>Conectar acá</b>: Agregar cámara → pegar la dirección de cada una. Listo.</li>
+        <li>Conseguí la carpeta <b>instalador</b> (está en el repositorio de la app: docs/instalador).</li>
+        <li>Doble clic a <b>INSTALAR-TODO.bat</b> — hace todo solo: instala el motor, te pregunta tus datos de Wyze, encuentra las cámaras y deja grabando 24/7 con detección de personas.</li>
+        <li>Energía de Windows en <b>"Suspender: Nunca"</b> (para que grabe siempre).</li>
+        <li>Listo: en <b>~2 minutos las cámaras aparecen SOLAS acá</b> (en vivo y grabaciones), desde cualquier celular, <b>sin instalar nada</b>.</li>
       </ol>
-      <div class="td-empty">La guía completa con los comandos exactos para copiar y pegar está en el repositorio: <b>docs/GUIA-CAMARAS.md</b> — pedísela a soporte o abrila en GitHub. Cuando tengás la compu lista, se sigue en 40 minutos.</div>
+      <div class="td-empty">Si la compu de las cámaras se apaga, al encenderla todo vuelve solo. La guía detallada está en el repositorio: <b>docs/GUIA-CAMARAS.md</b>.</div>
     </div>
     <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Entendido</button></div>`, true);
 }

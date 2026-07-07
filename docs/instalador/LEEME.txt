@@ -2,7 +2,7 @@
   CAMARAS WYZE (v3/v4) SIN SUSCRIPCION
 ========================================================
 
-FORMA FACIL (recomendada) - UN SOLO PASO:
+FORMA FACIL - UN SOLO PASO:
 
    Doble clic a  INSTALAR-TODO.bat
 
@@ -12,19 +12,18 @@ FORMA FACIL (recomendada) - UN SOLO PASO:
    - instala Docker si falta
    - te pregunta tus datos de Wyze en la misma ventana
      (abre la pagina de la llave gratis por vos)
-   - ENCUENTRA TUS CAMARAS SOLAS (entran con tu cuenta,
-     no se conectan una por una)
+   - ENCUENTRA TUS CAMARAS SOLAS (entran con tu cuenta)
    - deja grabando 24/7 con deteccion de personas,
      mascotas y carros
-   - abre las 2 paginas:
+   - abre las 2 paginas locales:
        localhost:5000 -> camaras EN VIVO
        localhost:5001 -> GRABACIONES (linea de tiempo)
 
-PARA VERLAS DESDE SABOR TICO APP (celular, donde sea):
-   Doble clic a  3-CONECTAR-APP.bat
-   - te da las direcciones exactas para pegar en la app
-   - en el celular instala la app "Tailscale" (gratis)
-     con la misma cuenta: es el candado de seguridad
+   Y LO MEJOR: en ~2 minutos las camaras APARECEN SOLAS
+   en sabortico.app -> seccion Camaras (en vivo y
+   grabaciones), desde cualquier celular, sin instalar
+   nada y sin pasos extra. Si esta compu se reinicia,
+   la conexion se renueva sola.
 
 --------------------------------------------------------
 ARCHIVOS PASO-A-PASO (solo si preferis manual):
@@ -39,5 +38,5 @@ NOTAS
      RETAIN_DAYS=15
 - Para instalar en OTRA compu: copiar esta carpeta entera
   y doble clic a INSTALAR-TODO.bat. Nada mas.
-- Recomendado: microSD dentro de cada camara como respaldo
-  (la Wyze v4 graba 24/7 en la SD gratis).
+- Recomendado: microSD dentro de cada camara como respaldo.
+- Energia de Windows: Suspender = NUNCA (para que grabe 24/7).
