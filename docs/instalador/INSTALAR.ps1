@@ -52,30 +52,27 @@ $cams = @()
 for($i=0; $i -lt 36; $i++){
   Start-Sleep 5
   try{
-    $api = Invoke-RestMethod -Uri 'http://localhost:5000/api' -TimeoutSec 5
-    if($api.cameras){
-      $cams = @($api.cameras.PSObject.Properties | ForEach-Object { $_.Name })
-      if($cams.Count -gt 0){ break }
-    }
+    $api = Invoke-RestMethod -Uri 'http://localhost:5000/api/cameras' -TimeoutSec 5
+    if($api){ $cams = @($api | ForEach-Object { $_.name } | Where-Object { $_ }) }
+    if($cams.Count -gt 0){ break }
   }catch{}
   Write-Host '   ... esperando (el puente esta entrando a tu cuenta Wyze)'
 }
-if($cams.Count -eq 0){ Fallo 'No se encontraron camaras. Revisa el correo, la clave y el API Key en .env, y que las camaras esten en linea en la app de Wyze. Luego corre PROBAR.bat de nuevo.' }
+if($cams.Count -eq 0){ Fallo 'No se encontraron camaras. Revisa el correo, la clave y el API Key en .env, y que las camaras esten en linea en la app de Wyze. Luego corre INSTALAR-TODO.bat de nuevo.' }
 Write-Host ('   Camaras encontradas: ' + ($cams -join ', ')) -ForegroundColor Green
 
 Write-Host '== Paso 5 de 5: Configurando el grabador 24/7 (deteccion de personas incluida)...' -ForegroundColor Cyan
 $retain = 2
 if($envRaw -match 'RETAIN_DAYS=(\d+)'){ $retain = [int]$Matches[1] }
 $cfg  = "mqtt:`n  enabled: false`n`n"
-$cfg += "detect:`n  enabled: true`n`n"
+$cfg += "detect:`n  enabled: true`n  width: 1280`n  height: 720`n  fps: 5`n`n"
 $cfg += "objects:`n  track:`n    - person`n    - dog`n    - cat`n    - car`n`n"
 $cfg += "record:`n  enabled: true`n  retain:`n    days: $retain`n    mode: all`n`n"
 $cfg += "cameras:`n"
 foreach($c in $cams){
   $cfg += "  ${c}:`n"
   $cfg += "    ffmpeg:`n      inputs:`n"
-  $cfg += "        - path: rtsp://wyze-bridge:8554/$c`n          roles:`n            - record`n"
-  $cfg += "        - path: rtsp://wyze-bridge:8554/$c-sub`n          roles:`n            - detect`n"
+  $cfg += "        - path: rtsp://wyze-bridge:8554/$c`n          roles:`n            - record`n            - detect`n"
 }
 New-Item -ItemType Directory -Force -Path frigate-config | Out-Null
 [IO.File]::WriteAllText((Join-Path $PSScriptRoot 'frigate-config\config.yml'), $cfg, (New-Object System.Text.UTF8Encoding($false)))

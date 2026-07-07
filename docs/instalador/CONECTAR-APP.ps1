@@ -23,18 +23,18 @@ tailscale up
 if($LASTEXITCODE -ne 0){ Fallo 'No se pudo iniciar sesion en Tailscale' }
 
 Write-Host '== Paso 3 de 3: Publicando las camaras de forma segura...' -ForegroundColor Cyan
-tailscale serve --bg --https=443 http://127.0.0.1:8889 | Out-Null
+tailscale serve --bg --https=443 http://127.0.0.1:1984 | Out-Null
 tailscale serve --bg --https=8443 http://127.0.0.1:5001 | Out-Null
 $st = tailscale status --json | ConvertFrom-Json
 $dns = $st.Self.DNSName.TrimEnd('.')
 $cams = @()
 try{
-  $api = Invoke-RestMethod -Uri 'http://localhost:5000/api' -TimeoutSec 5
-  if($api.cameras){
-    $cams = @($api.cameras.PSObject.Properties | ForEach-Object {
-      $nick = $_.Value.nickname
-      if(-not $nick){ $nick = $_.Name }
-      @{ name = $nick; url = ('https://' + $dns + '/' + $_.Name + '/') }
+  $api = Invoke-RestMethod -Uri 'http://localhost:5000/api/cameras' -TimeoutSec 5
+  if($api){
+    $cams = @($api | ForEach-Object {
+      $nick = $_.nickname
+      if(-not $nick){ $nick = $_.name }
+      @{ name = $nick; url = ('https://' + $dns + '/stream.html?src=' + $_.name) }
     })
   }
 }catch{}
