@@ -34,10 +34,26 @@ async function tunnelHost(base) {
   catch (_) { return ''; }
 }
 
+// no publicar una dirección hasta que YA resuelva en los DNS públicos
+// (si no, el celular pregunta antes de tiempo, cachea el "no existe" y ve error)
+async function dnsListo(host) {
+  if (!host) return false;
+  const check = async (base) => {
+    try {
+      const d = await j(base + '?name=' + host + '&type=A', { headers: { accept: 'application/dns-json' } });
+      return Array.isArray(d.Answer) && d.Answer.length > 0;
+    } catch (_) { return false; }
+  };
+  const [cf, gg] = await Promise.all([check('https://cloudflare-dns.com/dns-query'), check('https://dns.google/resolve')]);
+  return cf && gg;
+}
+
 async function tick() {
   try {
     const [hCams, hRec] = await Promise.all([tunnelHost(TUN_CAMS), tunnelHost(TUN_REC)]);
     if (!hCams) { console.log(ts(), 'esperando el túnel de cámaras...'); return; }
+    if (!(await dnsListo(hCams))) { console.log(ts(), 'esperando que el DNS del túnel se propague...'); return; }
+    const recOk = hRec ? await dnsListo(hRec) : false;
     const cams = await j(BRIDGE + '/api/cameras');
     if (!Array.isArray(cams) || !cams.length) { console.log(ts(), 'esperando cámaras del puente...'); return; }
 
@@ -49,7 +65,7 @@ async function tick() {
       ord: i,
       updatedAt: now,
     }));
-    if (hRec) arr.push({ id: 'cam_rec', type: 'rec', name: 'Grabaciones', url: 'https://' + hRec, updatedAt: now });
+    if (recOk) arr.push({ id: 'cam_rec', type: 'rec', name: 'Grabaciones', url: 'https://' + hRec, updatedAt: now });
 
     const sig = JSON.stringify(arr.map(a => [a.id, a.url, a.name]));   // solo escribir si algo cambió de verdad
     if (sig === lastSig) return;
