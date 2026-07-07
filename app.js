@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v119 · Cámaras sin Tailscale: se conectan SOLAS a la app';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v120 · Cámaras: auto-limpieza de entradas corruptas';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -553,6 +553,15 @@ function migrate(remote){
   if(DB.recipes===undefined){ const chef=DB.users.find(u=>u.role==='chef'); DB.recipes=seedRecipes(DB.inventory,chef?chef.id:DB.users[0].id); ch=true; }
   if(DB.shifts===undefined){ DB.shifts=seedShifts(s1,s2,DB.users); ch=true; }
   if(DB.taskLabels===undefined){ DB.taskLabels=defaultTaskLabels(); ch=true; }
+  // Cámaras: purgar entradas corruptas (URL sin dominio real — p.ej. importes viejos con
+  // "https:///stream.html..." — o nombres con doble codificación tipo "CÃ¡mara")
+  if(Array.isArray(DB.camaras)){
+    const okCam = c => c && typeof c.url==='string' && /^https:\/\/[^\/\s?#]+\.[^\/\s?#]+/i.test(c.url);
+    const antes=DB.camaras.length;
+    DB.camaras=DB.camaras.filter(okCam);
+    DB.camaras.forEach(c=>{ if(typeof c.name==='string' && /Ã[¡©­³º]/.test(c.name)){ try{ c.name=decodeURIComponent(escape(c.name)); ch=true; }catch(_){} } });
+    if(DB.camaras.length!==antes) ch=true;
+  }
   (DB.users||[]).forEach(u=>{ if(u.phone===undefined){ u.phone=''; ch=true; } });
   (DB.pedidos||[]).forEach(p=>{ if(p.productId===undefined){ p.productId=null; ch=true; } });
   (DB.shifts||[]).forEach(sh=>{ if(sh.breaks===undefined){ sh.breaks=[]; ch=true; } });
@@ -4085,7 +4094,7 @@ function camSave(id){
   const name=$('#cmName').value.trim(), url=$('#cmUrl').value.trim(), recUrl=$('#cmRec').value.trim();
   if(name||url){
     if(!name||!url){ toast('Poné nombre y dirección','err'); return; }
-    if(!/^https:\/\//i.test(url)){ toast('La dirección debe empezar con https:// (usá el túnel de Tailscale)','err'); return; }
+    if(!/^https:\/\/[^\/\s?#]+\.[^\/\s?#]+/i.test(url)){ toast('La dirección debe ser https:// con dominio completo','err'); return; }
     DB.camaras=DB.camaras||[];
     if(id){ const c=DB.camaras.find(x=>x&&x.id===id); if(c){ c.name=name; c.url=url; c.updatedAt=now(); } }
     else DB.camaras.push({id:uid(),name,url,ord:camList().length,updatedAt:now()});
@@ -4144,7 +4153,7 @@ function camImportSave(){
   DB.camaras=DB.camaras||[];
   let n=0;
   (list||[]).forEach(c=>{
-    if(!c||!c.name||!c.url||!/^https:\/\//i.test(String(c.url))) return;
+    if(!c||!c.name||!c.url||!/^https:\/\/[^\/\s?#]+\.[^\/\s?#]+/i.test(String(c.url))) return;
     const ex=DB.camaras.find(x=>x&&x.type!=='rec'&&x.name===c.name);
     if(ex){ ex.url=String(c.url); ex.updatedAt=now(); }
     else DB.camaras.push({id:uid(),name:String(c.name),url:String(c.url),ord:camList().length+n,updatedAt:now()});
