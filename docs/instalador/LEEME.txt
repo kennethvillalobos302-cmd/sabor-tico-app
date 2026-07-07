@@ -1,0 +1,46 @@
+========================================================
+  CAMARAS WYZE SIN SUSCRIPCION - INSTALACION FACIL
+========================================================
+
+PASO 1 - Doble clic a  1-INSTALAR-DOCKER.bat  (una vez por compu)
+  - Toca "SI" cuando Windows pregunte
+  - Si al final pide REINICIAR, reinicia
+  - Tras reiniciar: abre "Docker Desktop" una vez (acepta terminos)
+
+PASO 2 - Tus datos de Wyze (3 min, una vez)
+  a) Crea tu llave gratis en:
+     https://developer-api-console.wyze.com/#/apikey/view
+     (inicia sesion -> "Create API Key" -> nombre: sabortico)
+  b) Abre el archivo  .env  de esta carpeta con el Bloc de notas,
+     pon tu correo y clave de Wyze + el API Key ID y API Key,
+     guarda y cierra
+
+PASO 3 - Doble clic a  2-PROBAR.bat
+  Hace TODO solo:
+  - arranca Docker
+  - levanta el puente
+  - ENCUENTRA TUS CAMARAS AUTOMATICAMENTE (no hay que
+    conectarlas una por una: entran solas con tu cuenta)
+  - configura el grabador 24/7 con deteccion de personas
+  - abre las 2 paginas:
+      localhost:5000 -> camaras EN VIVO (todas / una por una)
+      localhost:5001 -> GRABACIONES (linea de tiempo)
+
+--------------------------------------------------------
+PASO 4 (opcional) - VERLAS DESDE SABOR TICO APP:
+  Doble clic a  3-CONECTAR-APP.bat
+  - crea el tunel seguro (Tailscale, gratis)
+  - te imprime las direcciones EXACTAS para pegar en
+    la app (seccion Camaras -> Agregar camara)
+  - en el celular: instala la app "Tailscale" con la
+    misma cuenta (es el candado de seguridad)
+--------------------------------------------------------
+
+NOTAS
+- Grabaciones de prueba: se guardan en C:\camaras\grabaciones
+  (2 dias). En la compu del restaurante se cambia al disco
+  grande agregando en .env:
+     GRABACIONES_DIR=D:/grabaciones
+     RETAIN_DAYS=15
+- Para instalar en OTRA compu: copiar esta carpeta y repetir
+  los 3 pasos. (Docker Desktop se instala una vez por compu.)

@@ -1,0 +1,35 @@
+services:
+  wyze-bridge:
+    container_name: wyze-bridge
+    image: mrlt8/wyze-bridge:latest
+    restart: unless-stopped
+    ports:
+      - 8554:8554   # RTSP (lo usa el grabador)
+      - 8888:8888   # HLS
+      - 8889:8889   # WebRTC
+      - 8189:8189/udp
+      - 5000:5000   # Panel web: http://localhost:5000
+    environment:
+      - WYZE_EMAIL=${WYZE_EMAIL}
+      - WYZE_PASSWORD=${WYZE_PASSWORD}
+      - API_ID=${API_ID}
+      - API_KEY=${API_KEY}
+      - SUBSTREAM=True
+      - WB_AUTH=False
+      - TZ=America/Costa_Rica
+
+  frigate:
+    container_name: frigate
+    image: ghcr.io/blakeblackshear/frigate:stable
+    restart: unless-stopped
+    shm_size: "256mb"
+    depends_on:
+      - wyze-bridge
+    ports:
+      - 5001:5000   # Grabaciones: http://localhost:5001
+      - 8971:8971
+    volumes:
+      - ./frigate-config:/config
+      - ${GRABACIONES_DIR:-./grabaciones}:/media/frigate
+    environment:
+      - TZ=America/Costa_Rica
