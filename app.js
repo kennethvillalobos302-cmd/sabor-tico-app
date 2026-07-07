@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v120 · Cámaras: auto-limpieza de entradas corruptas';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v121 · Cámaras: rescate directo desde la nube + aviso de conexión';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3982,9 +3982,26 @@ window.cajaSpotModal=cajaSpotModal; window.cajaSpotSave=cajaSpotSave;
    Muestra los streams del puente local (wyze-bridge + Frigate vía Tailscale).
    Guía completa: docs/GUIA-CAMARAS.md en el repositorio.
    ===================================================================== */
-let camView='mosaico', camSel='', camTab='vivo';
+let camView='mosaico', camSel='', camTab='vivo', _camRescueAt=0;
 function camList(){ return (DB.camaras||[]).filter(c=>c&&c.type!=='rec').sort((a,b)=>(a.ord||0)-(b.ord||0)); }
 function camRec(){ return (DB.camaras||[]).find(c=>c&&c.type==='rec'); }
+/* Rescate: si este dispositivo no tiene cámaras (arranque sin señal, carrera al iniciar,
+   datos viejos purgados), pedirlas DIRECTO a la nube y adoptarlas. */
+async function camCloudRescue(manual){
+  if(!fbdb || !cloudOn){ if(manual) toast('Este dispositivo no está conectado a la nube todavía','err'); return; }
+  try{
+    const snap=await fbdb.ref('state/data/camaras').get();
+    const arr=snap && snap.exists() ? snap.val() : null;
+    const list=Array.isArray(arr)?arr.filter(Boolean):[];
+    if(list.length){
+      DB.camaras=list;
+      migrate(true);                       // aplica validación/purga
+      if((DB.camaras||[]).length){ save(); toast('Cámaras conectadas ✅','ok'); render(); return; }
+    }
+    if(manual) toast('La nube aún no tiene cámaras publicadas. Revisá que la compu de las cámaras esté encendida.','err');
+  }catch(e){ if(manual) toast('No se pudo leer la nube: '+((e&&e.code)||'error'),'err'); }
+}
+window.camCloudRescue=camCloudRescue;
 function camFull(id){ const el=document.getElementById('camtile-'+id); if(!el) return; try{ (el.requestFullscreen||el.webkitRequestFullscreen).call(el); }catch(_){ toast('Este navegador no permite pantalla completa','err'); } }
 function camReload(id){ const f=document.getElementById('camfr-'+id); if(f){ const s=f.src; f.src='about:blank'; setTimeout(()=>{ f.src=s; },60); } }
 function camFrame(c, big){
@@ -4012,10 +4029,14 @@ function viewCamaras(){
       <li>Las cámaras <b>se conectan solas</b>: basta que la compu de las cámaras esté encendida. Se ven desde cualquier lugar, sin instalar nada en el celular.</li>
     </ul>`);
   if(!cams.length){
+    // rescate automático: pedirlas directo a la nube (máx. 1 vez cada 30s)
+    if(now()-_camRescueAt>30000){ _camRescueAt=now(); setTimeout(()=>camCloudRescue(false),50); }
     html+=`<div class="empty" style="padding:40px 20px"><div class="em-ico">📹</div><div class="em-t">Tu sistema de cámaras, gratis</div>
       <div class="em-d" style="max-width:480px;margin:0 auto">Con tus cámaras Wyze + una compu encendida en el restaurante tenés: <b>todo en vivo acá adentro</b>, grabación 24/7, retroceder a cualquier momento y detección de personas — <b>₡0 al mes</b>. Al instalar el sistema en esa compu, las cámaras <b>aparecen acá solas</b> en ~2 minutos.</div>
+      ${_cloudConnected===false?'<div class="td-empty" style="margin-top:12px;color:var(--danger)">⚠️ Este dispositivo aparece SIN CONEXIÓN a la nube ahora mismo — las cámaras llegan por ahí. Revisá el internet de este aparato.</div>':''}
       <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
-        <button class="btn btn-primary" onclick="camGuideModal()">${svgIcon('list','icon icon-sm')} Ver los pasos</button>
+        <button class="btn btn-primary" onclick="camCloudRescue(true)">${svgIcon('video','icon icon-sm')} Buscar cámaras ahora</button>
+        <button class="btn btn-ghost" onclick="camGuideModal()">${svgIcon('list','icon icon-sm')} Ver los pasos</button>
       </div></div>`;
     return html;
   }
