@@ -67,12 +67,23 @@ async function tick() {
     }));
     if (recOk) arr.push({ id: 'cam_rec', type: 'rec', name: 'Grabaciones', url: 'https://' + hRec, updatedAt: now });
 
-    const sig = JSON.stringify(arr.map(a => [a.id, a.url, a.name]));   // solo escribir si algo cambió de verdad
-    if (sig === lastSig) return;
-
+    const sig = JSON.stringify(arr.map(a => [a.id, a.url, a.name]));
     const t = await getToken();
-    const res = await fetch(FB_DB + '/state/camaras.json?auth=' + t,
-      { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(arr) });
+
+    // comparar contra lo que hay EN LA NUBE (si una pestaña vieja lo pisó, se restaura)
+    let cloudSig = '';
+    try {
+      const cur = await j(FB_DB + '/state/data/camaras.json?auth=' + t);
+      if (Array.isArray(cur)) cloudSig = JSON.stringify(cur.filter(Boolean).map(a => [a.id, a.url, a.name]));
+    } catch (_) {}
+    if (cloudSig === sig) { lastSig = sig; return; }
+
+    // escritura atómica: las cámaras + un sello de cliente distinto, para que TODAS
+    // las pestañas abiertas reciban el cambio (ninguna lo ignora como "propio")
+    const res = await fetch(FB_DB + '/state.json?auth=' + t, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client: 'camsync', 'data/camaras': arr }),
+    });
     if (!res.ok) throw new Error('firebase -> ' + res.status);
 
     lastSig = sig;
