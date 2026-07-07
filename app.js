@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v115 · Sección Cámaras: seguridad 24/7 sin suscripción (Wyze + puente)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v116 · Carpeta del proyecto ordenada (documentos en docs/)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -277,7 +277,7 @@ async function cloudInit(){
     console.warn('cloud load', e);
     // Permiso denegado = reglas cerradas pero falta activar el inicio anónimo en Firebase.
     if(e && (e.code==='PERMISSION_DENIED' || /permission/i.test(String(e.message||e)))){
-      setTimeout(()=>{ try{ toast('Sin conexión a la nube: activá el inicio anónimo en Firebase (ver SEGURIDAD.md).','err'); }catch(_){} }, 1500);
+      setTimeout(()=>{ try{ toast('Sin conexión a la nube: activá el inicio anónimo en Firebase (ver docs/SEGURIDAD.md).','err'); }catch(_){} }, 1500);
     }
   }
   let _bootMerged=false;
@@ -2591,7 +2591,7 @@ async function startCall(projId, video){
     if(SES.userId) render();
   }catch(e){
     console.warn('meet', e);
-    toast('Las reuniones aún no están configuradas (JaaS). Ver CONECTAR-REUNIONES.md','err');
+    toast('Las reuniones aún no están configuradas (JaaS). Ver docs/CONECTAR-REUNIONES.md','err');
     endCall(true);
   }
 }
@@ -7538,7 +7538,7 @@ function renderLogin(){
   // Sin conexión a la nube y sin datos: avisar claro (NO mostrar datos de ejemplo inventados)
   if(_cloudFailed && !sucs.length && !(DB.users||[]).length){
     area.innerHTML=`<div class="login-label">Sin conexión a la nube</div>
-      <div class="login-hint" style="text-align:left;line-height:1.7">No se pudo conectar a la base. Suele ser porque el dominio no está autorizado en Firebase (Authentication → Settings → Authorized domains) o no está activado el inicio anónimo. Revisá tu internet y la configuración (ver SEGURIDAD.md).</div>
+      <div class="login-hint" style="text-align:left;line-height:1.7">No se pudo conectar a la base. Suele ser porque el dominio no está autorizado en Firebase (Authentication → Settings → Authorized domains) o no está activado el inicio anónimo. Revisá tu internet y la configuración (ver docs/SEGURIDAD.md).</div>
       <button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="location.reload()">Reintentar</button>`;
     return;
   }

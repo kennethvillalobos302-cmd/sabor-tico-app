@@ -4,7 +4,7 @@
    5 minutos del Jitsi público. La CLAVE PRIVADA vive solo acá (variables de
    entorno), nunca en el navegador.
 
-   Variables de entorno requeridas en Vercel (ver CONECTAR-REUNIONES.md):
+   Variables de entorno requeridas en Vercel (ver docs/CONECTAR-REUNIONES.md):
      JAAS_KID          = el "Key ID" del par de llaves (ej: vpaas-magic-cookie-abc123/d4e5f6)
      JAAS_PRIVATE_KEY  = el contenido de la clave privada (PEM, con -----BEGIN/END PRIVATE KEY-----)
    El AppID se deduce del JAAS_KID (la parte antes de la "/").

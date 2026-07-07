@@ -3,7 +3,7 @@
    La llave de API vive solo aquí (variable de entorno OPENAI_API_KEY),
    nunca en el navegador. El frontend manda la foto, esto devuelve los
    productos en datos estructurados para revisarlos y sumarlos al inventario.
-   Ver CONECTAR-FACTURAS.md para configurar la llave en Vercel.
+   Ver docs/CONECTAR-FACTURAS.md para configurar la llave en Vercel.
    ===================================================================== */
 
 // Modelo de visión. gpt-4o-mini es mucho más barato y suficiente para la mayoría
@@ -14,7 +14,7 @@ const MODELO = 'gpt-4o-mini';
 const MAX_B64 = 7_000_000;
 
 // Throttle best-effort por IP (en memoria; se reinicia en cada arranque en frío).
-// El tope DURO contra abuso es el límite de gasto mensual de OpenAI (ver CONECTAR-FACTURAS.md).
+// El tope DURO contra abuso es el límite de gasto mensual de OpenAI (ver docs/CONECTAR-FACTURAS.md).
 const HITS = new Map();
 const WINDOW_MS = 10 * 60 * 1000; // 10 min
 const MAX_HITS = 15;              // por IP en la ventana
