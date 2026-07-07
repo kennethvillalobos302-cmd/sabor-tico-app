@@ -30,19 +30,29 @@ $dns = $st.Self.DNSName.TrimEnd('.')
 $cams = @()
 try{
   $api = Invoke-RestMethod -Uri 'http://localhost:5000/api' -TimeoutSec 5
-  if($api.cameras){ $cams = @($api.cameras.PSObject.Properties | ForEach-Object { $_.Name }) }
+  if($api.cameras){
+    $cams = @($api.cameras.PSObject.Properties | ForEach-Object {
+      $nick = $_.Value.nickname
+      if(-not $nick){ $nick = $_.Name }
+      @{ name = $nick; url = ('https://' + $dns + '/' + $_.Name + '/') }
+    })
+  }
 }catch{}
+
+# Codigo de conexion: se pega UNA sola vez en Sabor Tico App (Camaras -> Importar)
+$codigo = (@{ camaras = $cams; grabaciones = ('https://' + $dns + ':8443') } | ConvertTo-Json -Compress -Depth 4)
+try{ Set-Clipboard -Value $codigo }catch{}
 
 Write-Host ''
 Write-Host '==================================================' -ForegroundColor Green
-Write-Host '  LISTO. PEGA ESTO EN SABOR TICO APP (Camaras -> Agregar camara):' -ForegroundColor Green
+Write-Host '  LISTO. El CODIGO DE CONEXION quedo COPIADO.' -ForegroundColor Green
 Write-Host ''
-if($cams.Count -gt 0){
-  foreach($c in $cams){ Write-Host ("   " + $c + "  ->  https://" + $dns + "/" + $c + "/") }
-} else {
-  Write-Host ('   (corre primero PROBAR.bat)  ->  https://' + $dns + '/NOMBRE-DE-CAMARA/')
-}
-Write-Host ("   URL de grabaciones  ->  https://" + $dns + ":8443")
+Write-Host '  Ahora en SABOR TICO APP (como Gerencia):'
+Write-Host '   1. Menu -> Camaras -> boton "Importar"'
+Write-Host '   2. Pegar (Ctrl+V) -> "Conectar camaras"'
+Write-Host ''
+Write-Host '  El codigo (por si lo ocupas de nuevo):'
+Write-Host ('  ' + $codigo)
 Write-Host ''
 Write-Host '  IMPORTANTE: en tu celular instala la app "Tailscale"'
 Write-Host '  (gratis, App Store/Play Store) y entra con la MISMA cuenta.'

@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v116 · Carpeta del proyecto ordenada (documentos en docs/)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v117 · Cámaras: conexión automática con código de conexión';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3988,14 +3988,15 @@ function viewCamaras(){
   let html=`<div class="page-head"><div><div class="page-title">Cámaras</div><div class="page-sub">Seguridad 24/7 · en vivo y grabaciones · sin suscripción</div></div>
     <div class="ph-spacer"></div>
     ${rec?`<a class="btn btn-ghost" style="flex:0 0 auto" href="${esc(rec.url)}" target="_blank" rel="noopener">⏪ Ver grabaciones</a>`:''}
-    ${isAdmin()?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="camModal()">${svgIcon('plus','icon icon-sm')} Agregar cámara</button>`:''}
+    ${isAdmin()?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="camImportModal()">${svgIcon('box','icon icon-sm')} Importar</button>
+    <button class="btn btn-primary" style="flex:0 0 auto" onclick="camModal()">${svgIcon('plus','icon icon-sm')} Agregar cámara</button>`:''}
   </div>`;
   if(!cams.length){
     html+=`<div class="empty" style="padding:40px 20px"><div class="em-ico">📹</div><div class="em-t">Tu sistema de cámaras, gratis</div>
       <div class="em-d" style="max-width:480px;margin:0 auto">Con tus Wyze v3 + una compu encendida en el restaurante tenés: <b>todas las cámaras en vivo acá adentro</b>, grabación 24/7 en disco, retroceder a cualquier momento y detección de personas — <b>₡0 al mes</b>.</div>
       <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="camGuideModal()">${svgIcon('list','icon icon-sm')} Ver los pasos</button>
-        ${isAdmin()?`<button class="btn btn-ghost" onclick="camModal()">${svgIcon('plus','icon icon-sm')} Ya tengo el puente — conectar</button>`:''}
+        ${isAdmin()?`<button class="btn btn-ghost" onclick="camImportModal()">${svgIcon('box','icon icon-sm')} Importar código de conexión</button>`:''}
       </div></div>`;
     return html;
   }
@@ -4078,7 +4079,45 @@ function camGuideModal(){
     </div>
     <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Entendido</button></div>`, true);
 }
+/* Importar cámaras: pegar el "código de conexión" que genera 3-CONECTAR-APP.bat
+   (lo deja copiado en el portapapeles) y todas las cámaras quedan conectadas de una. */
+function camImportModal(){
+  if(!isAdmin()) return;
+  openModal(`
+    <div class="modal-head"><h3>${svgIcon('video','icon')} Importar cámaras</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="td-empty" style="margin-bottom:12px">En la compu de las cámaras corré <b>3-CONECTAR-APP.bat</b>: al final deja el <b>código de conexión</b> copiado en el portapapeles. Pegalo acá y listo — todas las cámaras se conectan de una.</div>
+      <div class="field"><label>Código de conexión</label><textarea class="textarea" id="ciCode" style="min-height:130px;font-family:ui-monospace,Consolas,monospace;font-size:12px" placeholder='{"camaras":[{"name":"Comedor","url":"https://..."}],"grabaciones":"https://..."}'></textarea></div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="camImportSave()">${svgIcon('check','icon icon-sm')} Conectar cámaras</button></div>`, true);
+}
+function camImportSave(){
+  if(!isAdmin()) return;
+  let data;
+  try{ data=JSON.parse(($('#ciCode')?$('#ciCode').value:'').trim()); }
+  catch(_){ toast('El código no se pudo leer — pegalo completo, tal cual','err'); return; }
+  const list = Array.isArray(data) ? data : (data.camaras||[]);
+  const rec = Array.isArray(data) ? '' : (data.grabaciones||'');
+  DB.camaras=DB.camaras||[];
+  let n=0;
+  (list||[]).forEach(c=>{
+    if(!c||!c.name||!c.url||!/^https:\/\//i.test(String(c.url))) return;
+    const ex=DB.camaras.find(x=>x&&x.type!=='rec'&&x.name===c.name);
+    if(ex){ ex.url=String(c.url); ex.updatedAt=now(); }
+    else DB.camaras.push({id:uid(),name:String(c.name),url:String(c.url),ord:camList().length+n,updatedAt:now()});
+    n++;
+  });
+  if(rec && /^https:\/\//i.test(String(rec))){
+    const r=camRec();
+    if(r){ r.url=String(rec); r.updatedAt=now(); }
+    else DB.camaras.push({id:uid(),type:'rec',name:'Grabaciones',url:String(rec),updatedAt:now()});
+  }
+  if(!n && !rec){ toast('El código no traía cámaras','err'); return; }
+  audit('camaras',`importó ${n} cámara(s) con el código de conexión`,'all');
+  closeModal(); toast(`${n} cámara(s) conectadas ✅`,'ok'); save(); render();
+}
 window.viewCamaras=viewCamaras; window.camModal=camModal; window.camSave=camSave; window.camDel=camDel; window.camGuideModal=camGuideModal;
+window.camImportModal=camImportModal; window.camImportSave=camImportSave;
 
 /* =====================================================================
    VISTA: AUDITORÍA (admin) — movimientos, anti-fraude
