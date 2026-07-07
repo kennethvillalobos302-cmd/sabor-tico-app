@@ -14,6 +14,7 @@ services:
       - WYZE_PASSWORD=${WYZE_PASSWORD}
       - API_ID=${API_ID}
       - API_KEY=${API_KEY}
+      - WB_IP=${WB_IP}
       - SUBSTREAM=True
       - WB_AUTH=False
       - TZ=America/Costa_Rica

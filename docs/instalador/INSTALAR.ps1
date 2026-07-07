@@ -12,6 +12,17 @@ if(-not (Test-Path .env)){ Fallo 'No existe el archivo .env en esta carpeta' }
 $envRaw = Get-Content .env -Raw
 if($envRaw -match 'pegar-aqui' -or $envRaw -match 'ejemplo\.com'){ Fallo 'Primero llena el archivo .env con tus datos de Wyze (abrilo con el Bloc de notas, llenalo y guarda)' }
 
+# IP local de esta compu (el puente la usa para transmitir a otros dispositivos)
+try{
+  $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254*' -and $_.IPAddress -ne '127.0.0.1' -and $_.InterfaceAlias -notmatch 'WSL|vEthernet|Loopback' -and ($_.PrefixOrigin -eq 'Dhcp' -or $_.PrefixOrigin -eq 'Manual') } | Select-Object -First 1 -ExpandProperty IPAddress)
+  if($ip){
+    $lineas = @(Get-Content .env) | Where-Object { $_ -notmatch '^WB_IP=' }
+    $lineas += "WB_IP=$ip"
+    [IO.File]::WriteAllLines((Join-Path $PSScriptRoot '.env'), $lineas)
+    Write-Host ('   IP de esta compu: ' + $ip) -ForegroundColor Green
+  }
+}catch{}
+
 Write-Host '== Paso 2 de 5: Arrancando Docker...' -ForegroundColor Cyan
 docker info *> $null
 if($LASTEXITCODE -ne 0){
