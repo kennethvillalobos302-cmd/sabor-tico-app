@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v117 · Cámaras: conexión automática con código de conexión';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v118 · Cámaras completas en la app: En vivo + Grabaciones + Configurar';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3973,48 +3973,95 @@ window.cajaSpotModal=cajaSpotModal; window.cajaSpotSave=cajaSpotSave;
    Muestra los streams del puente local (wyze-bridge + Frigate vía Tailscale).
    Guía completa: docs/GUIA-CAMARAS.md en el repositorio.
    ===================================================================== */
-let camView='mosaico', camSel='';
+let camView='mosaico', camSel='', camTab='vivo';
 function camList(){ return (DB.camaras||[]).filter(c=>c&&c.type!=='rec').sort((a,b)=>(a.ord||0)-(b.ord||0)); }
 function camRec(){ return (DB.camaras||[]).find(c=>c&&c.type==='rec'); }
+function camFull(id){ const el=document.getElementById('camtile-'+id); if(!el) return; try{ (el.requestFullscreen||el.webkitRequestFullscreen).call(el); }catch(_){ toast('Este navegador no permite pantalla completa','err'); } }
+function camReload(id){ const f=document.getElementById('camfr-'+id); if(f){ const s=f.src; f.src='about:blank'; setTimeout(()=>{ f.src=s; },60); } }
 function camFrame(c, big){
-  return `<div class="cam-tile ${big?'big':''}">
-    <iframe src="${esc(c.url)}" allow="autoplay; fullscreen" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>
+  return `<div class="cam-tile ${big?'big':''}" id="camtile-${c.id}">
+    <iframe id="camfr-${c.id}" src="${esc(c.url)}" allow="autoplay; fullscreen" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>
     <div class="cam-name">${esc(c.name)}</div>
-    ${big?'':`<button class="cam-expand" title="Ver grande" onclick="camView='una';camSel='${c.id}';render()">${svgIcon('search','icon icon-sm')}</button>`}
+    <div class="cam-btns">
+      <button class="cam-ctl" title="Recargar señal" onclick="camReload('${c.id}')">↻</button>
+      <button class="cam-ctl" title="Pantalla completa" onclick="camFull('${c.id}')"><svg class="icon icon-sm" viewBox="0 0 24 24" style="stroke:#fff"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg></button>
+      ${big?'':`<button class="cam-ctl" title="Ver grande" onclick="camView='una';camSel='${c.id}';render()">${svgIcon('search','icon icon-sm')}</button>`}
+    </div>
   </div>`;
 }
 function viewCamaras(){
   const cams=camList(); const rec=camRec();
-  let html=`<div class="page-head"><div><div class="page-title">Cámaras</div><div class="page-sub">Seguridad 24/7 · en vivo y grabaciones · sin suscripción</div></div>
+  let html=`<div class="page-head"><div><div class="page-title">Cámaras</div><div class="page-sub">Seguridad 24/7 · sin suscripción · ${cams.length} cámara${cams.length===1?'':'s'}</div></div>
     <div class="ph-spacer"></div>
-    ${rec?`<a class="btn btn-ghost" style="flex:0 0 auto" href="${esc(rec.url)}" target="_blank" rel="noopener">⏪ Ver grabaciones</a>`:''}
-    ${isAdmin()?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="camImportModal()">${svgIcon('box','icon icon-sm')} Importar</button>
-    <button class="btn btn-primary" style="flex:0 0 auto" onclick="camModal()">${svgIcon('plus','icon icon-sm')} Agregar cámara</button>`:''}
+    ${isAdmin()?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="camConfigModal()">${svgIcon('edit','icon icon-sm')} Configurar</button>`:''}
   </div>`;
+  html+=sectionGuide('camaras','¿Cómo funcionan las Cámaras?',`
+    Tus cámaras del restaurante, <b>en vivo y grabadas 24/7</b>, sin pagar suscripción.
+    <ul style="margin:8px 0 0 18px">
+      <li><b>En vivo</b>: todas a la vez (mosaico) o una en grande, con pantalla completa.</li>
+      <li><b>Grabaciones</b>: la línea de tiempo — retrocedé a cualquier momento de los últimos días; los movimientos de <b>personas</b> quedan marcados solos.</li>
+      <li>Para verlas fuera del restaurante, el celular necesita la app <b>Tailscale</b> encendida (el candado de seguridad).</li>
+    </ul>`);
   if(!cams.length){
     html+=`<div class="empty" style="padding:40px 20px"><div class="em-ico">📹</div><div class="em-t">Tu sistema de cámaras, gratis</div>
-      <div class="em-d" style="max-width:480px;margin:0 auto">Con tus Wyze v3 + una compu encendida en el restaurante tenés: <b>todas las cámaras en vivo acá adentro</b>, grabación 24/7 en disco, retroceder a cualquier momento y detección de personas — <b>₡0 al mes</b>.</div>
+      <div class="em-d" style="max-width:480px;margin:0 auto">Con tus cámaras Wyze + una compu encendida en el restaurante tenés: <b>todo en vivo acá adentro</b>, grabación 24/7, retroceder a cualquier momento y detección de personas — <b>₡0 al mes</b>.</div>
       <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
         <button class="btn btn-primary" onclick="camGuideModal()">${svgIcon('list','icon icon-sm')} Ver los pasos</button>
         ${isAdmin()?`<button class="btn btn-ghost" onclick="camImportModal()">${svgIcon('box','icon icon-sm')} Importar código de conexión</button>`:''}
       </div></div>`;
     return html;
   }
-  html+=`<div class="toolbar">
+  // Pestañas: En vivo · Grabaciones
+  html+=`<div class="seg cam-tabs">
+    <button type="button" class="seg-b ${camTab==='vivo'?'on':''}" onclick="camTab='vivo';render()">${svgIcon('video','icon icon-sm')} En vivo</button>
+    <button type="button" class="seg-b ${camTab==='rec'?'on':''}" onclick="camTab='rec';render()">⏪ Grabaciones</button>
+  </div>`;
+  if(camTab==='rec'){
+    if(rec){
+      html+=`<div class="cam-rec-wrap"><iframe id="camfr-rec" src="${esc(rec.url)}" allow="fullscreen" allowfullscreen referrerpolicy="no-referrer"></iframe></div>
+        <div class="td-empty" style="margin-top:10px">Arrastrá la línea de tiempo para retroceder · los cuadritos marcan <b>personas y movimiento</b> detectados. <button class="chip" onclick="camReload('rec')">↻ Recargar</button> <a class="chip" href="${esc(rec.url)}" target="_blank" rel="noopener">Abrir aparte ↗</a></div>`;
+    } else {
+      html+=`<div class="empty" style="padding:36px 20px"><div class="em-ico">⏪</div><div class="em-t">Grabaciones aún sin conectar</div>
+        <div class="em-d" style="max-width:440px;margin:0 auto">Corré <b>3-CONECTAR-APP.bat</b> en la compu de las cámaras y luego ${isAdmin()?'tocá <b>Importar</b> acá abajo y pegá el código':'pedile a Gerencia que importe el código de conexión'}.</div>
+        ${isAdmin()?`<div style="margin-top:14px"><button class="btn btn-primary" onclick="camImportModal()">${svgIcon('box','icon icon-sm')} Importar código de conexión</button></div>`:''}
+      </div>`;
+    }
+    return html;
+  }
+  // En vivo
+  html+=`<div class="toolbar" style="margin-bottom:10px">
     <div class="seg"><button type="button" class="seg-b ${camView==='mosaico'?'on':''}" onclick="camView='mosaico';render()">Mosaico</button><button type="button" class="seg-b ${camView==='una'?'on':''}" onclick="camView='una';render()">Una por una</button></div>
     <div class="ph-spacer"></div>
-    <button class="btn btn-ghost" style="flex:0 0 auto;padding:9px 13px" onclick="render()" title="Recargar señales">↻ Recargar</button>
+    <button class="btn btn-ghost" style="flex:0 0 auto;padding:9px 13px" onclick="render()" title="Recargar todas las señales">↻ Recargar</button>
   </div>`;
   if(camView==='una'){
     const cur=cams.find(c=>c.id===camSel)||cams[0];
-    html+=`<div class="chipscroll">${cams.map(c=>`<button class="chip ${cur&&c.id===cur.id?'on':''}" onclick="camSel='${c.id}';render()">${esc(c.name)}</button>`).join('')}</div>`;
+    if(cams.length>1) html+=`<div class="chipscroll">${cams.map(c=>`<button class="chip ${cur&&c.id===cur.id?'on':''}" onclick="camSel='${c.id}';render()">${esc(c.name)}</button>`).join('')}</div>`;
     html+=cur?camFrame(cur,true):'';
-    if(isAdmin()&&cur) html+=`<div style="margin-top:10px"><button class="btn btn-ghost" onclick="camModal('${cur.id}')">${svgIcon('edit','icon icon-sm')} Editar esta cámara</button></div>`;
   } else {
     html+=`<div class="cam-grid">${cams.map(c=>camFrame(c,false)).join('')}</div>`;
   }
-  html+=`<div class="td-empty" style="margin-top:12px">Si no se ve: revisá que <b>Tailscale esté encendido en este dispositivo</b> y que la compu del restaurante esté prendida. ${isAdmin()?`<button class="chip" style="margin-left:6px" onclick="camGuideModal()">Guía</button>`:''}</div>`;
+  html+=`<div class="td-empty" style="margin-top:12px">¿No se ve? Revisá que <b>Tailscale</b> esté encendido en este dispositivo y que la compu de las cámaras esté prendida.</div>`;
   return html;
+}
+/* Panel de configuración (gerencia): lista de cámaras + acciones */
+function camConfigModal(){
+  if(!isAdmin()) return;
+  const cams=camList(); const rec=camRec();
+  openModal(`
+    <div class="modal-head"><h3>${svgIcon('video','icon')} Configurar cámaras</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      ${cams.length?`<div class="ip-sec">Cámaras conectadas (${cams.length})</div>
+      ${cams.map(c=>`<div class="camcfg-row"><b>${esc(c.name)}</b><span class="camcfg-url">${esc(c.url)}</span><button class="chip" onclick="camModal('${c.id}')">Editar</button></div>`).join('')}`:'<div class="td-empty">Sin cámaras conectadas todavía.</div>'}
+      <div class="ip-sec">Grabaciones</div>
+      <div class="camcfg-row">${rec?`<b>Conectadas</b><span class="camcfg-url">${esc(rec.url)}</span>`:'<span class="td-empty" style="padding:0">Sin conectar</span>'}<button class="chip" onclick="camModal()">${rec?'Cambiar':'Conectar'}</button></div>
+      <div class="td-empty" style="margin-top:12px">La forma fácil de conectar o actualizar todo: correr <b>3-CONECTAR-APP.bat</b> en la compu de las cámaras e <b>Importar</b> el código.</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost" onclick="camGuideModal()">${svgIcon('list','icon icon-sm')} Guía</button>
+      <button class="btn btn-ghost" onclick="camImportModal()">${svgIcon('box','icon icon-sm')} Importar</button>
+      <button class="btn btn-primary" onclick="camModal()">${svgIcon('plus','icon icon-sm')} Agregar cámara</button>
+    </div>`, true);
 }
 function camModal(id){
   if(!isAdmin()) return;
@@ -4118,6 +4165,7 @@ function camImportSave(){
 }
 window.viewCamaras=viewCamaras; window.camModal=camModal; window.camSave=camSave; window.camDel=camDel; window.camGuideModal=camGuideModal;
 window.camImportModal=camImportModal; window.camImportSave=camImportSave;
+window.camConfigModal=camConfigModal; window.camFull=camFull; window.camReload=camReload;
 
 /* =====================================================================
    VISTA: AUDITORÍA (admin) — movimientos, anti-fraude
