@@ -9,7 +9,7 @@
     {
       "source": "/(.*)",
       "headers": [
-        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://8x8.vc; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' data: blob:; font-src 'self'; connect-src 'self' https://www.gstatic.com https://8x8.vc https://*.8x8.vc wss://*.8x8.vc https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com https://*.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-src 'self' https://8x8.vc; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" },
+        { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'unsafe-inline' https://www.gstatic.com https://8x8.vc; worker-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; media-src 'self' data: blob: https:; font-src 'self'; connect-src 'self' https://www.gstatic.com https://8x8.vc https://*.8x8.vc wss://*.8x8.vc https://*.firebaseio.com wss://*.firebaseio.com https://*.firebaseapp.com https://*.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com; frame-src 'self' https://8x8.vc https:; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; object-src 'none'" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },

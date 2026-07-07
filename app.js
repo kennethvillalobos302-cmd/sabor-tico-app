@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v114 · Caja Blindada: consecutivo + corte relámpago + sello + semáforo';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v115 · Sección Cámaras: seguridad 24/7 sin suscripción (Wyze + puente)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -214,7 +214,7 @@ function mergeAppendOnly(localDB, remoteDB){
    el otro aún no tenía), respetando los borrados con "tombstones". Para un objeto que existe en ambos
    lados, gana la EDICIÓN MÁS RECIENTE (por updatedAt), no "el último que sube"; así un cambio (p.ej.
    renombrar una sucursal) se propaga a todos y no lo revierte un dispositivo con datos viejos. */
-const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory','sucursales','calEvents','bodegas','cajas'];
+const RECON_COLLS=['tasks','pedidos','chats','projects','reservations','clients','shifts','recipes','souvenirs','souvSales','users','attendance','inventory','sucursales','calEvents','bodegas','cajas','camaras'];
 const _stamp=o=>(o&&(o.updatedAt||o.at||o.createdAt))||0;   // marca de tiempo para "edición más reciente gana"
 // REGLA: cualquier BORRADO DURO de una colección de RECON_COLLS DEBE marcar tomb(id) antes de filtrar,
 // o el borrado "revivirá" desde otro dispositivo. Usá delEntity(coll,id) para no olvidarlo nunca.
@@ -511,7 +511,7 @@ function seedSouvenirs(suc){
 
 /* Garantiza que todas las colecciones existan como arreglos (defensa universal:
    se llama en cada render por si entran datos incompletos desde la nube). */
-const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','invoices','recipes','shifts','reservations','clients','souvenirs','souvSales','bodegas','taskLabels','cajas'];
+const DB_COLLECTIONS=['tasks','pedidos','projects','chats','notifs','audit','users','sucursales','inventory','invMoves','invoices','recipes','shifts','reservations','clients','souvenirs','souvSales','bodegas','taskLabels','cajas','camaras'];
 function defaultTaskLabels(){ return [
   {id:uid(),name:'Urgente',color:'#e0533d'},
   {id:uid(),name:'Compras',color:'#5b8def'},
@@ -948,12 +948,13 @@ const NAV_DEF = {
   reservas: { label:'Reservas',    ico:'reserva' },
   souvenir: { label:'Souvenirs',   ico:'gift' },
   caja:     { label:'Caja',        ico:'cash' },
+  camaras:  { label:'Cámaras',     ico:'video' },
   equipo:   { label:'Equipo',      ico:'users' },
   auditoria:{ label:'Movimientos', ico:'shield' },
 };
 // Menú personalizado por puesto
 const ROLE_NAV = {
-  admin:       ['inicio','tareas','pedidos','reservas','souvenir','caja','inventario','recetas','horarios','proyectos','chat','reportes','equipo','auditoria'],
+  admin:       ['inicio','tareas','pedidos','reservas','souvenir','caja','inventario','recetas','horarios','proyectos','chat','reportes','camaras','equipo','auditoria'],
   chef:        ['inicio','tareas','pedidos','reservas','inventario','recetas','horarios','proyectos','chat'],
   cocinero:    ['inicio','tareas','pedidos','inventario','recetas','horarios','proyectos','chat'],
   jefe_salon:  ['inicio','tareas','pedidos','reservas','souvenir','caja','inventario','horarios','proyectos','chat'],
@@ -966,9 +967,9 @@ const ROLE_NAV = {
 };
 // Calendario personal: disponible para todos los puestos (lo agregamos después de Horarios)
 Object.keys(ROLE_NAV).forEach(r=>{ if(!ROLE_NAV[r].includes('calendario')){ const i=ROLE_NAV[r].indexOf('horarios'); if(i>=0) ROLE_NAV[r].splice(i+1,0,'calendario'); else ROLE_NAV[r].splice(1,0,'calendario'); } });
-const ADMIN_GROUP = ['reportes','equipo','auditoria'];
+const ADMIN_GROUP = ['reportes','camaras','equipo','auditoria'];
 // Orden por importancia/uso diario (arriba lo más necesario; abajo lo ocasional)
-const NAV_PRIORITY = ['inicio','tareas','pedidos','caja','inventario','reservas','horarios','chat','recetas','souvenir','calendario','proyectos','reportes','equipo','auditoria'];
+const NAV_PRIORITY = ['inicio','tareas','pedidos','caja','inventario','reservas','horarios','chat','recetas','souvenir','calendario','proyectos','reportes','camaras','equipo','auditoria'];
 function navItems(){
   const ids = ROLE_NAV[me().role] || ['inicio','tareas','pedidos','proyectos','chat'];
   const rank = id => { const i=NAV_PRIORITY.indexOf(id); return i<0?999:i; };
@@ -1088,7 +1089,7 @@ function render(){
   const v=$('#view');
   const map={ inicio:viewInicio, tareas:viewTareas, pedidos:viewPedidos, inventario:viewInventario,
     recetas:viewRecetas, horarios:viewHorarios, calendario:viewCalendario, personal:viewEquipo, proyectos:viewProyectos,
-    chat:viewChat, reportes:viewReportes, reservas:viewReservas, souvenir:viewSouvenir, caja:viewCaja, equipo:viewEquipo, auditoria:viewAuditoria };
+    chat:viewChat, reportes:viewReportes, reservas:viewReservas, souvenir:viewSouvenir, caja:viewCaja, camaras:viewCamaras, equipo:viewEquipo, auditoria:viewAuditoria };
   // si el puesto no tiene acceso a la vista actual, volver a inicio
   if(!(ROLE_NAV[me().role]||[]).includes(SES.view)) SES.view='inicio';
   v.classList.toggle('view-wide', SES.view==='inventario');   // inventario usa todo el ancho de pantalla
@@ -3966,6 +3967,118 @@ window.cajaCloseModal=cajaCloseModal; window.cajaCalc=cajaCalc; window.cajaClose
 window.cajaReview=cajaReview; window.cajaDetail=cajaDetail; window.cajaReportModal=cajaReportModal; window.cajaExportCSV=cajaExportCSV;
 window.cajaSetTc=cajaSetTc; window.cajaFacModal=cajaFacModal; window.cajaFacSave=cajaFacSave; window.cajaFacDel=cajaFacDel; window.cajaFacExportCSV=cajaFacExportCSV;
 window.cajaSpotModal=cajaSpotModal; window.cajaSpotSave=cajaSpotSave;
+
+/* =====================================================================
+   VISTA: CÁMARAS (gerencia) — sistema de seguridad 24/7 sin suscripción
+   Muestra los streams del puente local (wyze-bridge + Frigate vía Tailscale).
+   Guía completa: docs/GUIA-CAMARAS.md en el repositorio.
+   ===================================================================== */
+let camView='mosaico', camSel='';
+function camList(){ return (DB.camaras||[]).filter(c=>c&&c.type!=='rec').sort((a,b)=>(a.ord||0)-(b.ord||0)); }
+function camRec(){ return (DB.camaras||[]).find(c=>c&&c.type==='rec'); }
+function camFrame(c, big){
+  return `<div class="cam-tile ${big?'big':''}">
+    <iframe src="${esc(c.url)}" allow="autoplay; fullscreen" allowfullscreen loading="lazy" referrerpolicy="no-referrer"></iframe>
+    <div class="cam-name">${esc(c.name)}</div>
+    ${big?'':`<button class="cam-expand" title="Ver grande" onclick="camView='una';camSel='${c.id}';render()">${svgIcon('search','icon icon-sm')}</button>`}
+  </div>`;
+}
+function viewCamaras(){
+  const cams=camList(); const rec=camRec();
+  let html=`<div class="page-head"><div><div class="page-title">Cámaras</div><div class="page-sub">Seguridad 24/7 · en vivo y grabaciones · sin suscripción</div></div>
+    <div class="ph-spacer"></div>
+    ${rec?`<a class="btn btn-ghost" style="flex:0 0 auto" href="${esc(rec.url)}" target="_blank" rel="noopener">⏪ Ver grabaciones</a>`:''}
+    ${isAdmin()?`<button class="btn btn-primary" style="flex:0 0 auto" onclick="camModal()">${svgIcon('plus','icon icon-sm')} Agregar cámara</button>`:''}
+  </div>`;
+  if(!cams.length){
+    html+=`<div class="empty" style="padding:40px 20px"><div class="em-ico">📹</div><div class="em-t">Tu sistema de cámaras, gratis</div>
+      <div class="em-d" style="max-width:480px;margin:0 auto">Con tus Wyze v3 + una compu encendida en el restaurante tenés: <b>todas las cámaras en vivo acá adentro</b>, grabación 24/7 en disco, retroceder a cualquier momento y detección de personas — <b>₡0 al mes</b>.</div>
+      <div style="margin-top:16px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-primary" onclick="camGuideModal()">${svgIcon('list','icon icon-sm')} Ver los pasos</button>
+        ${isAdmin()?`<button class="btn btn-ghost" onclick="camModal()">${svgIcon('plus','icon icon-sm')} Ya tengo el puente — conectar</button>`:''}
+      </div></div>`;
+    return html;
+  }
+  html+=`<div class="toolbar">
+    <div class="seg"><button type="button" class="seg-b ${camView==='mosaico'?'on':''}" onclick="camView='mosaico';render()">Mosaico</button><button type="button" class="seg-b ${camView==='una'?'on':''}" onclick="camView='una';render()">Una por una</button></div>
+    <div class="ph-spacer"></div>
+    <button class="btn btn-ghost" style="flex:0 0 auto;padding:9px 13px" onclick="render()" title="Recargar señales">↻ Recargar</button>
+  </div>`;
+  if(camView==='una'){
+    const cur=cams.find(c=>c.id===camSel)||cams[0];
+    html+=`<div class="chipscroll">${cams.map(c=>`<button class="chip ${cur&&c.id===cur.id?'on':''}" onclick="camSel='${c.id}';render()">${esc(c.name)}</button>`).join('')}</div>`;
+    html+=cur?camFrame(cur,true):'';
+    if(isAdmin()&&cur) html+=`<div style="margin-top:10px"><button class="btn btn-ghost" onclick="camModal('${cur.id}')">${svgIcon('edit','icon icon-sm')} Editar esta cámara</button></div>`;
+  } else {
+    html+=`<div class="cam-grid">${cams.map(c=>camFrame(c,false)).join('')}</div>`;
+  }
+  html+=`<div class="td-empty" style="margin-top:12px">Si no se ve: revisá que <b>Tailscale esté encendido en este dispositivo</b> y que la compu del restaurante esté prendida. ${isAdmin()?`<button class="chip" style="margin-left:6px" onclick="camGuideModal()">Guía</button>`:''}</div>`;
+  return html;
+}
+function camModal(id){
+  if(!isAdmin()) return;
+  const c=id?(DB.camaras||[]).find(x=>x&&x.id===id):null;
+  const rec=camRec();
+  openModal(`
+    <div class="modal-head"><h3>${svgIcon('video','icon')} ${c?'Editar cámara':'Agregar cámara'}</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">
+      <div class="field"><label>Nombre</label><input class="input" id="cmName" value="${c?esc(c.name):''}" placeholder="Ej: Comedor" autocomplete="off"></div>
+      <div class="field"><label>Dirección del video (del puente)</label><input class="input" id="cmUrl" value="${c?esc(c.url):''}" placeholder="https://tu-pc.tu-red.ts.net/comedor/" autocomplete="off" style="font-size:13px"></div>
+      <div class="td-empty" style="margin-bottom:14px">Es la dirección que da el puente por cada cámara (Paso 6 de la guía).</div>
+      <div class="ip-sec">Grabaciones (una sola vez)</div>
+      <div class="field"><label>URL de grabaciones (Frigate) <span class="lbl-soft">(opcional)</span></label><input class="input" id="cmRec" value="${rec?esc(rec.url):''}" placeholder="https://tu-pc.tu-red.ts.net:8443" autocomplete="off" style="font-size:13px"></div>
+    </div>
+    <div class="modal-foot">
+      ${c?`<button class="btn btn-danger" onclick="camDel('${c.id}')">${svgIcon('trash','icon icon-sm')} Quitar</button>`:''}
+      <button class="btn btn-ghost" onclick="closeModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="camSave('${c?c.id:''}')">${svgIcon('check','icon icon-sm')} Guardar</button>
+    </div>`, false);
+}
+function camSave(id){
+  if(!isAdmin()) return;
+  const name=$('#cmName').value.trim(), url=$('#cmUrl').value.trim(), recUrl=$('#cmRec').value.trim();
+  if(name||url){
+    if(!name||!url){ toast('Poné nombre y dirección','err'); return; }
+    if(!/^https:\/\//i.test(url)){ toast('La dirección debe empezar con https:// (usá el túnel de Tailscale)','err'); return; }
+    DB.camaras=DB.camaras||[];
+    if(id){ const c=DB.camaras.find(x=>x&&x.id===id); if(c){ c.name=name; c.url=url; c.updatedAt=now(); } }
+    else DB.camaras.push({id:uid(),name,url,ord:camList().length,updatedAt:now()});
+    audit('camaras',`${id?'editó':'agregó'} la cámara "${name}"`,'all');
+  }
+  // URL de grabaciones (registro único)
+  const rec=camRec();
+  if(recUrl){ if(rec){ rec.url=recUrl; rec.updatedAt=now(); } else DB.camaras.push({id:uid(),type:'rec',name:'Grabaciones',url:recUrl,updatedAt:now()}); }
+  else if(rec){ DB.camaras=DB.camaras.filter(x=>x!==rec); tomb(rec.id); }
+  closeModal(); toast('Guardado ✅','ok'); save(); render();
+}
+function camDel(id){
+  if(!isAdmin()) return;
+  const c=(DB.camaras||[]).find(x=>x&&x.id===id); if(!c) return;
+  if(!confirm(`¿Quitar la cámara "${c.name}"?`)) return;
+  DB.camaras=DB.camaras.filter(x=>x.id!==id); tomb(id);
+  audit('camaras',`quitó la cámara "${c.name}"`,'all');
+  closeModal(); toast('Cámara quitada','ok'); save(); render();
+}
+function camGuideModal(){
+  openModal(`
+    <div class="modal-head"><h3>📹 Montar el sistema de cámaras (una vez, ~40 min)</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body" style="font-size:13.5px;line-height:1.7">
+      <div class="ip-sec">Qué se ocupa</div>
+      <ul style="margin:0 0 12px 18px"><li>Una <b>compu con Windows encendida 24/7</b> en el restaurante (una vieja sirve).</li><li>Un <b>disco de 1 TB</b> para grabaciones (~2–4 semanas, se recicla solo).</li><li>Recomendado: <b>microSD</b> en cada cámara (respaldo si apagan la compu).</li></ul>
+      <div class="ip-sec">Los 6 pasos</div>
+      <ol style="margin:0 0 12px 18px">
+        <li><b>Llave de Wyze</b>: crear una API Key gratis en el portal de Wyze.</li>
+        <li><b>Instalar</b> Docker Desktop y Tailscale en la compu (y Tailscale en tu celular).</li>
+        <li><b>Configurar el puente</b> (wyze-bridge saca el video de las Wyze) y el <b>grabador</b> (Frigate: 24/7 + línea de tiempo + detección de personas). Es copiar y pegar 2 archivos.</li>
+        <li><b>Túnel seguro</b>: 2 comandos de Tailscale → dirección https propia, solo tus dispositivos.</li>
+        <li><b>Que nunca se duerma</b>: energía en "nunca suspender" + Docker al arrancar.</li>
+        <li><b>Conectar acá</b>: Agregar cámara → pegar la dirección de cada una. Listo.</li>
+      </ol>
+      <div class="td-empty">La guía completa con los comandos exactos para copiar y pegar está en el repositorio: <b>docs/GUIA-CAMARAS.md</b> — pedísela a soporte o abrila en GitHub. Cuando tengás la compu lista, se sigue en 40 minutos.</div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-primary" onclick="closeModal()">Entendido</button></div>`, true);
+}
+window.viewCamaras=viewCamaras; window.camModal=camModal; window.camSave=camSave; window.camDel=camDel; window.camGuideModal=camGuideModal;
 
 /* =====================================================================
    VISTA: AUDITORÍA (admin) — movimientos, anti-fraude
