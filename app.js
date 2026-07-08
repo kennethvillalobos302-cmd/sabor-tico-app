@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v122 · Secciones extra por persona (Reservas para Melanie)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v123 · Permisos por persona: activar/desactivar secciones (Equipo)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -982,8 +982,16 @@ function navAllowedIds(u){
   u=u||me(); if(!u) return [];
   const base=(ROLE_NAV[u.role]||['inicio','tareas','pedidos','proyectos','chat']).slice();
   (u.navExtra||[]).forEach(id=>{ if(NAV_DEF[id] && !base.includes(id)) base.push(id); });
-  return base;
+  const off=new Set(u.navOff||[]);                          // secciones del puesto APAGADAS para esta persona
+  return base.filter(id=> id==='inicio' || !off.has(id));   // Inicio nunca se puede apagar
 }
+/* Catálogo de permisos agrupado (para el editor de usuario) */
+const PERM_GROUPS=[
+  {label:'Trabajo diario',      ids:['tareas','pedidos','horarios','calendario','proyectos','chat']},
+  {label:'Salón y ventas',      ids:['reservas','souvenir','caja']},
+  {label:'Cocina y bodega',     ids:['recetas','inventario']},
+  {label:'Control (gerencia)',  ids:['reportes','camaras','equipo','auditoria']},
+];
 const ADMIN_GROUP = ['reportes','camaras','equipo','auditoria'];
 // Orden por importancia/uso diario (arriba lo más necesario; abajo lo ocasional)
 const NAV_PRIORITY = ['inicio','tareas','pedidos','caja','inventario','reservas','horarios','chat','recetas','souvenir','calendario','proyectos','reportes','camaras','equipo','auditoria'];
@@ -3219,7 +3227,7 @@ function userForm(title,u){
   <div class="modal-body">
     <div class="field"><label>Nombre completo</label><input class="input" id="uName" value="${u?esc(u.name):''}" placeholder="Nombre y apellido"></div>
     <div class="row2">
-      <div class="field"><label>Puesto</label><select class="select" id="uRole">${ROLE_KEYS.map(r=>`<option value="${r}" ${u&&u.role===r?'selected':''}>${ROLES[r].label}</option>`).join('')}</select></div>
+      <div class="field"><label>Puesto</label><select class="select" id="uRole" onchange="uPermsSync()">${ROLE_KEYS.map(r=>`<option value="${r}" ${u&&u.role===r?'selected':''}>${ROLES[r].label}</option>`).join('')}</select></div>
       <div class="field"><label>PIN (4 dígitos)</label><input class="input" id="uPin" type="password" inputmode="numeric" maxlength="4" value="" placeholder="${u?'Dejar en blanco = no cambiar':'4 dígitos'}"></div>
     </div>
     <div class="row2">
@@ -3227,29 +3235,56 @@ function userForm(title,u){
       <div class="field"><label>Teléfono</label><input class="input" id="uPhone" value="${u?esc(u.phone||''):''}" placeholder="Ej: 8888-8888"></div>
     </div>
     ${u?`<div class="field"><label>Estado</label><select class="select" id="uActive"><option value="1" ${u.active?'selected':''}>Activo</option><option value="0" ${!u.active?'selected':''}>Inactivo</option></select></div>`:''}
-    <div class="field"><label>Secciones extra <span class="lbl-soft">(se suman a las de su puesto, solo para esta persona)</span></label>
-      <div class="uextra-grid">${['reservas','souvenir','caja','inventario','recetas','camaras','reportes','auditoria'].map(k=>`<label class="uextra"><input type="checkbox" class="uext" value="${k}" ${u&&(u.navExtra||[]).includes(k)?'checked':''}> ${NAV_DEF[k].label}</label>`).join('')}</div>
-    </div>
+    ${isAdmin()?`<div class="field"><label>Permisos de secciones <span class="lbl-soft">(marcado = lo ve; solo para esta persona)</span></label>
+      ${PERM_GROUPS.map(g=>`<div class="uperm-sec">${g.label}</div>
+        <div class="uextra-grid">${g.ids.map(k=>{
+          const eff = u ? navAllowedIds(u).includes(k) : (ROLE_NAV[ROLE_KEYS[0]]||[]).includes(k);
+          const lock = u && u.role==='admin' && k==='equipo';   // gerencia no puede quedarse sin Equipo (candado anti-bloqueo)
+          return `<label class="uextra ${lock?'lock':''}"><input type="checkbox" class="uperm" value="${k}" ${eff?'checked':''} ${lock?'checked disabled':''}> ${NAV_DEF[k].label}</label>`;
+        }).join('')}</div>`).join('')}
+      <div class="td-empty" style="margin-top:8px">Al cambiar el puesto, las casillas vuelven a lo típico de ese puesto — después ajustá lo fino.</div>
+    </div>`:''}
   </div>
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveUser('${u?u.id:''}')">Guardar</button></div>`;
+}
+/* Al cambiar el puesto en el editor, las casillas vuelven a lo típico de ese puesto */
+function uPermsSync(){
+  const role=$('#uRole')?$('#uRole').value:''; if(!role) return;
+  const base=new Set(ROLE_NAV[role]||[]);
+  document.querySelectorAll('.uperm').forEach(b=>{ if(!b.disabled) b.checked=base.has(b.value); });
+}
+window.uPermsSync=uPermsSync;
+/* Lee el grid de permisos → {navExtra, navOff} respecto al puesto elegido */
+function _readPerms(role, prev){
+  const boxes=[...document.querySelectorAll('.uperm')];
+  if(!boxes.length) return { navExtra:(prev&&prev.navExtra)||[], navOff:(prev&&prev.navOff)||[] };   // sin grid: conservar
+  const roleSet=new Set(ROLE_NAV[role]||[]);
+  const navExtra=[], navOff=[];
+  boxes.forEach(b=>{
+    const k=b.value, on=b.checked||b.disabled;
+    if(on && !roleSet.has(k)) navExtra.push(k);
+    if(!on && roleSet.has(k)) navOff.push(k);
+  });
+  if(role==='admin'){ const i=navOff.indexOf('equipo'); if(i>=0) navOff.splice(i,1); }   // anti-bloqueo de gerencia
+  return { navExtra, navOff };
 }
 async function saveUser(id){
   const name=$('#uName').value.trim(); if(!name){ toast('Ponele nombre','err'); return; }
   const role=$('#uRole').value, sucursalId=$('#uSuc').value, phone=($('#uPhone')?$('#uPhone').value.trim():'');
   const pinRaw=($('#uPin')?$('#uPin').value.trim():'');
-  // secciones extra individuales (sin repetir las que ya trae el puesto)
-  const navExtra=[...document.querySelectorAll('.uext:checked')].map(x=>x.value).filter(k=>!(ROLE_NAV[role]||[]).includes(k));
+  const perms=_readPerms(role, id?userById(id):null);
+  const permTxt=(perms.navExtra.length||perms.navOff.length)?` (permisos: +${perms.navExtra.join(',')||'—'} · −${perms.navOff.join(',')||'—'})`:'';
   if(id){
     const u=userById(id); if(!u) return;
-    u.name=name; u.role=role; u.sucursalId=sucursalId; u.phone=phone; u.active=$('#uActive').value==='1'; u.navExtra=navExtra; u.updatedAt=now();
+    u.name=name; u.role=role; u.sucursalId=sucursalId; u.phone=phone; u.active=$('#uActive').value==='1'; u.navExtra=perms.navExtra; u.navOff=perms.navOff; u.updatedAt=now();
     if(pinRaw){ if(!/^\d{4}$/.test(pinRaw)){ toast('El PIN debe ser de 4 dígitos','err'); return; } await setUserPin(u,pinRaw); u.mustChangePin=false; }
-    audit('equipo',`editó al usuario ${name}${navExtra.length?` (extra: ${navExtra.join(', ')})`:''}`);
+    audit('equipo',`editó al usuario ${name}${permTxt}`);
   } else {
     if(!/^\d{4}$/.test(pinRaw)){ toast('Poné un PIN de 4 dígitos para el nuevo usuario','err'); return; }
-    const u={id:uid(),name,role,sucursalId,phone,navExtra,active:true,mustChangePin:true,at:now(),updatedAt:now()};
+    const u={id:uid(),name,role,sucursalId,phone,navExtra:perms.navExtra,navOff:perms.navOff,active:true,mustChangePin:true,at:now(),updatedAt:now()};
     await setUserPin(u,pinRaw);
     DB.users.push(u);
-    audit('equipo',`agregó al usuario ${name} (${roleInfo(role).short})`);
+    audit('equipo',`agregó al usuario ${name} (${roleInfo(role).short})${permTxt}`);
   }
   closeModal(); toast('Usuario guardado','ok'); render();
 }
