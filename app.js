@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v121 · Cámaras: rescate directo desde la nube + aviso de conexión';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v122 · Secciones extra por persona (Reservas para Melanie)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -976,17 +976,25 @@ const ROLE_NAV = {
 };
 // Calendario personal: disponible para todos los puestos (lo agregamos después de Horarios)
 Object.keys(ROLE_NAV).forEach(r=>{ if(!ROLE_NAV[r].includes('calendario')){ const i=ROLE_NAV[r].indexOf('horarios'); if(i>=0) ROLE_NAV[r].splice(i+1,0,'calendario'); else ROLE_NAV[r].splice(1,0,'calendario'); } });
+/* Secciones por persona: las del puesto + las EXTRA asignadas individualmente (u.navExtra)
+   — p.ej. darle Reservas a alguien de Contabilidad sin cambiarle el puesto. */
+function navAllowedIds(u){
+  u=u||me(); if(!u) return [];
+  const base=(ROLE_NAV[u.role]||['inicio','tareas','pedidos','proyectos','chat']).slice();
+  (u.navExtra||[]).forEach(id=>{ if(NAV_DEF[id] && !base.includes(id)) base.push(id); });
+  return base;
+}
 const ADMIN_GROUP = ['reportes','camaras','equipo','auditoria'];
 // Orden por importancia/uso diario (arriba lo más necesario; abajo lo ocasional)
 const NAV_PRIORITY = ['inicio','tareas','pedidos','caja','inventario','reservas','horarios','chat','recetas','souvenir','calendario','proyectos','reportes','camaras','equipo','auditoria'];
 function navItems(){
-  const ids = ROLE_NAV[me().role] || ['inicio','tareas','pedidos','proyectos','chat'];
+  const ids = navAllowedIds(me());
   const rank = id => { const i=NAV_PRIORITY.indexOf(id); return i<0?999:i; };
   return ids.slice().sort((a,b)=>rank(a)-rank(b)).map(id=>({id,...NAV_DEF[id]}));
 }
 // Barra inferior del celular: lo más usado a mano. Mensajes va junto a Tareas.
 function bottomNavItems(){
-  const ids = ROLE_NAV[me().role] || [];
+  const ids = navAllowedIds(me());
   const want = ['inicio','tareas','chat','pedidos'];          // Inicio · Tareas · Mensajes · Pedidos
   const pick = want.filter(id=>ids.includes(id));
   ids.forEach(id=>{ if(pick.length<4 && pick.indexOf(id)<0) pick.push(id); });  // completar si al puesto le falta alguno
@@ -1100,7 +1108,7 @@ function render(){
     recetas:viewRecetas, horarios:viewHorarios, calendario:viewCalendario, personal:viewEquipo, proyectos:viewProyectos,
     chat:viewChat, reportes:viewReportes, reservas:viewReservas, souvenir:viewSouvenir, caja:viewCaja, camaras:viewCamaras, equipo:viewEquipo, auditoria:viewAuditoria };
   // si el puesto no tiene acceso a la vista actual, volver a inicio
-  if(!(ROLE_NAV[me().role]||[]).includes(SES.view)) SES.view='inicio';
+  if(!navAllowedIds(me()).includes(SES.view)) SES.view='inicio';
   v.classList.toggle('view-wide', SES.view==='inventario');   // inventario usa todo el ancho de pantalla
   try{
     v.innerHTML = de((map[SES.view]||viewInicio)());
@@ -3219,6 +3227,9 @@ function userForm(title,u){
       <div class="field"><label>Teléfono</label><input class="input" id="uPhone" value="${u?esc(u.phone||''):''}" placeholder="Ej: 8888-8888"></div>
     </div>
     ${u?`<div class="field"><label>Estado</label><select class="select" id="uActive"><option value="1" ${u.active?'selected':''}>Activo</option><option value="0" ${!u.active?'selected':''}>Inactivo</option></select></div>`:''}
+    <div class="field"><label>Secciones extra <span class="lbl-soft">(se suman a las de su puesto, solo para esta persona)</span></label>
+      <div class="uextra-grid">${['reservas','souvenir','caja','inventario','recetas','camaras','reportes','auditoria'].map(k=>`<label class="uextra"><input type="checkbox" class="uext" value="${k}" ${u&&(u.navExtra||[]).includes(k)?'checked':''}> ${NAV_DEF[k].label}</label>`).join('')}</div>
+    </div>
   </div>
   <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal()">Cancelar</button><button class="btn btn-primary" onclick="saveUser('${u?u.id:''}')">Guardar</button></div>`;
 }
@@ -3226,14 +3237,16 @@ async function saveUser(id){
   const name=$('#uName').value.trim(); if(!name){ toast('Ponele nombre','err'); return; }
   const role=$('#uRole').value, sucursalId=$('#uSuc').value, phone=($('#uPhone')?$('#uPhone').value.trim():'');
   const pinRaw=($('#uPin')?$('#uPin').value.trim():'');
+  // secciones extra individuales (sin repetir las que ya trae el puesto)
+  const navExtra=[...document.querySelectorAll('.uext:checked')].map(x=>x.value).filter(k=>!(ROLE_NAV[role]||[]).includes(k));
   if(id){
     const u=userById(id); if(!u) return;
-    u.name=name; u.role=role; u.sucursalId=sucursalId; u.phone=phone; u.active=$('#uActive').value==='1'; u.updatedAt=now();
+    u.name=name; u.role=role; u.sucursalId=sucursalId; u.phone=phone; u.active=$('#uActive').value==='1'; u.navExtra=navExtra; u.updatedAt=now();
     if(pinRaw){ if(!/^\d{4}$/.test(pinRaw)){ toast('El PIN debe ser de 4 dígitos','err'); return; } await setUserPin(u,pinRaw); u.mustChangePin=false; }
-    audit('equipo',`editó al usuario ${name}`);
+    audit('equipo',`editó al usuario ${name}${navExtra.length?` (extra: ${navExtra.join(', ')})`:''}`);
   } else {
     if(!/^\d{4}$/.test(pinRaw)){ toast('Poné un PIN de 4 dígitos para el nuevo usuario','err'); return; }
-    const u={id:uid(),name,role,sucursalId,phone,active:true,mustChangePin:true,at:now(),updatedAt:now()};
+    const u={id:uid(),name,role,sucursalId,phone,navExtra,active:true,mustChangePin:true,at:now(),updatedAt:now()};
     await setUserPin(u,pinRaw);
     DB.users.push(u);
     audit('equipo',`agregó al usuario ${name} (${roleInfo(role).short})`);
@@ -7585,7 +7598,7 @@ function renderGlobalSearch(){
   const q=($('#gsInput')?$('#gsInput').value:'').trim().toLowerCase();
   if(q.length<2){ box.innerHTML=`<div class="page-sub">Escribí al menos 2 letras…</div>`; return; }
   const hit=s=>String(s||'').toLowerCase().includes(q);
-  const cv=v=>(ROLE_NAV[me().role]||[]).includes(v);
+  const cv=v=>navAllowedIds(me()).includes(v);
   let html='';
   const tasks=(DB.tasks||[]).filter(t=>t&&inScope(t.sucursalId)&&(hit(t.title)||hit(t.desc))).slice(0,8);
   if(tasks.length) html+=`<div class="gs-group">Tareas</div>`+tasks.map(t=>gsItem('check',t.title,statusLabel(t.status),`gsGo('tareas','taskDetail','${t.id}')`)).join('');
@@ -7853,7 +7866,7 @@ window.pushEnable=pushEnable; window.pushDisable=pushDisable; window.pushToggle=
 // Tras login: aplicar deep-link de una notificación y re-guardar la suscripción bajo el usuario actual
 async function pushRefreshOnce(){
   if(_pushRefreshed || !me()) return; _pushRefreshed=true;
-  try{ if(_pushGoView){ const v=_pushGoView; _pushGoView=''; if((ROLE_NAV[me().role]||[]).includes(v)){ SES.view=v; setTimeout(render,0); } } }catch(_){}
+  try{ if(_pushGoView){ const v=_pushGoView; _pushGoView=''; if(navAllowedIds(me()).includes(v)){ SES.view=v; setTimeout(render,0); } } }catch(_){}
   if(!pushSupported() || Notification.permission!=='granted' || localStorage.getItem(PUSH_ON_KEY)!=='1') return;
   try{ const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); if(sub) await pushStore(sub); }catch(_){}
 }
