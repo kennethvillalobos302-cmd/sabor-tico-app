@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v123 · Permisos por persona: activar/desactivar secciones (Equipo)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v124 · Sincroniza por HTTPS cuando el tiempo real está bloqueado (VPN/antivirus)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -13,6 +13,9 @@ let _migrateReset = false;
 const FB = (window.SABOR_CLOUD && window.SABOR_CLOUD.databaseURL) ? window.SABOR_CLOUD : null;
 const CLIENT_ID = Math.random().toString(36).slice(2);
 let fbdb=null, cloudOn=false, _applyingRemote=false, _saveTimer=null, _cloudFailed=false, _cloudConnected=false, _connDelay=null;
+// Respaldo por HTTPS (REST): cuando el WebSocket en tiempo real está bloqueado (VPN, antivirus,
+// proxys, redes restrictivas), la app sincroniza igual por HTTPS normal (que sí pasa).
+let _restMode=false, _restTimer=null, _restFails=0, _lastRemoteAt=0, _tok=null, _tokAt=0;
 
 /* ---------------- Roles ---------------- */
 const ROLES = {
@@ -155,13 +158,69 @@ async function cloudPush(){
   if(!cloudOn || !fbdb) return;
   try{
     try{ stampEdits(); }catch(_){}   // por si se llamó cloudPush directo (no vía save)
-    const payload={ data:DB, client:CLIENT_ID, at:Date.now() };
+    let at=Date.now(); if(at<=_lastRemoteAt) at=_lastRemoteAt+1;   // marca de tiempo siempre creciente
+    _lastRemoteAt=at;
+    const payload={ data:DB, client:CLIENT_ID, at };
     // Aviso suave: si el estado compartido crece demasiado (muchos adjuntos), conviene depurar
     if(!_sizeWarned){ try{ if(JSON.stringify(payload).length > 8*1024*1024){ _sizeWarned=true; if(typeof toast==='function') toast('Los datos están muy pesados (muchos adjuntos). Conviene depurar.','err'); } }catch(_){} }
-    await fbdb.ref('state').set(payload);
+    // Si el WebSocket está conectado, usar el SDK (rápido). Si no, mandar por HTTPS (REST):
+    // así los cambios llegan a la nube aunque el tiempo real esté bloqueado.
+    if(_cloudConnected){ try{ await fbdb.ref('state').set(payload); return; }catch(e){ console.warn('cloud push ws', e); } }
+    await restPush(payload);
   }
   catch(e){ console.warn('cloud push', e); }
 }
+/* ---- Respaldo de sincronización por HTTPS (REST) ---- */
+function restBase(){ return String(FB.databaseURL||'').replace(/\/$/,'') + '/state.json'; }
+async function cloudToken(){
+  try{
+    const u = firebase.auth && firebase.auth().currentUser; if(!u) return null;
+    if(_tok && Date.now()-_tokAt < 50*60e3) return _tok;
+    _tok = await u.getIdToken(); _tokAt=Date.now(); return _tok;
+  }catch(_){ return null; }
+}
+// Adoptar un estado remoto (viene por WebSocket o por REST): mismo camino de reconciliación.
+function applyRemoteState(v){
+  if(!v || !v.data) return;
+  if(v.at) _lastRemoteAt = Math.max(_lastRemoteAt, +v.at||0);
+  if(v.client===CLIENT_ID) return;                       // eco de mi propio guardado
+  if(!Array.isArray(v.data.users) || v.data.users.length===0){ console.warn('estado remoto inválido, ignorado'); return; }
+  let needRepush=false; _applyingRemote=true;
+  try{
+    needRepush = reconcile(DB, v.data);
+    DB=v.data; migrate(true); rebuildEntSnap();
+    try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
+    const modalOpen=$('#modalBg') && $('#modalBg').classList.contains('on');
+    if(me()){ if(!modalOpen) render(); try{ checkNotifPops(); }catch(_){} } else { renderLogin(); }
+  } finally { _applyingRemote=false; }
+  if(needRepush) save();
+}
+async function restPull(){
+  const t=await cloudToken(); if(!t){ _restFail(); return; }
+  try{
+    const r=await fetch(restBase()+'?auth='+t, {cache:'no-store'});
+    if(!r.ok){ _restFail(); return; }
+    const v=await r.json();
+    if(v && v.data && (+v.at||0)!==_lastRemoteAt) applyRemoteState(v);
+    _restOk();
+  }catch(_){ _restFail(); }
+}
+async function restPush(payload){
+  const t=await cloudToken(); if(!t) return false;
+  try{ const r=await fetch(restBase()+'?auth='+t, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); return r.ok; }
+  catch(_){ return false; }
+}
+function _cloudTag(txt, off){ const t=$('#cloudTag'); if(!t) return; t.textContent=txt; t.classList.toggle('off', !!off); }
+function _restOk(){ _restFails=0; if(_restMode) _cloudTag('Sincronizado', false); }
+function _restFail(){ _restFails++; if(_restMode && _restFails>=3) _cloudTag('Sin conexión', true); }
+function startRest(){
+  if(_restMode) return; _restMode=true; _restFails=0;
+  _cloudTag('Conectando…', true);
+  restPull();                                   // primer jalón inmediato
+  if(_restTimer) clearInterval(_restTimer);
+  _restTimer=setInterval(()=>{ if(!_cloudConnected) restPull(); }, 6000);
+}
+function stopRest(){ _restMode=false; _restFails=0; if(_restTimer){ clearInterval(_restTimer); _restTimer=null; } }
 /* Reconciliar listas que SOLO CRECEN (mensajes de chat, chat de proyectos, comentarios):
    unir por id lo local + lo remoto, en vez de que un blob pise al otro. Así, si dos personas
    escriben casi al mismo tiempo, no se pierde ningún mensaje. Respeta el borrado (deleted) y
@@ -280,6 +339,15 @@ async function cloudInit(){
       setTimeout(()=>{ try{ toast('Sin conexión a la nube: activá el inicio anónimo en Firebase (ver docs/SEGURIDAD.md).','err'); }catch(_){} }, 1500);
     }
   }
+  // El WebSocket puede estar bloqueado (VPN/antivirus/proxy) pero HTTPS pasa: cargar por REST.
+  // La auth anónima usa HTTPS, así que hay token aunque el tiempo real esté caído.
+  if(getFailed){
+    try{
+      const t=await cloudToken();
+      if(t){ const r=await withTimeout(fetch(restBase()+'?auth='+t,{cache:'no-store'}), 8000);
+        if(r && r.ok){ const rv=await r.json(); if(rv && rv.data && Array.isArray(rv.data.users) && rv.data.users.length){ val=rv; getFailed=false; if(rv.at)_lastRemoteAt=+rv.at||0; } } }
+    }catch(_){}
+  }
   let _bootMerged=false;
   if(val && val.data){
     // unir mensajes locales (de una sesión offline) con el estado del servidor para no perderlos
@@ -303,31 +371,17 @@ async function cloudInit(){
   // resuelve) ni se pisan datos buenos del servidor que no pudimos leer. Fire-and-forget (sin await).
   if(!getFailed && (!(val && val.data) || _migrateReset || _bootMerged)){ cloudPush(); _migrateReset=false; }
   try{
-    fbdb.ref('state').on('value', (snap)=>{
-      const v=snap.val(); if(!v || !v.data || v.client===CLIENT_ID) return;
-      // Defensa: nunca dejar que un estado vacío o corrupto (sin usuarios) borre todo en cada dispositivo
-      if(!Array.isArray(v.data.users) || v.data.users.length===0){ console.warn('estado remoto inválido, ignorado'); return; }
-      let needRepush=false;
-      _applyingRemote=true;
-      try{
-        needRepush = reconcile(DB, v.data);   // unir objetos nuevos + mensajes/comentarios locales (no perder nada)
-        DB=v.data; migrate(true); // normalizar datos entrantes (sin la limpieza destructiva) para que nunca falten colecciones
-        rebuildEntSnap();   // el estado adoptado es la nueva base (no marcar como "edición local" lo que vino remoto)
-        try{ localStorage.setItem(DB_KEY, JSON.stringify(DB)); }catch(e){}
-        const modalOpen=$('#modalBg').classList.contains('on');
-        if(me()){ if(!modalOpen) render(); try{ checkNotifPops(); }catch(_){} } else { renderLogin(); }
-      } finally { _applyingRemote=false; }
-      if(needRepush) save();   // el remoto no tenía algunos de nuestros mensajes: reenviarlos para que lleguen a todos
-    });
+    fbdb.ref('state').on('value', (snap)=>{ applyRemoteState(snap.val()); });
     // Indicador de conexión real: "Sincronizado" / "Conectando…" / "Sin conexión".
-    // Mientras reintenta mostramos "Conectando…"; solo pasa a "Sin conexión" si sigue caído tras 8s.
+    // Si el WebSocket no conecta en 8s, arranca el respaldo por HTTPS (REST): la app
+    // sigue sincronizando aunque el tiempo real esté bloqueado por VPN/antivirus/proxy.
     fbdb.ref('.info/connected').on('value', s=>{
-      const on=!!(s&&s.val()); _cloudConnected=on; const t=$('#cloudTag'); if(!t) return;
+      const on=!!(s&&s.val()); _cloudConnected=on;
       if(_connDelay){ clearTimeout(_connDelay); _connDelay=null; }
-      if(on){ t.textContent='Sincronizado'; t.classList.remove('off'); }
+      if(on){ stopRest(); _cloudTag('Sincronizado', false); }
       else {
-        t.textContent='Conectando…'; t.classList.add('off');
-        _connDelay=setTimeout(()=>{ if(!_cloudConnected){ const tt=$('#cloudTag'); if(tt) tt.textContent='Sin conexión'; } }, 8000);
+        _cloudTag('Conectando…', true);
+        _connDelay=setTimeout(()=>{ if(!_cloudConnected) startRest(); }, 8000);
       }
     });
   }catch(e){ console.warn('cloud realtime', e); }
@@ -336,9 +390,12 @@ async function cloudInit(){
 // Forzar reconexión a la nube (tocar la etiqueta de estado). Útil si el canal en vivo se quedó caído.
 function cloudReconnect(){
   if(!fbdb){ toast('La nube no está inicializada','err'); return; }
-  const t=$('#cloudTag'); if(t){ t.textContent='Conectando…'; t.classList.add('off'); }
+  _cloudTag('Conectando…', true);
   try{ fbdb.goOffline(); }catch(_){}
   setTimeout(()=>{ try{ fbdb.goOnline(); }catch(_){} }, 600);
+  // respaldo inmediato por HTTPS: aunque el WebSocket no vuelva, jala y empuja por REST
+  restPull(); cloudPush();
+  setTimeout(()=>{ if(!_cloudConnected) startRest(); }, 2500);
   toast('Reconectando a la nube…','ok');
 }
 window.cloudReconnect=cloudReconnect;
