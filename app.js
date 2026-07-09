@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v124 · Sincroniza por HTTPS cuando el tiempo real está bloqueado (VPN/antivirus)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v125 · Sincronización a prueba de fallos (HTTPS + latido) y auto-actualización';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -15,7 +15,7 @@ const CLIENT_ID = Math.random().toString(36).slice(2);
 let fbdb=null, cloudOn=false, _applyingRemote=false, _saveTimer=null, _cloudFailed=false, _cloudConnected=false, _connDelay=null;
 // Respaldo por HTTPS (REST): cuando el WebSocket en tiempo real está bloqueado (VPN, antivirus,
 // proxys, redes restrictivas), la app sincroniza igual por HTTPS normal (que sí pasa).
-let _restMode=false, _restTimer=null, _restFails=0, _lastRemoteAt=0, _tok=null, _tokAt=0;
+let _restMode=false, _hbTimer=null, _restFails=0, _lastRemoteAt=0, _tok=null, _tokAt=0;
 
 /* ---------------- Roles ---------------- */
 const ROLES = {
@@ -163,15 +163,18 @@ async function cloudPush(){
     const payload={ data:DB, client:CLIENT_ID, at };
     // Aviso suave: si el estado compartido crece demasiado (muchos adjuntos), conviene depurar
     if(!_sizeWarned){ try{ if(JSON.stringify(payload).length > 8*1024*1024){ _sizeWarned=true; if(typeof toast==='function') toast('Los datos están muy pesados (muchos adjuntos). Conviene depurar.','err'); } }catch(_){} }
-    // Si el WebSocket está conectado, usar el SDK (rápido). Si no, mandar por HTTPS (REST):
-    // así los cambios llegan a la nube aunque el tiempo real esté bloqueado.
-    if(_cloudConnected){ try{ await fbdb.ref('state').set(payload); return; }catch(e){ console.warn('cloud push ws', e); } }
-    await restPush(payload);
+    // ENTREGA CONFIABLE por HTTPS: llega a la nube aunque el WebSocket esté bloqueado o "zombie"
+    // (conectado pero sin entregar). El PUT dispara igual los listeners en tiempo real de los demás.
+    const ok = await restPush(payload);
+    if(ok) return;
+    // Sin HTTPS (realmente sin internet): usar el SDK, que encola y entrega al reconectar.
+    try{ await fbdb.ref('state').set(payload); }catch(e){ console.warn('cloud push', e); }
   }
   catch(e){ console.warn('cloud push', e); }
 }
-/* ---- Respaldo de sincronización por HTTPS (REST) ---- */
+/* ---- Sincronización por HTTPS (REST): funciona aunque el tiempo real esté bloqueado ---- */
 function restBase(){ return String(FB.databaseURL||'').replace(/\/$/,'') + '/state.json'; }
+function stateAtUrl(){ return String(FB.databaseURL||'').replace(/\/$/,'') + '/state/at.json'; }
 async function cloudToken(){
   try{
     const u = firebase.auth && firebase.auth().currentUser; if(!u) return null;
@@ -196,31 +199,45 @@ function applyRemoteState(v){
   if(needRepush) save();
 }
 async function restPull(){
-  const t=await cloudToken(); if(!t){ _restFail(); return; }
+  const t=await cloudToken(); if(!t){ _restFail(); return false; }
   try{
     const r=await fetch(restBase()+'?auth='+t, {cache:'no-store'});
-    if(!r.ok){ _restFail(); return; }
+    if(!r.ok){ _restFail(); return false; }
     const v=await r.json();
     if(v && v.data && (+v.at||0)!==_lastRemoteAt) applyRemoteState(v);
-    _restOk();
-  }catch(_){ _restFail(); }
+    _restOk(); return true;
+  }catch(_){ _restFail(); return false; }
 }
 async function restPush(payload){
   const t=await cloudToken(); if(!t) return false;
   try{ const r=await fetch(restBase()+'?auth='+t, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)}); return r.ok; }
   catch(_){ return false; }
 }
+/* RED DE SEGURIDAD PERMANENTE: cada pocos segundos lee SOLO la marca de tiempo 'at' (unos bytes);
+   si cambió respecto a lo que ya aplicamos, baja el estado completo. Corre SIEMPRE (conectado o no),
+   así los cambios (tareas, mensajes) llegan aunque el canal en tiempo real esté caído o zombie. */
+async function syncCheck(){
+  if(!cloudOn) return;
+  const t=await cloudToken(); if(!t) return;
+  try{
+    const r=await fetch(stateAtUrl()+'?auth='+t, {cache:'no-store'});
+    if(!r.ok){ if(_restMode) _restFail(); return; }
+    const at=+(await r.json())||0;
+    if(at>_lastRemoteAt){ await restPull(); }
+    else if(_restMode){ _restOk(); }
+  }catch(_){ if(_restMode) _restFail(); }
+}
+function startSyncHeartbeat(){
+  if(_hbTimer) return;
+  _hbTimer=setInterval(()=>{ if(!document.hidden) syncCheck(); }, 8000);   // 8s: cambios llegan pronto, costo mínimo
+  document.addEventListener('visibilitychange', ()=>{ if(!document.hidden) syncCheck(); });
+  window.addEventListener('online', ()=>{ try{ if(fbdb) fbdb.goOnline(); }catch(_){}; syncCheck(); });
+}
 function _cloudTag(txt, off){ const t=$('#cloudTag'); if(!t) return; t.textContent=txt; t.classList.toggle('off', !!off); }
 function _restOk(){ _restFails=0; if(_restMode) _cloudTag('Sincronizado', false); }
 function _restFail(){ _restFails++; if(_restMode && _restFails>=3) _cloudTag('Sin conexión', true); }
-function startRest(){
-  if(_restMode) return; _restMode=true; _restFails=0;
-  _cloudTag('Conectando…', true);
-  restPull();                                   // primer jalón inmediato
-  if(_restTimer) clearInterval(_restTimer);
-  _restTimer=setInterval(()=>{ if(!_cloudConnected) restPull(); }, 6000);
-}
-function stopRest(){ _restMode=false; _restFails=0; if(_restTimer){ clearInterval(_restTimer); _restTimer=null; } }
+function startRest(){ if(_restMode) return; _restMode=true; _restFails=0; _cloudTag('Conectando…', true); syncCheck(); }
+function stopRest(){ _restMode=false; _restFails=0; }
 /* Reconciliar listas que SOLO CRECEN (mensajes de chat, chat de proyectos, comentarios):
    unir por id lo local + lo remoto, en vez de que un blob pise al otro. Así, si dos personas
    escriben casi al mismo tiempo, no se pierde ningún mensaje. Respeta el borrado (deleted) y
@@ -385,6 +402,7 @@ async function cloudInit(){
       }
     });
   }catch(e){ console.warn('cloud realtime', e); }
+  startSyncHeartbeat();   // red de seguridad permanente por HTTPS (aunque el tiempo real esté OK)
   return true;
 }
 // Forzar reconexión a la nube (tocar la etiqueta de estado). Útil si el canal en vivo se quedó caído.
@@ -8043,13 +8061,48 @@ try{ _pushGoView=new URLSearchParams(location.search).get('go')||''; if(_pushGoV
 
 /* Service worker: la app abre y muestra lo último cargado aunque no haya internet.
    Solo en http(s) (en Vercel); en modo local (file://) no aplica. */
+/* Recarga SEGURA: nunca interrumpe a alguien escribiendo o con un pop-up abierto; espera a que
+   sea seguro. Así las tabs abiertas todo el día reciben las versiones nuevas SOLAS. */
+let _reloadPending=false;
+function safeReload(){
+  if(_reloadPending) return; _reloadPending=true;
+  const tryIt=()=>{
+    const modalOpen=$('#modalBg') && $('#modalBg').classList.contains('on');
+    const ae=document.activeElement, typing=ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName);
+    const recording=(typeof _vaRec!=='undefined' && _vaRec) || document.querySelector('.chat-rec');
+    if(!modalOpen && !typing && !recording){ location.reload(); }
+    else { setTimeout(tryIt, 12000); }   // reintentar hasta que sea seguro
+  };
+  setTimeout(tryIt, 3000);
+}
+/* Comprobar si hay una versión nueva desplegada y aplicarla sola (sin que nadie recargue a mano). */
+let _updSeen=false;
+async function checkAppUpdate(){
+  if(_updSeen || document.hidden) return;
+  try{
+    const r=await fetch('app.js?v='+Date.now(), {cache:'no-store'});
+    if(!r || !r.ok) return;
+    const txt=await r.text();
+    const m=txt.match(/APP_VERSION\s*=\s*'v(\d+)/);
+    if(!m) return;
+    const remote=+m[1]; const lm=(APP_VERSION.match(/v(\d+)/)||[])[1]; const local=+lm||0;
+    if(remote>local){ _updSeen=true; try{ toast('Actualizando a la versión nueva…','ok'); }catch(_){}; safeReload(); }
+  }catch(_){}
+}
 if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
-  // Si entra a controlar una versión NUEVA del SW, recargar una vez para mostrar lo último
+  // Si entra a controlar una versión NUEVA del SW, recargar (seguro) para mostrar lo último
   const hadCtrl = !!navigator.serviceWorker.controller;
   let _swReloaded=false;
-  navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(_swReloaded||!hadCtrl) return; _swReloaded=true; location.reload(); });
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{ if(_swReloaded||!hadCtrl) return; _swReloaded=true; safeReload(); });
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('sw.js').then(reg=>{ try{ reg.update(); }catch(_){} }).catch(e=>console.warn('SW', e));
+    navigator.serviceWorker.register('sw.js').then(reg=>{
+      try{ reg.update(); }catch(_){}
+      // revisar cada 5 min si hay SW nuevo (trae la versión nueva a las tabs abiertas todo el día)
+      setInterval(()=>{ try{ reg.update(); }catch(_){} }, 5*60000);
+    }).catch(e=>console.warn('SW', e));
   });
+  // Respaldo por si el SW no cambia: comparar la versión desplegada cada 6 min y aplicarla sola
+  setInterval(checkAppUpdate, 6*60000);
+  setTimeout(checkAppUpdate, 40000);
 }
 /* Sabor Tico App — fin */
