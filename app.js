@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v125 · Sincronización a prueba de fallos (HTTPS + latido) y auto-actualización';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v126 · Notificaciones al celular/compu funcionales (guarda suscripción por HTTPS)';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -7536,7 +7536,7 @@ $('#notifBtn').addEventListener('click',e=>{
   const p=$('#notifPanel');
   const list=myNotifs().slice(0,30);
   p.innerHTML=de(`<div class="notif-head">Notificaciones <div class="ph-spacer" style="flex:1"></div>${list.length?`<button class="btn btn-ghost" style="padding:5px 10px;font-size:12px" onclick="markAllRead()">Marcar leídas</button>`:''}</div>`+
-    ((pushSupported()&&!pushIsOn())?`<button class="notif-cta" onclick="pushToggle()">${svgIcon('bell','icon icon-sm')} Activar avisos en este celular</button>`:'')+
+    (!pushIsOn()?`<button class="notif-cta" onclick="$('#notifPanel').classList.remove('on');pushSetupModal()">${svgIcon('bell','icon icon-sm')} Activar avisos en este equipo</button>`:'')+
     (list.length? list.map(n=>{const iv=({tareas:'check',pedidos:'box',inventario:'chart',horarios:'calendar',chat:'message',proyectos:'clipboard',reportes:'trend'})[(n.link&&n.link.view)]||'bell';
       return `<div class="notif-item ${n.read?'':'unread'}" onclick="openNotif('${n.id}')"><span class="ni-ico">${svgIcon(iv)}</span><div><div class="ni-t">${esc(n.text)}</div><div class="ni-time">${timeAgo(n.at)}</div></div></div>`;}).join('')
       : `<div class="empty" style="padding:30px"><div class="em-ico">${svgIcon('bell','icon icon-lg')}</div><div class="em-d">Sin notificaciones</div></div>`));
@@ -7560,8 +7560,7 @@ $('#userBtn').addEventListener('click',e=>{
   const m=$('#userMenu');
   m.innerHTML=`
     <div class="um-item" style="border-bottom:1px solid var(--border)">${avatarHTML(me())}<div><div style="font-weight:700">${esc(me().name)}</div><div style="font-size:11px;color:var(--text-soft)">${roleInfo(me().role).label}</div></div></div>
-    ${pushSupported()?`<button class="um-item" onclick="pushToggle()">${svgIcon('bell')} ${pushIsOn()?'Notificaciones del celular ✓':'Activar notificaciones'}</button>
-    <button class="um-item" onclick="pushTest()">${svgIcon('send')} Probar notificación</button>`:''}
+    <button class="um-item" onclick="pushSetupModal()">${svgIcon('bell')} Notificaciones ${pushIsOn()?'<span style="color:var(--success);margin-left:auto">✓</span>':'<span style="color:var(--text-soft);margin-left:auto">activar</span>'}</button>
     <button class="um-item" onclick="toggleTheme()">${svgIcon('theme')} Cambiar tema</button>
     <button class="um-item" onclick="screenDiag()">${svgIcon('info')} Diagnóstico de pantalla</button>
     <button class="um-item" style="color:var(--danger)" onclick="logout()">${svgIcon('logout')} Cerrar sesión</button>
@@ -7924,10 +7923,15 @@ function pushIsOn(){ try{ return pushSupported() && Notification.permission==='g
 function pushDeviceId(){ let id=''; try{ id=localStorage.getItem(PUSH_DEV_KEY)||''; }catch(_){}; if(!id){ id=uid(); try{ localStorage.setItem(PUSH_DEV_KEY,id); }catch(_){} } return id; }
 function urlB64ToUint8(b64){ const pad='='.repeat((4-b64.length%4)%4); const s=(b64+pad).replace(/-/g,'+').replace(/_/g,'/'); const raw=atob(s); const out=new Uint8Array(raw.length); for(let i=0;i<raw.length;i++) out[i]=raw.charCodeAt(i); return out; }
 async function pushGetKey(){ if(_pushKey) return _pushKey; try{ const r=await fetch('/api/push?action=key'); const j=await r.json(); if(j&&j.key){ _pushKey=j.key; return j.key; } }catch(_){} return VAPID_PUBLIC; }
+function pushRef(){ return String(FB.databaseURL||'').replace(/\/$/,'')+'/push/'+encodeURIComponent(me().id)+'/'+encodeURIComponent(pushDeviceId())+'.json'; }
 async function pushStore(sub){
-  if(!cloudOn||!fbdb||!me()) return false;
-  try{ await fbdb.ref('push/'+me().id+'/'+pushDeviceId()).set({ sub: sub.toJSON(), at: now(), name:(me().name||''), ua:(navigator.userAgent||'').slice(0,120) }); return true; }
-  catch(e){ console.warn('pushStore', e&&e.code); return false; }
+  if(!me()) return false;
+  const rec={ sub: sub.toJSON(), at: now(), name:(me().name||''), ua:(navigator.userAgent||'').slice(0,120) };
+  // HTTPS (REST) primero: guarda la suscripción aunque el WebSocket esté bloqueado (VPN/antivirus).
+  try{ const t=await cloudToken(); if(t){ const r=await fetch(pushRef()+'?auth='+t, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(rec)}); if(r.ok) return true; } }catch(_){}
+  // Respaldo por SDK si REST no estaba disponible
+  try{ if(cloudOn&&fbdb){ await fbdb.ref('push/'+me().id+'/'+pushDeviceId()).set(rec); return true; } }catch(e){ console.warn('pushStore', e&&e.code); }
+  return false;
 }
 function pushIsIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1); }
 function pushIsStandalone(){ try{ return window.navigator.standalone===true || (window.matchMedia && matchMedia('(display-mode: standalone)').matches); }catch(_){ return false; } }
@@ -7952,7 +7956,8 @@ async function pushEnable(){
 }
 async function pushDisable(){
   try{ const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); if(sub) await sub.unsubscribe(); }catch(_){}
-  try{ if(cloudOn&&fbdb&&me()) await fbdb.ref('push/'+me().id+'/'+pushDeviceId()).remove(); }catch(_){}
+  if(me()){ try{ const t=await cloudToken(); if(t) await fetch(pushRef()+'?auth='+t, {method:'DELETE'}); }catch(_){}
+    try{ if(cloudOn&&fbdb) await fbdb.ref('push/'+me().id+'/'+pushDeviceId()).remove(); }catch(_){} }
   try{ localStorage.setItem(PUSH_ON_KEY,'0'); }catch(_){}
   toast('Notificaciones desactivadas en este equipo','ok');
 }
@@ -7973,6 +7978,39 @@ async function pushTest(){
   }catch(_){ toast('Error al enviar la prueba','err'); }
 }
 window.pushEnable=pushEnable; window.pushDisable=pushDisable; window.pushToggle=pushToggle; window.pushTest=pushTest;
+/* Panel de configuración de notificaciones: estado claro + botón + guía por dispositivo. */
+function pushSetupModal(){
+  const m=$('#userMenu'); if(m) m.classList.remove('on');
+  const on=pushIsOn();
+  const iosNoInstall = pushIsIOS() && !pushIsStandalone();
+  const noSup = !pushSupported();
+  let cuerpo;
+  if(iosNoInstall){
+    cuerpo=`<div class="pn-step"><b>En iPhone, primero instalá la app:</b>
+      <ol style="margin:8px 0 0 18px;line-height:1.9">
+        <li>Tocá el botón <b>Compartir</b> ${svgIcon('box','icon icon-sm')} (abajo, en Safari).</li>
+        <li>Elegí <b>“Agregar a inicio”</b>.</li>
+        <li>Abrí la app desde ese <b>ícono nuevo</b> (no desde Safari).</li>
+        <li>Volvé acá y tocá <b>Activar</b>.</li>
+      </ol>
+      <div class="td-empty" style="margin-top:8px">Apple solo permite avisos en apps agregadas a inicio. Una sola vez.</div></div>`;
+  } else if(noSup){
+    cuerpo=`<div class="td-empty">Este navegador no permite avisos. Usá Chrome/Edge en compu, o en iPhone agregá la app a la pantalla de inicio.</div>`;
+  } else {
+    cuerpo=`<div class="pn-status ${on?'on':''}">${on?'✅ <b>Activadas</b> en este equipo':'🔕 <b>Desactivadas</b> en este equipo'}</div>
+      <div class="td-empty" style="margin:8px 0 4px">Recibís avisos de <b>tareas y mensajes</b> aunque la app esté cerrada. Se activa <b>en cada equipo/celular</b> por separado.</div>
+      <div class="pn-btns">
+        ${on
+          ? `<button class="btn btn-primary" onclick="pushTest();closeModal()">${svgIcon('send','icon icon-sm')} Enviarme una prueba</button>
+             <button class="btn btn-ghost" onclick="pushDisable().then(()=>{closeModal();})">Desactivar aquí</button>`
+          : `<button class="btn btn-primary" onclick="pushEnable().then(ok=>{ if(ok){ pushTest(); } closeModal(); })">${svgIcon('bell','icon icon-sm')} Activar en este equipo</button>`}
+      </div>`;
+  }
+  openModal(`
+    <div class="modal-head"><h3>${svgIcon('bell','icon')} Notificaciones</h3><button class="modal-close" onclick="closeModal()">${svgIcon('x','icon')}</button></div>
+    <div class="modal-body">${cuerpo}</div>`, false);
+}
+window.pushSetupModal=pushSetupModal;
 // Tras login: aplicar deep-link de una notificación y re-guardar la suscripción bajo el usuario actual
 async function pushRefreshOnce(){
   if(_pushRefreshed || !me()) return; _pushRefreshed=true;
