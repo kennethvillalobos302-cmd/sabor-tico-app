@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v127 · Privacidad de tareas: cada quien ve solo lo suyo';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v128 · Notificaciones: se activan solas (la app las pide) + control de Gerencia';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -3264,6 +3264,26 @@ function viewEquipo(){
     ${manage?`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="newSucModal()">+ Sucursal</button>
     <button class="btn btn-primary" style="flex:0 0 auto" onclick="newUserModal()">+ Persona</button>`:''}</div>`;
   html+=guide;
+  // Gerencia: quién tiene notificaciones activas (cada quien debe aceptarlas en SU dispositivo)
+  if(manage){
+    if(_pushWho===null){ setTimeout(()=>{ try{ pushLoadWho(); }catch(_){} }, 100); }
+    else {
+      const conP=peopleScope.filter(u=>_pushWho.has(u.id));
+      const sinP=peopleScope.filter(u=>!_pushWho.has(u.id));
+      html+=`<div class="card" style="padding:13px 14px;margin-bottom:14px">
+        <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          ${svgIcon('bell','icon icon-sm')}<b>Notificaciones del equipo</b>
+          <span class="pn-count ${sinP.length?'warn':'ok'}">${conP.length} de ${peopleScope.length} activadas</span>
+          <div class="ph-spacer"></div>
+          <button class="chip" onclick="_pushWho=null;pushLoadWho()">↻ Actualizar</button>
+        </div>
+        ${sinP.length
+          ? `<div class="td-empty" style="margin-top:8px">Les falta activarlas en su dispositivo (cada quien tiene que aceptar el permiso; la app se lo pide sola al entrar):</div>
+             <div class="chipscroll" style="margin-top:6px">${sinP.map(u=>`<span class="chip" style="pointer-events:none">${esc((u.name||'').split(' ')[0])}</span>`).join('')}</div>`
+          : `<div class="td-empty" style="margin-top:6px">✅ Todo el equipo tiene notificaciones activas.</div>`}
+      </div>`;
+    }
+  }
   const validIds=new Set(['all',...DB.sucursales.map(s=>s.id)]);
   const orphans=manage?DB.users.filter(u=>!validIds.has(u.sucursalId)).sort(byDept):[];
   const groups=[{id:'all',name:'Todas las sucursales (global)'},...sucScope];
@@ -7919,7 +7939,7 @@ impInput.addEventListener('change',async e=>{
    esté cerrada (tareas, mensajes). La llave privada vive en Vercel (api/push.js).
    iOS: requiere "Agregar a pantalla de inicio" (iOS 16.4+) y dar permiso.
    ===================================================================== */
-const PUSH_DEV_KEY='st_push_dev', PUSH_ON_KEY='st_push_on';
+const PUSH_DEV_KEY='st_push_dev', PUSH_ON_KEY='st_push_on', PUSH_ASK_KEY='st_push_ask';
 const VAPID_PUBLIC='BAKaPV-0DcQFy9AqV75Zsbr4YMirfgZczA1rosU-LDqPvOfwMNgiEDOVPcRyGiXj0XtQngxvmzfoAi2sHmGlx_Y';  // pública (no secreta) — respaldo si falla el fetch
 let _pushKey=null, _pushRefreshed=false, _pushGoView='';
 function pushSupported(){ return ('serviceWorker' in navigator) && ('PushManager' in window) && ('Notification' in window) && location.protocol.indexOf('http')===0; }
@@ -7983,31 +8003,34 @@ async function pushTest(){
 }
 window.pushEnable=pushEnable; window.pushDisable=pushDisable; window.pushToggle=pushToggle; window.pushTest=pushTest;
 /* Panel de configuración de notificaciones: estado claro + botón + guía por dispositivo. */
-function pushSetupModal(){
+function pushSetupModal(auto){
   const m=$('#userMenu'); if(m) m.classList.remove('on');
   const on=pushIsOn();
   const iosNoInstall = pushIsIOS() && !pushIsStandalone();
   const noSup = !pushSupported();
-  let cuerpo;
+  if(auto && noSup) return;                       // no molestar donde ni siquiera se puede
+  let cuerpo = auto ? `<div class="pn-hi">👋 <b>${esc((me().name||'').split(' ')[0])}</b>, activá los avisos para enterarte de tus <b>tareas y mensajes</b> al instante — aunque tengás la app cerrada.</div>` : '';
   if(iosNoInstall){
-    cuerpo=`<div class="pn-step"><b>En iPhone, primero instalá la app:</b>
+    cuerpo+=`<div class="pn-step"><b>En iPhone, primero instalá la app:</b>
       <ol style="margin:8px 0 0 18px;line-height:1.9">
         <li>Tocá el botón <b>Compartir</b> ${svgIcon('box','icon icon-sm')} (abajo, en Safari).</li>
         <li>Elegí <b>“Agregar a inicio”</b>.</li>
         <li>Abrí la app desde ese <b>ícono nuevo</b> (no desde Safari).</li>
         <li>Volvé acá y tocá <b>Activar</b>.</li>
       </ol>
-      <div class="td-empty" style="margin-top:8px">Apple solo permite avisos en apps agregadas a inicio. Una sola vez.</div></div>`;
+      <div class="td-empty" style="margin-top:8px">Apple solo permite avisos en apps agregadas a inicio. Una sola vez.</div></div>
+      ${auto?`<div class="pn-btns"><button class="btn btn-ghost" onclick="closeModal()">Ahora no</button></div>`:''}`;
   } else if(noSup){
-    cuerpo=`<div class="td-empty">Este navegador no permite avisos. Usá Chrome/Edge en compu, o en iPhone agregá la app a la pantalla de inicio.</div>`;
+    cuerpo+=`<div class="td-empty">Este navegador no permite avisos. Usá Chrome/Edge en compu, o en iPhone agregá la app a la pantalla de inicio.</div>`;
   } else {
-    cuerpo=`<div class="pn-status ${on?'on':''}">${on?'✅ <b>Activadas</b> en este equipo':'🔕 <b>Desactivadas</b> en este equipo'}</div>
+    cuerpo+=`<div class="pn-status ${on?'on':''}">${on?'✅ <b>Activadas</b> en este equipo':'🔕 <b>Desactivadas</b> en este equipo'}</div>
       <div class="td-empty" style="margin:8px 0 4px">Recibís avisos de <b>tareas y mensajes</b> aunque la app esté cerrada. Se activa <b>en cada equipo/celular</b> por separado.</div>
       <div class="pn-btns">
         ${on
           ? `<button class="btn btn-primary" onclick="pushTest();closeModal()">${svgIcon('send','icon icon-sm')} Enviarme una prueba</button>
              <button class="btn btn-ghost" onclick="pushDisable().then(()=>{closeModal();})">Desactivar aquí</button>`
-          : `<button class="btn btn-primary" onclick="pushEnable().then(ok=>{ if(ok){ pushTest(); } closeModal(); })">${svgIcon('bell','icon icon-sm')} Activar en este equipo</button>`}
+          : `<button class="btn btn-primary" onclick="pushEnable().then(ok=>{ if(ok){ pushTest(); } closeModal(); })">${svgIcon('bell','icon icon-sm')} Activar en este equipo</button>
+             ${auto?`<button class="btn btn-ghost" onclick="closeModal()">Ahora no</button>`:''}`}
       </div>`;
   }
   openModal(`
@@ -8019,9 +8042,47 @@ window.pushSetupModal=pushSetupModal;
 async function pushRefreshOnce(){
   if(_pushRefreshed || !me()) return; _pushRefreshed=true;
   try{ if(_pushGoView){ const v=_pushGoView; _pushGoView=''; if(navAllowedIds(me()).includes(v)){ SES.view=v; setTimeout(render,0); } } }catch(_){}
-  if(!pushSupported() || Notification.permission!=='granted' || localStorage.getItem(PUSH_ON_KEY)!=='1') return;
-  try{ const reg=await navigator.serviceWorker.ready; const sub=await reg.pushManager.getSubscription(); if(sub) await pushStore(sub); }catch(_){}
+  if(!pushSupported()) return;
+  // (1) YA dio permiso alguna vez -> suscribir y guardar SOLO, sin preguntar nada.
+  if(Notification.permission==='granted'){
+    try{
+      const reg=await navigator.serviceWorker.ready;
+      let sub=await reg.pushManager.getSubscription();
+      if(!sub){ const key=await pushGetKey(); sub=await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:urlB64ToUint8(key) }); }
+      if(sub && await pushStore(sub)){ try{ localStorage.setItem(PUSH_ON_KEY,'1'); }catch(_){} }
+    }catch(_){}
+    return;
+  }
+  // (2) Nunca se le preguntó -> la app se lo propone SOLA (un toque). Máximo 1 vez al día.
+  if(Notification.permission==='default'){
+    let last=0; try{ last=+localStorage.getItem(PUSH_ASK_KEY)||0; }catch(_){}
+    if(Date.now()-last > 20*3600e3){
+      try{ localStorage.setItem(PUSH_ASK_KEY, String(Date.now())); }catch(_){}
+      setTimeout(()=>{ try{ if(me() && !pushIsOn()) pushSetupModal(true); }catch(_){} }, 2000);
+    }
+  }
 }
+/* Quién tiene notificaciones activas (para Gerencia): lee la rama push por HTTPS. */
+let _pushWho=null;
+async function pushWhoHas(){
+  try{
+    const t=await cloudToken(); if(!t) return null;
+    const base=String(FB.databaseURL||'').replace(/\/$/,'');
+    // Las reglas (bien) NO dejan listar toda la rama push; se consulta la de cada persona.
+    const users=(DB.users||[]).filter(u=>u&&u.active);
+    const res=await Promise.all(users.map(async u=>{
+      try{
+        const r=await fetch(base+'/push/'+encodeURIComponent(u.id)+'.json?shallow=true&auth='+t, {cache:'no-store'});
+        if(!r.ok) return null;
+        const j=await r.json();
+        return (j && Object.keys(j).length) ? u.id : null;
+      }catch(_){ return null; }
+    }));
+    return new Set(res.filter(Boolean));
+  }catch(_){ return null; }
+}
+async function pushLoadWho(){ const s=await pushWhoHas(); if(s){ _pushWho=s; render(); } }
+window.pushLoadWho=pushLoadWho;
 // Envía el aviso real a los destinatarios (lo dispara notify desde el equipo del remitente)
 async function sendPush(userIds, text, link){
   try{
