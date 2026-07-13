@@ -11,3 +11,4 @@ node_modules/
 *.exe
 docs/instalador/grabaciones/
 docs/instalador/frigate-config/
+hn.json
