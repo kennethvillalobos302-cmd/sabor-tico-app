@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v126 · Notificaciones al celular/compu funcionales (guarda suscripción por HTTPS)';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v127 · Privacidad de tareas: cada quien ve solo lo suyo';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -1257,8 +1257,8 @@ function viewInicio(){
     <div class="ph-spacer"></div><button class="btn btn-ghost" style="flex:0 0 auto;padding:8px 12px" onclick="go('tareas')">Ver todas</button></div>`;
   html += next.length ? next.map(taskRow).join('') : emptyState('🎉','Estás al día','No tenés tareas pendientes asignadas. Buen trabajo.');
 
-  // control gerencia
-  if(isAdmin() || u.role==='chef' || u.role==='jefe_salon'){
+  // control gerencia (solo Administración: muestra tareas de TODO el equipo)
+  if(isAdmin()){
     html += `<div class="page-head" style="margin:22px 0 10px"><div class="page-title" style="font-size:17px">🛡️ Control · quién no cumple</div></div>`;
     html += `<div class="card" style="padding:12px">${failRows || emptyState('✅','Todo en orden','Nadie tiene tareas atrasadas ni rechazadas. Excelente.')}</div>`;
   }
@@ -1403,9 +1403,12 @@ function viewTareas(){
   return html;
 }
 function iHaveSubtask(t){ return (t&&t.subtasks||[]).some(s=>s&&s.assigneeId===SES.userId); }
+/* Privacidad de tareas: cada persona ve SOLO lo suyo — las que le asignaron, las que ella
+   asignó (para darles seguimiento) y aquellas donde tiene una subtarea. Solo Gerencia
+   (Administración) ve las tareas de todo el equipo. */
 function visibleTask(t){
   if(isAdmin()) return true;
-  return (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId || iHaveSubtask(t) || me().role==='chef' || me().role==='jefe_salon';
+  return (t.toIds||[]).includes(SES.userId) || t.fromId===SES.userId || iHaveSubtask(t);
 }
 window.setTaskFilter = k => { taskFilter=k; render(); };
 
@@ -1446,6 +1449,7 @@ function cap(s){ s=(s==null?'':String(s)); return s? s.charAt(0).toUpperCase()+s
 /* ----- Detalle de tarea ----- */
 function taskDetail(id){
   const t=DB.tasks.find(x=>x.id===id); if(!t) return;
+  if(!visibleTask(t)){ toast('Esa tarea no es tuya','err'); return; }   // candado: nadie abre tareas ajenas
   const from=userById(t.fromId);
   const assignees=t.toIds.map(i=>userById(i)).filter(Boolean);
   const amResp = t.toIds.includes(SES.userId);
@@ -7709,7 +7713,7 @@ function renderGlobalSearch(){
   const hit=s=>String(s||'').toLowerCase().includes(q);
   const cv=v=>navAllowedIds(me()).includes(v);
   let html='';
-  const tasks=(DB.tasks||[]).filter(t=>t&&inScope(t.sucursalId)&&(hit(t.title)||hit(t.desc))).slice(0,8);
+  const tasks=(DB.tasks||[]).filter(t=>t&&visibleTask(t)&&inScope(t.sucursalId)&&(hit(t.title)||hit(t.desc))).slice(0,8);
   if(tasks.length) html+=`<div class="gs-group">Tareas</div>`+tasks.map(t=>gsItem('check',t.title,statusLabel(t.status),`gsGo('tareas','taskDetail','${t.id}')`)).join('');
   const peds=(DB.pedidos||[]).filter(p=>p&&inScope(p.sucursalId)&&(hit(p.item)||hit(p.desc))).slice(0,8);
   if(peds.length) html+=`<div class="gs-group">Pedidos</div>`+peds.map(p=>gsItem('box',p.item,pedInfo(p.area).short,`gsGo('pedidos','pedidoDetail','${p.id}')`)).join('');
