@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v129 · Mensajes: solo los míos en el día a día; los ajenos en Supervisión';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v130 · Login: sin bloqueo de 15 min (espera corta) + reinicio de PIN por Gerencia';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -711,7 +711,14 @@ async function migratePins(){
 const LFK='saborTico_loginfail';
 function loginFailState(){ try{ return JSON.parse(localStorage.getItem(LFK)||'{}'); }catch(_){ return {}; } }
 function loginLockedUntil(){ return loginFailState().until||0; }
-function registerLoginFail(){ const s=loginFailState(); s.n=(s.n||0)+1; if(s.n>=5){ s.until=now()+15*60*1000; s.n=0; } try{ localStorage.setItem(LFK,JSON.stringify(s)); }catch(_){} }
+/* Espera CORTA y progresiva (no un bloqueo largo): las primeras equivocaciones no cuestan nada,
+   y después la espera crece de a poco (20s → 40s → 80s → 2 min máximo). Así, si te equivocás o
+   se te va el PIN, esperás segundos — pero adivinar 10.000 combinaciones sigue siendo inviable. */
+function registerLoginFail(){
+  const s=loginFailState(); s.n=(s.n||0)+1;
+  if(s.n>=5){ const wait=Math.min(20*Math.pow(2, s.n-5), 120)*1000; s.until=now()+wait; }
+  try{ localStorage.setItem(LFK,JSON.stringify(s)); }catch(_){}
+}
 function clearLoginFails(){ try{ localStorage.removeItem(LFK); }catch(_){} }
 // Inventario por área: Cocina (Proveeduría/Chef) y Bar (Bartender/Jefe de Salón)
 function invAreasFor(){
@@ -7862,10 +7869,19 @@ async function doLogin(){
   const u=userById(pickedUser);
   if(!u){ toast('Elegí quién sos','err'); return; }
   const lockMs=loginLockedUntil()-now();
-  if(lockMs>0){ toast('Demasiados intentos. Esperá '+Math.ceil(lockMs/60000)+' min.','err'); return; }
+  if(lockMs>0){
+    const s=Math.ceil(lockMs/1000);
+    toast(`Esperá ${s>60?Math.ceil(s/60)+' min':s+' segundos'} y volvé a intentar. Si olvidaste tu PIN, pedile a Gerencia que te lo reinicie.`,'err');
+    return;
+  }
   const pin=($('#pinInput')?$('#pinInput').value:'')||'';
   const okPin=await verifyPin(u,pin);
-  if(!okPin){ registerLoginFail(); toast('PIN incorrecto','err'); return; }
+  if(!okPin){
+    registerLoginFail();
+    const n=(loginFailState().n||0);
+    toast(n>=4 ? 'PIN incorrecto. Si lo olvidaste, pedile a Gerencia que te lo reinicie.' : 'PIN incorrecto','err');
+    return;
+  }
   clearLoginFails();
   // Subir PIN viejo en texto a hash de forma transparente
   if(!u.pinHash && (self.crypto&&crypto.subtle)){ try{ await setUserPin(u,pin); save(); }catch(_){} }
