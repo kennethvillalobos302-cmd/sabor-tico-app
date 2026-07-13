@@ -9,7 +9,7 @@
    - NO intercepta la base en tiempo real (firebaseio/googleapis) ni /api/:
      se dejan pasar para que Firebase maneje su propia conexión/cola offline.
    ===================================================================== */
-const CACHE = 'sabor-tico-v128';
+const CACHE = 'sabor-tico-v129';
 // Solo cacheamos archivos PROPIOS. Los scripts de Firebase (gstatic) NO se interceptan:
 // se cargan directo con <script> (lo permite script-src). Si el SW los pidiera con fetch(),
 // la CSP (connect-src) los bloquea y el SDK de Firebase no carga -> se rompe la nube.

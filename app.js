@@ -4,7 +4,7 @@
    ===================================================================== */
 
 const DB_KEY = 'saborTico_v1';
-const APP_VERSION = 'v128 · Notificaciones: se activan solas (la app las pide) + control de Gerencia';  // se muestra en el menú de cuenta para confirmar la versión
+const APP_VERSION = 'v129 · Mensajes: solo los míos en el día a día; los ajenos en Supervisión';  // se muestra en el menú de cuenta para confirmar la versión
 /* Versión de datos: al subir este número, la app hace una limpieza única
    (deja el equipo y las sucursales, borra los datos de ejemplo) en todos los
    dispositivos la próxima vez que abran. Subir solo cuando se quiera reiniciar. */
@@ -2787,8 +2787,16 @@ window.saveMembers=saveMembers;
 /* =====================================================================
    VISTA: CHAT
    ===================================================================== */
+/* Flujo diario: SOLO mis chats y mis grupos (también para Gerencia).
+   Los chats ajenos se ven aparte, en la pestaña de Supervisión. */
 function myChats(){
-  return (DB.chats||[]).filter(c=> c && ((c.memberIds||[]).includes(SES.userId)||isAdmin()) )
+  return (DB.chats||[]).filter(c=> c && (c.memberIds||[]).includes(SES.userId) )
+    .sort((a,b)=>(lastMsgAt(b))-(lastMsgAt(a)));
+}
+/* Supervisión (solo Gerencia): los chats donde NO soy miembro. Fuera del flujo diario. */
+function otherChats(){
+  if(!isAdmin()) return [];
+  return (DB.chats||[]).filter(c=> c && !(c.memberIds||[]).includes(SES.userId) )
     .sort((a,b)=>(lastMsgAt(b))-(lastMsgAt(a)));
 }
 function lastMsgAt(c){ const m=(c.msgs||[]).filter(x=>x&&!msgDeleted(x)); return m.length?m[m.length-1].at:(c.createdAt||0); }
@@ -2819,24 +2827,35 @@ function dayLabel(ts){
   return d.toLocaleDateString('es-CR', d.getFullYear()!==t.getFullYear()?{day:'2-digit',month:'short',year:'numeric'}:{day:'2-digit',month:'short'});
 }
 function viewChat(){
-  const chats=myChats();
+  const superv = isAdmin() && chatScope==='otros';
+  const chats = superv ? otherChats() : myChats();
   const guide=sectionGuide('chat','¿Cómo funcionan los mensajes?',`
     Tenés <b>chats directos</b> con cualquier compañero y <b>grupos</b> de trabajo, como en WhatsApp.
     <ul style="margin:8px 0 0 18px">
       <li>Cualquiera puede <b>crear un grupo</b>; quien lo crea (o Administración) puede <b>editar el nombre, agregar/quitar miembros y eliminarlo</b>.</li>
       <li>Tocá el nombre del grupo arriba para ver su <b>info y miembros</b>, o <b>salir</b> del grupo.</li>
       <li>Podés <b>eliminar mensajes</b> (solo para vos o para todos).</li>
+      ${isAdmin()?'<li><b>Gerencia:</b> tu lista diaria muestra <b>solo tus chats</b>. Los de los demás están aparte, en <b>Supervisión</b>.</li>':''}
     </ul>`);
 
-  let html=`<div class="page-head"><div><div class="page-title">Mensajes</div><div class="page-sub">${isAdmin()?'Vista total · Gerencia':'Tus chats y grupos'}</div></div>
+  let html=`<div class="page-head"><div><div class="page-title">Mensajes</div><div class="page-sub">${superv?'Supervisión · chats de otros':'Tus chats y grupos'}</div></div>
     <div class="ph-spacer"></div>
-    <button class="btn btn-ghost" style="flex:0 0 auto" onclick="newDMModal()">${svgIcon('message','icon icon-sm')} Nuevo chat</button>
-    <button class="btn btn-primary" style="flex:0 0 auto" onclick="newGroupModal()">${svgIcon('users','icon icon-sm')} Nuevo grupo</button>
+    ${superv?'':`<button class="btn btn-ghost" style="flex:0 0 auto" onclick="newDMModal()">${svgIcon('message','icon icon-sm')} Nuevo chat</button>
+    <button class="btn btn-primary" style="flex:0 0 auto" onclick="newGroupModal()">${svgIcon('users','icon icon-sm')} Nuevo grupo</button>`}
   </div>`;
   html+=guide;
+  // Gerencia: separar el flujo diario (mis chats) de la supervisión (los de los demás)
+  if(isAdmin()){
+    const nOtros=otherChats().length;
+    html+=`<div class="seg" style="margin-bottom:12px">
+      <button type="button" class="seg-b ${!superv?'on':''}" onclick="setChatScope('mios')">${svgIcon('message','icon icon-sm')} Mis chats</button>
+      <button type="button" class="seg-b ${superv?'on':''}" onclick="setChatScope('otros')">${svgIcon('shield','icon icon-sm')} Supervisión${nOtros?` (${nOtros})`:''}</button>
+    </div>`;
+  }
 
   const mob = window.innerWidth<=780;
   let sel = SES.activeChat;
+  if(sel && !chats.some(c=>c.id===sel)) sel=null;                  // el chat abierto no es de esta pestaña
   if(!mob && !sel) sel = chats[0] && chats[0].id;   // en compu se abre el primero; en celular, lista primero (estilo WhatsApp)
   SES.activeChat = sel || null;
   const listHtml = chats.length? chats.map(c=>{
@@ -2855,7 +2874,7 @@ function viewChat(){
       <div class="cl-mid"><div class="cn">${esc(name)} ${c.type==='group'?'<span class="cl-grp">grupo</span>':''}</div>
       <div class="cp">${esc(prevTxt)}</div></div>
       <div class="cl-end">${lastT?`<span class="cl-time">${lastT}</span>`:''}${ur?`<span class="cbadge">${ur}</span>`:''}</div></div>`;
-  }).join('') : `<div class="empty" style="padding:30px 14px"><div class="em-d">No hay chats. Creá uno.</div></div>`;
+  }).join('') : `<div class="empty" style="padding:30px 14px"><div class="em-d">${superv?'No hay chats de otras personas.':'No tenés chats todavía. Creá uno.'}</div></div>`;
 
   const cur = chats.find(c=>c.id===sel);
   let paneHtml;
@@ -2998,6 +3017,8 @@ function screenDiag(){
 }
 window.screenDiag=screenDiag;
 window.chatJumpBottom=()=>{ const m=$('#chatMsgs'); if(m) m.scrollTo({top:m.scrollHeight,behavior:'smooth'}); };
+let chatScope='mios';   // Gerencia: 'mios' (flujo diario) | 'otros' (supervisión)
+window.setChatScope=s=>{ chatScope=s; SES.activeChat=null; document.body.classList.remove('chat-open'); render(); };
 window.openChat=id=>{ SES.activeChat=id; render(); };
 window.backChatList=()=>{ SES.activeChat=null; document.body.classList.remove('chat-open'); render(); };
 
